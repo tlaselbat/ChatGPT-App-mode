@@ -1,0 +1,19 @@
+{
+  "name": "chatgpt-app-mode",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ChatGPT App Mode launcher and offline visual test harness.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:update": "playwright test --update-snapshots",
+    "test:report": "playwright show-report playwright-report",
+    "live:audit": "node tools/live-audit.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.64.0"
+  }
+}

@@ -1,0 +1,22 @@
+ChatGPT App Mode fresh installation
+
+1. Extract the ZIP to the final folder where you want the app to live.
+   Example: E:\Tools\ChatGPT-App-mode
+
+2. Right-click Install-ChatGPT-AppMode.ps1 and choose Run with PowerShell.
+   If PowerShell blocks scripts, run this from the extracted folder:
+
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ChatGPT-AppMode.ps1
+
+3. The installer rewrites config.json for the extracted folder, refreshes
+   ChromiumPortable.ini, rebuilds the taskbar launcher when the local .NET
+   compiler is available, and creates Desktop / Start Menu shortcuts.
+
+4. To pin the taskbar launcher, pin:
+
+   shortcuts\ChatGPT Taskbar Launcher.lnk
+
+   If an older ChatGPT or Chromium icon is already pinned, unpin it first.
+
+The ZIP intentionally does not include the live Chromium profile, cookies,
+or browser cache. Chromium Portable will create a fresh profile on first run.

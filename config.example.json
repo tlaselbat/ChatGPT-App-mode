@@ -1,0 +1,23 @@
+{
+  "appName": "ChatGPT App Mode",
+  "url": "https://chatgpt.com/",
+  "chromiumPortableExe": "<APP_ROOT>\\Browser\\ChromiumPortable\\ChromiumPortable.exe",
+  "chromiumDirectExe": "<APP_ROOT>\\Browser\\ChromiumPortable\\App\\Chromium\\chrome.exe",
+  "chromiumPortableRoot": "<APP_ROOT>\\Browser\\ChromiumPortable",
+  "chromiumPortableIni": "<APP_ROOT>\\Browser\\ChromiumPortable\\ChromiumPortable.ini",
+  "appProfileDir": "<APP_ROOT>\\Browser\\ChatGPTProfile",
+  "extensionDir": "<APP_ROOT>\\extension",
+  "restoreLastUrl": true,
+  "enableLocalExtension": true,
+  "useAppMode": true,
+  "window": {
+    "width": 1280,
+    "height": 900,
+    "startMaximized": false
+  },
+  "flags": [
+    "--no-first-run",
+    "--disable-features=Translate",
+    "--disable-session-crashed-bubble"
+  ]
+}

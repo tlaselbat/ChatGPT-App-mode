@@ -1,0 +1,97 @@
+/*
+  ChatGPT App Mode CSS Overrides
+  Keep changes conservative and reversible.
+*/
+
+body {
+  text-rendering: optimizeLegibility;
+}
+
+body.faux-chatgpt-app-mode {
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(120, 120, 120, 0.32) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 120, 0.32);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 120, 0.48);
+}
+
+.chatgpt-app-mode-pin-button {
+  position: fixed;
+  top: 96px;
+  right: 22px;
+  z-index: 2147483647;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(120, 120, 120, 0.35);
+  border-radius: 10px;
+  color: currentColor;
+  background: color-mix(in srgb, canvas 82%, transparent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+}
+
+.chatgpt-app-mode-pin-button svg {
+  width: 27px;
+  height: 27px;
+  fill: currentColor;
+}
+
+.chatgpt-app-mode-pin-button:hover {
+  background: color-mix(in srgb, canvas 70%, currentColor 8%);
+}
+
+.chatgpt-app-mode-pin-button.is-active {
+  color: #0f7b65;
+  border-color: rgba(15, 123, 101, 0.55);
+  background: rgba(15, 123, 101, 0.12);
+}
+
+.chatgpt-app-mode-pin-button.is-unavailable {
+  color: #9a3412;
+  border-color: rgba(154, 52, 18, 0.5);
+}
+
+.chatgpt-app-mode-pin-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+/*
+  Optional examples:
+
+  main {
+    max-width: none !important;
+  }
+
+  * {
+    scrollbar-width: thin;
+  }
+*/

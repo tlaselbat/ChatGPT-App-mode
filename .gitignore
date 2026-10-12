@@ -1,0 +1,35 @@
+# Chromium installation and user data
+/Browser/
+/logs/
+/config.json
+
+# Packaged installers, generated launcher, and user shortcuts/session titles
+/*.zip
+/package_build_*/
+/TaskbarLauncher/*.exe
+/INSTALL-COMPLETE.txt
+/*.lnk
+/shortcuts/
+*.exe
+*.dll
+*.pdb
+*.msi
+
+# Local dependencies and generated test artifacts
+/node_modules/
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# Private or machine-specific runtime data
+*.log
+*-session.json
+/recent-chats.json
+/.backup/
+
+# Common editor and OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
