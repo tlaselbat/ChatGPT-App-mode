@@ -3,12 +3,16 @@ ChatGPT App Mode fresh installation
 1. Extract the ZIP to the final folder where you want the app to live.
    Example: E:\Tools\ChatGPT-App-mode
 
-2. Right-click Install-ChatGPT-AppMode.ps1 and choose Run with PowerShell.
+2. Install Node.js 22.12 or newer, then right-click Install-ChatGPT-AppMode.ps1
+   and choose Run with PowerShell. Internet access is required for the pinned
+   native window runtime. For an existing checkout, Install-WindowHost.ps1
+   installs just that runtime.
    If PowerShell blocks scripts, run this from the extracted folder:
 
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ChatGPT-AppMode.ps1
 
-3. The installer rewrites config.json for the extracted folder, refreshes
+3. The installer preserves existing settings, rebases installation-owned paths
+   after a move, backs up config.json, refreshes
    ChromiumPortable.ini, rebuilds the taskbar launcher when the local .NET
    compiler is available, and creates Desktop / Start Menu shortcuts.
 
@@ -18,5 +22,14 @@ ChatGPT App Mode fresh installation
 
    If an older ChatGPT or Chromium icon is already pinned, unpin it first.
 
-The ZIP intentionally does not include the live Chromium profile, cookies,
-or browser cache. Chromium Portable will create a fresh profile on first run.
+The ZIP intentionally does not include live profiles, cookies, or browser cache.
+The native host uses Browser\AppModeHostProfile and requires a separate sign-in.
+Your existing Chromium profile is not copied, changed, or reset. Minimize,
+maximize/restore, and close share the translucent header; dragging, resizing,
+and Windows Snap remain native. Set windowHost to chromium in config.json to
+restore the previous Chromium title bar.
+
+Use Settings and privacy in the tray menu to configure startup, window size,
+conversation restore, local history, and title visibility. Alt+Shift+P toggles
+pinning in the focused App Mode window. Restart the tray launcher after upgrading
+to refresh its menu. No profile reset is needed for an upgrade.

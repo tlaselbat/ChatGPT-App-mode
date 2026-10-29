@@ -1,3 +1,4 @@
+param([switch]$SkipRegistration)
 $ErrorActionPreference = 'Stop'
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -34,5 +35,5 @@ if ($LASTEXITCODE -ne 0) {
     throw "Build failed with exit code $LASTEXITCODE"
 }
 
-& $OutputPath --register-only
-Write-Host "Built and registered: $OutputPath"
+if (-not $SkipRegistration) { & $OutputPath --register-only }
+Write-Host "Built: $OutputPath"

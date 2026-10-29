@@ -5,9 +5,10 @@
 | Component | Current implementation | Behavior |
 |---|---|---|
 | Content script | `extension/scripts/chatgpt-overrides.js` | Body marker, title normalization, pin button, session URL reporting, mutation observation |
-| Override styles | `extension/styles/chatgpt-overrides.css` | Scrollbar treatment and fixed always-on-top button states |
+| Override styles | `extension/styles/chatgpt-overrides.css` | Scrollbar treatment, header pin/status states, and flow-toolbar fallback |
 | Extension manifest | `extension/manifest.json` | MV3 content script matching and load order |
 | Control endpoint | `Start-ChatGPT-TopMostServer.ps1` | Loopback JSON responses for topmost and session operations |
+| Settings | `Open-AppMode-Settings.ps1` | Launch preferences, window sizing, startup, privacy/retention, and recovery |
 
 ## Styling organization proposed for future work
 

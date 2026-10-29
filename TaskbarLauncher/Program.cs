@@ -21,6 +21,7 @@ namespace ChatGPTTaskbarLauncher
             { "--topmost", "Launch-ChatGPT-TopMost.ps1" },
             { "--tray", "Start-ChatGPT-TrayLauncher.ps1" },
             { "--config", "Open-Config.ps1" },
+            { "--settings", "Open-AppMode-Settings.ps1" },
             { "--extension", "Open-Extension-Folder.ps1" },
             { "--toggle-extension", "Toggle-LocalExtension.ps1" },
             { "--reset-profile", "Reset-Portable-Chromium-Profile.ps1" },
@@ -107,7 +108,7 @@ namespace ChatGPTTaskbarLauncher
                 return 1;
             }
 
-            StartPowerShellScript(scriptPath, "-Url " + QuotePowerShellString(recentChats[index].url));
+            StartPowerShellScript(scriptPath, "-Url " + QuoteNativeArgument(recentChats[index].url));
             return 0;
         }
 
@@ -209,6 +210,7 @@ namespace ChatGPTTaskbarLauncher
 
             AddTask(jumpList, exePath, "Open ChatGPT", "--app", "Launch ChatGPT in app mode");
             AddTask(jumpList, exePath, "New Chat", "--new-session", "Launch ChatGPT without restoring the last chat URL");
+            AddTask(jumpList, exePath, "Settings", "--settings", "Settings and privacy");
 
             var recentChats = ReadRecentChats();
             for (var i = 0; i < recentChats.Count && i < 3; i++)
@@ -235,9 +237,10 @@ namespace ChatGPTTaskbarLauncher
             });
         }
 
-        private static List<RecentChat> ReadRecentChats()
+        private static List<RecentChat> ReadRecentChats(string appRoot = null)
         {
-            var recentChatsPath = Path.Combine(GetAppRoot(), "logs", "recent-chats.json");
+            appRoot = appRoot ?? GetAppRoot();
+            var recentChatsPath = Path.Combine(appRoot, "logs", "recent-chats.json");
             if (!File.Exists(recentChatsPath))
             {
                 return new List<RecentChat>();
@@ -247,13 +250,19 @@ namespace ChatGPTTaskbarLauncher
             {
                 var json = File.ReadAllText(recentChatsPath);
                 var serializer = new JavaScriptSerializer();
+                // Migrate the legacy singleton object without losing its entry.
+                if (json.TrimStart().StartsWith("{")) json = "[" + json + "]";
                 var items = serializer.Deserialize<List<RecentChat>>(json) ?? new List<RecentChat>();
+                var privacy = ReadPrivacy(appRoot);
+                if (!privacy.trackRecentChats) return new List<RecentChat>();
                 var validItems = new List<RecentChat>();
 
                 foreach (var item in items)
                 {
-                    if (item != null && IsChatGptUrl(item.url))
+                    DateTimeOffset saved;
+                    if (item != null && IsChatGptUrl(item.url) && DateTimeOffset.TryParse(item.savedAt, out saved) && saved > DateTimeOffset.UtcNow.AddDays(-privacy.retentionDays))
                     {
+                        if (!privacy.showChatTitles) item.title = null;
                         validItems.Add(item);
                     }
 
@@ -273,18 +282,56 @@ namespace ChatGPTTaskbarLauncher
 
         private static bool IsChatGptUrl(string url)
         {
-            return !string.IsNullOrWhiteSpace(url) &&
-                (url.StartsWith("https://chatgpt.com/", StringComparison.OrdinalIgnoreCase) ||
-                 url.StartsWith("https://chat.openai.com/", StringComparison.OrdinalIgnoreCase));
+            Uri uri;
+            return Uri.TryCreate(url, UriKind.Absolute, out uri) && uri.Scheme == "https" && uri.Port == 443 &&
+                string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) &&
+                (uri.Host == "chatgpt.com" || uri.Host == "chat.openai.com") &&
+                System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, @"^/(?:g/[^/]+/)?c/[A-Za-z0-9-]+/?$");
         }
 
-        private static string QuotePowerShellString(string value)
+        // Windows native argv quoting; -File does not interpret PowerShell single quotes.
+        internal static string QuoteNativeArgument(string value)
         {
-            return "'" + value.Replace("'", "''") + "'";
+            var result = new System.Text.StringBuilder("\"");
+            var slashes = 0;
+            foreach (var character in value) {
+                if (character == '\\') { slashes++; continue; }
+                if (character == '"') {
+                    result.Append('\\', slashes * 2 + 1).Append('"');
+                } else {
+                    result.Append('\\', slashes).Append(character);
+                }
+                slashes = 0;
+            }
+            return result.Append('\\', slashes * 2).Append('"').ToString();
+        }
+
+        private sealed class PrivacySettings
+        {
+            public PrivacySettings() { }
+            public bool trackRecentChats = true;
+            public bool showChatTitles = true;
+            public int retentionDays = 30;
+        }
+
+        private static PrivacySettings ReadPrivacy(string appRoot)
+        {
+            try {
+                var serializer = new JavaScriptSerializer();
+                var config = serializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(appRoot, "config.json")));
+                object raw;
+                if (config.TryGetValue("privacy", out raw) && raw != null) {
+                    var result = serializer.ConvertToType<PrivacySettings>(raw);
+                    if (result.retentionDays < 1 || result.retentionDays > 3650) result.retentionDays = 30;
+                    return result;
+                }
+                return new PrivacySettings();
+            } catch { return new PrivacySettings { trackRecentChats = false }; }
         }
 
         private sealed class RecentChat
         {
+            public RecentChat() { }
             public string url { get; set; }
             public string title { get; set; }
             public string savedAt { get; set; }
@@ -297,7 +344,7 @@ namespace ChatGPTTaskbarLauncher
 
         private static void StartPowerShellScript(string scriptPath, string scriptArguments)
         {
-            var arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + scriptPath + "\"";
+            var arguments = "-NoProfile -ExecutionPolicy Bypass -STA -File " + QuoteNativeArgument(scriptPath);
             if (!string.IsNullOrWhiteSpace(scriptArguments))
             {
                 arguments += " " + scriptArguments;

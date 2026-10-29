@@ -22,13 +22,11 @@ if (-not (Test-Path $launchExe)) {
     throw "Chromium executable not found: $launchExe"
 }
 
-Disable-ChromiumProfileBadge -ChromiumRoot $chromiumRoot -LogPath $LogPath
 
 $argLine = ConvertTo-ArgLine -Config $config -Mode Normal
 Write-ChromiumPortableIni -IniPath $chromiumIni -AdditionalParameters $argLine
 
 Write-AppModeLog -LogPath $LogPath -Message "Opening Chromium Portable normal mode."
-Write-AppModeLog -LogPath $LogPath -Message "AdditionalParameters=$argLine"
 
 Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe) -ArgumentList $argLine
-Set-ChromiumPortableWindowIdentity -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
+Set-ChromiumPortableWindowIdentity -Config $config -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath

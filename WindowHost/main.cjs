@@ -1,0 +1,195 @@
+// Remote pages run sandboxed, without Node, preload bridges, or privileged IPC.
+const { app, BrowserWindow, session, shell, screen, dialog } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission } = require('./policy.cjs');
+const { installBrowserShortcuts } = require('./shortcuts.cjs');
+const sourceRoot = path.resolve(__dirname, '..');
+const option = (args, name) => args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+const root = path.resolve(option(process.argv, 'app-mode-root') || sourceRoot);
+const profile = hostProfile(root);
+for (const directory of [path.join(root, 'Browser'), profile]) {
+  if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) {
+    throw new Error('Native host profile directories must not be links or junctions.');
+  }
+}
+// Never adopt --user-data-dir from the command line or the Chromium config.
+app.setPath('userData', profile);
+app.setPath('sessionData', profile);
+app.setAppUserModelId('OpenAI.ChatGPT.AppMode');
+let browserSession;
+let fixturePath;
+const liveReview = process.argv.includes('--live-review');
+const permissionGrants = new Map();
+
+function readConfig() {
+  return JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
+}
+
+function safeBounds(args, config) {
+  const size = option(args, 'window-size')?.match(/^(\d+),(\d+)$/);
+  const pos = option(args, 'window-position')?.match(/^(-?\d+),(-?\d+)$/);
+  const width = Math.max(390, Math.min(4096, Number(size?.[1] || config.window?.width || 1280)));
+  const height = Math.max(300, Math.min(4096, Number(size?.[2] || config.window?.height || 900)));
+  const candidate = { x: Number(pos?.[1] || 80), y: Number(pos?.[2] || 40), width, height };
+  const area = screen.getDisplayMatching(candidate).workArea;
+  candidate.width = Math.min(width, area.width);
+  candidate.height = Math.min(height, area.height);
+  candidate.x = Math.max(area.x, Math.min(candidate.x, area.x + area.width - candidate.width));
+  candidate.y = Math.max(area.y, Math.min(candidate.y, area.y + area.height - candidate.height));
+  return candidate;
+}
+
+function openExternal(url) {
+  if (isExternalUrl(url)) shell.openExternal(url).catch(() => {});
+}
+
+function guardNavigation(contents) {
+  installBrowserShortcuts(contents);
+  contents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) {
+      for (const key of permissionGrants.keys()) if (key.startsWith(`${contents.id}:`)) permissionGrants.delete(key);
+    }
+  });
+  contents.on('destroyed', () => {
+    for (const key of permissionGrants.keys()) if (key.startsWith(`${contents.id}:`)) permissionGrants.delete(key);
+  });
+  contents.on('will-navigate', (event, url) => {
+    if (isChatGptUrl(url) || isLoginUrl(url)) return;
+    event.preventDefault();
+    openExternal(url);
+  });
+  contents.on('will-redirect', (event, url) => {
+    if (!isChatGptUrl(url) && !isLoginUrl(url)) event.preventDefault();
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isChatGptUrl(url)) createWindow([`--url=${url}`]);
+    else if (isLoginUrl(url)) {
+      const login = new BrowserWindow({ width: 600, height: 800, autoHideMenuBar: true,
+        webPreferences: { session: browserSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false } });
+      guardNavigation(login.webContents);
+      login.webContents.on('did-navigate', (_event, destination) => {
+        if (isChatGptUrl(destination)) {
+          if (!contents.isDestroyed()) contents.loadURL(destination).catch(() => {});
+          login.close();
+        }
+      });
+      login.loadURL(url).catch(() => {});
+    } else openExternal(url);
+    return { action: 'deny' };
+  });
+  contents.on('will-attach-webview', event => event.preventDefault());
+}
+
+function createWindow(args) {
+  const config = readConfig();
+  const requested = option(args, 'url') || config.url || 'https://chatgpt.com/';
+  const url = isChatGptUrl(requested) ? requested : 'https://chatgpt.com/';
+  const win = new BrowserWindow({
+    ...safeBounds(args, config), minWidth: 390, minHeight: 300,
+    title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'OpenAI-white.ico'),
+    backgroundColor: '#212121', autoHideMenuBar: true, show: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#00000000', symbolColor: '#dddddd', height: 48 },
+    webPreferences: { session: browserSession, sandbox: true, contextIsolation: true,
+      nodeIntegration: false, webviewTag: false, navigateOnDragDrop: false },
+  });
+  win.removeMenu();
+  guardNavigation(win.webContents);
+  win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
+  win.webContents.on('did-finish-load', async () => {
+    if (!isChatGptUrl(win.webContents.getURL())) return;
+    try {
+      // Main-process injection is restricted to exact ChatGPT origins. No API
+      // is exposed to the page; these are the same unprivileged site overrides.
+      const css = fs.readFileSync(path.join(sourceRoot, 'extension/styles/chatgpt-overrides.css'), 'utf8');
+      let script = fs.readFileSync(path.join(sourceRoot, 'extension/scripts/chatgpt-overrides.js'), 'utf8');
+      if (fixturePath && /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')) {
+        script = script.replaceAll('127.0.0.1:17863', `127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}`);
+      }
+      const hostCss = fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8');
+      await win.webContents.insertCSS(css + '\n' + hostCss);
+      await win.webContents.executeJavaScript(script);
+      await win.webContents.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
+    } catch { /* Keep native controls available if a page or selector changes. */ }
+  });
+  win.once('ready-to-show', () => {
+    if (args.includes('--start-maximized')) win.maximize();
+    win.show();
+  });
+  win.loadURL(url).catch(() => {
+    // Never log navigation URLs, titles, or page content.
+    if (!win.isDestroyed()) win.show();
+  });
+  // Match caption-symbol contrast to custom site themes as well as light/dark.
+  const contrast = setInterval(async () => {
+    if (win.isDestroyed() || !isChatGptUrl(win.webContents.getURL())) return;
+    try {
+      const color = await win.webContents.executeJavaScript('getComputedStyle(document.body).color');
+      if (/^rgba?\([\d\s.,]+\)$/.test(color) && !win.isDestroyed()) win.setTitleBarOverlay({ symbolColor: color });
+    } catch { }
+  }, 1500);
+  win.on('closed', () => clearInterval(contrast));
+  return win;
+}
+
+async function start() {
+  const config = readConfig();
+  if (path.resolve(profile).toLowerCase() === path.resolve(config.appProfileDir || '.').toLowerCase()) {
+    throw new Error('Native host profile must be separate from the Chromium profile.');
+  }
+  // Only the explicitly isolated fixture harness may intercept HTTPS locally.
+  fixturePath = option(process.argv, 'fixture');
+  if (fixturePath) {
+    const runs = path.join(sourceRoot, 'test-results', 'runs') + path.sep;
+    if (process.env.APP_MODE_HOST_FIXTURE !== '1' || !root.startsWith(runs)) throw new Error('Fixture requires an isolated test root.');
+  }
+  if (liveReview && root !== path.join(sourceRoot, 'test-results', 'live-review-profile', 'native-host')) {
+    throw new Error('Live review requires the dedicated development root.');
+  }
+  if (!app.requestSingleInstanceLock()) { app.quit(); return; }
+  app.on('second-instance', (_event, argv) => createWindow(argv));
+  await app.whenReady();
+  browserSession = session.defaultSession;
+  if (liveReview) {
+    // Install before any page is created, so review cannot report private
+    // session metadata to, or mutate windows through, the production server.
+    browserSession.webRequest.onBeforeRequest({ urls: ['http://127.0.0.1:17863/*'] }, (_details, callback) => callback({ cancel: true }));
+  }
+  // A local-network grant is needed only for the existing strict loopback
+  // server. All other permission prompts stay explicit and user-controlled.
+  browserSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const trusted = isTrustedPermission(contents.getURL(), details);
+    if (!trusted) { callback(false); return; }
+    if (permission === 'local-network-access') { callback(true); return; }
+    if (!['media', 'clipboard-read', 'notifications', 'fullscreen'].includes(permission)) { callback(false); return; }
+    dialog.showMessageBox(BrowserWindow.fromWebContents(contents), {
+      type: 'question', title: 'ChatGPT permission',
+      message: `Allow ChatGPT to use ${permission === 'media' ? 'your microphone or camera' : permission}?`,
+      buttons: ['Deny', 'Allow'], defaultId: 0, cancelId: 0,
+    }).then(result => {
+      const allowed = result.response === 1 && !contents.isDestroyed() && isTrustedPermission(contents.getURL(), details);
+      if (allowed) permissionGrants.set(`${contents.id}:${permission}`, true);
+      callback(allowed);
+    }, () => callback(false));
+  });
+  browserSession.setPermissionCheckHandler((contents, permission, origin, details) =>
+    Boolean(contents && isTrustedPermission(contents.getURL(), details, origin) &&
+      (permission === 'local-network-access' || permissionGrants.get(`${contents.id}:${permission}`))));
+  browserSession.on('will-download', (_event, item) => {
+    // Electron's native Save dialog requires the user to choose the destination;
+    // never silently write a server-supplied filename into a default directory.
+    item.setSaveDialogOptions({ title: 'Save ChatGPT download', defaultPath: path.basename(item.getFilename()) });
+  });
+  if (fixturePath) {
+    const html = fs.readFileSync(fixturePath, 'utf8');
+    browserSession.protocol.handle('https', request => new Response(isChatGptUrl(request.url) ? html : 'Blocked', {
+      status: isChatGptUrl(request.url) ? 200 : 403, headers: { 'content-type': 'text/html' },
+    }));
+  }
+  const firstWindow = createWindow(process.argv);
+  if (liveReview) require('./review.cjs').install(firstWindow, root, sourceRoot);
+}
+
+app.on('window-all-closed', () => app.quit());
+start().catch(() => { console.error('App Mode window host could not start. Check its installation and configuration.'); app.exit(1); });

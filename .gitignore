@@ -7,6 +7,8 @@
 /*.zip
 /package_build_*/
 /TaskbarLauncher/*.exe
+/TaskbarLauncher/bin/
+/TaskbarLauncher/obj/
 /INSTALL-COMPLETE.txt
 /*.lnk
 /shortcuts/

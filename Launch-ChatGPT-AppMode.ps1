@@ -23,7 +23,7 @@ function Ensure-TrayLauncherRunning {
     $existingTray = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
-            $_.CommandLine -like '*Start-ChatGPT-TrayLauncher.ps1*'
+            $_.CommandLine.IndexOf($TrayScript, [StringComparison]::OrdinalIgnoreCase) -ge 0
         } |
         Select-Object -First 1
 
@@ -51,6 +51,10 @@ Ensure-TrayLauncherRunning
 Ensure-TopMostServerRunning -AppRoot $AppRoot -LogPath $LogPath
 
 $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+if (Start-AppModeNativeHost -Config $config -AppRoot $AppRoot -NewSession:$NewSession -LaunchUrl $Url) {
+    Write-AppModeLog -LogPath $LogPath -Message 'Launched native header host.'
+    return
+}
 $chromiumExe = [string]$config.chromiumPortableExe
 $chromiumDirectExe = [string]$config.chromiumDirectExe
 $chromiumRoot = [string]$config.chromiumPortableRoot
@@ -62,14 +66,12 @@ if (-not (Test-Path $launchExe)) {
     throw "Chromium executable not found: $launchExe"
 }
 
-Disable-ChromiumProfileBadge -ChromiumRoot $chromiumRoot -LogPath $LogPath
 
 $argLine = ConvertTo-ArgLine -Config $config -Mode App -NewSession:$NewSession -LaunchUrl $Url
 Write-ChromiumPortableIni -IniPath $chromiumIni -AdditionalParameters $argLine
 
 Write-AppModeLog -LogPath $LogPath -Message "Wrote INI: $chromiumIni"
-Write-AppModeLog -LogPath $LogPath -Message "AdditionalParameters=$argLine"
 Write-AppModeLog -LogPath $LogPath -Message "Launching: $launchExe"
 
 Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe) -ArgumentList $argLine
-Set-ChromiumPortableWindowIdentity -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
+Set-ChromiumPortableWindowIdentity -Config $config -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath

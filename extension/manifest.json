@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT App Mode Overrides",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Local CSS and JS overrides for ChatGPT App Mode.",
   "content_scripts": [
     {

@@ -1,3 +1,42 @@
+. (Join-Path $PSScriptRoot 'AppMode.State.ps1')
+. (Join-Path $PSScriptRoot 'AppMode.Windows.ps1')
+
+function Start-AppModeNativeHost {
+    param($Config, [string]$AppRoot, [switch]$NewSession, [string]$LaunchUrl)
+    if ($Config.windowHost -eq 'chromium' -or $Config.useAppMode -eq $false) { return $false }
+    if ($Config.windowHost -and $Config.windowHost -notin @('electron', 'chromium')) { throw 'Unknown windowHost setting.' }
+    $hostExe = Join-Path $AppRoot 'node_modules\electron\dist\electron.exe'
+    $entry = Join-Path $AppRoot 'WindowHost\main.cjs'
+    if (-not (Test-Path -LiteralPath $hostExe) -or -not (Test-Path -LiteralPath $entry)) {
+        # Older portable packages remain usable without a new runtime.
+        Write-Warning 'Native header runtime is missing. Using Chromium title bar. Run Install-WindowHost.ps1 to install integrated controls.'
+        return $false
+    }
+    $profile = Join-Path $AppRoot 'Browser\AppModeHostProfile'
+    if ($Config.appProfileDir -and [IO.Path]::GetFullPath($profile).TrimEnd('\').Equals(
+        [IO.Path]::GetFullPath([string]$Config.appProfileDir).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Native host profile must be separate from the Chromium profile.'
+    }
+    $url = Get-AppLaunchUrl -Config $Config -NewSession:$NewSession -LaunchUrl $LaunchUrl
+    $arguments = @('"' + $entry + '"', '--app-mode-root="' + $AppRoot + '"',
+        '--user-data-dir="' + $profile + '"', '--url="' + $url + '"')
+    $arguments += @(Get-AppModeWindowArgs -Config $Config -NewSession:$NewSession)
+    $priorRunAsNode = $env:ELECTRON_RUN_AS_NODE
+    try {
+        Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+        $nativeProcess = Start-Process -FilePath $hostExe -WorkingDirectory $AppRoot -ArgumentList ($arguments -join ' ') -PassThru
+        # Detect immediate configuration/runtime failures, including launch from
+        # environments that otherwise hide the child process's error console.
+        if ($nativeProcess.WaitForExit(1500) -and $nativeProcess.ExitCode -ne 0) {
+            Write-Warning 'Native header host failed to start. Using Chromium title bar; reinstall with Install-WindowHost.ps1.'
+            return $false
+        }
+    } finally {
+        if ($null -ne $priorRunAsNode) { $env:ELECTRON_RUN_AS_NODE = $priorRunAsNode }
+    }
+    return $true
+}
+
 function ConvertTo-ArgLine {
     param(
         [Parameter(Mandatory)][object]$Config,
@@ -11,7 +50,7 @@ function ConvertTo-ArgLine {
     if ($Config.flags) {
         foreach ($flag in $Config.flags) {
             if (-not [string]::IsNullOrWhiteSpace([string]$flag)) {
-                if ($NewSession -and (Test-NewSessionSuppressedFlag -Flag ([string]$flag))) {
+                if (($NewSession -or $Config.restoreLastUrl -eq $false) -and (Test-NewSessionSuppressedFlag -Flag ([string]$flag))) {
                     continue
                 }
 
@@ -20,7 +59,7 @@ function ConvertTo-ArgLine {
         }
     }
 
-    if (-not $NewSession -and -not ($list -contains '--restore-last-session')) {
+    if (-not $NewSession -and $Config.restoreLastUrl -ne $false -and -not ($list -contains '--restore-last-session')) {
         $list.Add('--restore-last-session')
     }
 
@@ -49,14 +88,8 @@ function ConvertTo-ArgLine {
             $list.Add($url)
         }
 
-        if (-not $NewSession -and $Config.window.startMaximized -eq $true) {
-            $list.Add("--start-maximized")
-        }
-
-        if ($NewSession) {
-            foreach ($arg in Get-NewSessionWindowArgs) {
-                $list.Add($arg)
-            }
+        foreach ($arg in Get-AppModeWindowArgs -Config $Config -NewSession:$NewSession) {
+            $list.Add($arg)
         }
     }
 
@@ -98,6 +131,7 @@ function Get-NewSessionWindowArgs {
 function Get-AppRootFromConfig {
     param([Parameter(Mandatory)][object]$Config)
 
+    if ($Config.installRoot) { return [string]$Config.installRoot }
     if ($Config.extensionDir) {
         return Split-Path -Parent ([string]$Config.extensionDir)
     }
@@ -126,7 +160,7 @@ function Get-AppLaunchUrl {
         return $fallbackUrl
     }
 
-    if ($Config.restoreLastUrl -eq $false) {
+    if ($Config.restoreLastUrl -eq $false -or -not (Get-AppModePrivacy $Config).saveLastSession) {
         return $fallbackUrl
     }
 
@@ -144,7 +178,10 @@ function Get-AppLaunchUrl {
         $lastSession = Get-Content -Path $lastSessionPath -Raw | ConvertFrom-Json
         $lastUrl = [string]$lastSession.url
 
-        if (Test-RestorableChatGptUrl -Url $lastUrl) {
+        $savedAt = [DateTimeOffset]::MinValue
+        if ((Test-RestorableChatGptUrl -Url $lastUrl) -and
+            [DateTimeOffset]::TryParse([string]$lastSession.savedAt, [ref]$savedAt) -and
+            $savedAt -gt [DateTimeOffset]::UtcNow.AddDays(-(Get-AppModePrivacy $Config).retentionDays)) {
             return $lastUrl
         }
     }
@@ -158,6 +195,10 @@ function Get-AppLaunchUrl {
 function Test-RestorableChatGptUrl {
     param([Parameter(Mandatory)][string]$Url)
 
+    # Accepted URLs become native command-line arguments; reject raw quoting,
+    # whitespace, or control characters before URI normalization can hide them.
+    if ($Url -match '\s' -or $Url.IndexOfAny([char[]]@([char]34, [char]39, [char]96)) -ge 0) { return $false }
+
     try {
         $uri = [System.Uri]$Url
     }
@@ -165,7 +206,8 @@ function Test-RestorableChatGptUrl {
         return $false
     }
 
-    if ($uri.Scheme -ne 'https' -or ($uri.Host -ne 'chatgpt.com' -and $uri.Host -ne 'chat.openai.com')) {
+    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or
+        ($uri.Host -ne 'chatgpt.com' -and $uri.Host -ne 'chat.openai.com')) {
         return $false
     }
 
@@ -173,8 +215,8 @@ function Test-RestorableChatGptUrl {
     return (
         $path -eq '/' -or
         $path -match '^/c/[A-Za-z0-9-]+/?$' -or
-        $path -match '^/g/[^/]+/?$' -or
-        $path -match '^/g/[^/]+/c/[A-Za-z0-9-]+/?$'
+        $path -match '^/g/[A-Za-z0-9_-]+/?$' -or
+        $path -match '^/g/[A-Za-z0-9_-]+/c/[A-Za-z0-9-]+/?$'
     )
 }
 
@@ -202,73 +244,13 @@ function Write-AppModeLog {
     "[$stamp] $Message" | Add-Content -Path $LogPath -Encoding UTF8
 }
 
-function Disable-ChromiumProfileBadge {
-    param(
-        [Parameter(Mandatory)][string]$ChromiumRoot,
-        [string]$LogPath
-    )
-
-    $profileRoot = Join-Path $ChromiumRoot 'Data\profile'
-    $localStatePath = Join-Path $profileRoot 'Local State'
-    $preferencesPath = Join-Path $profileRoot 'Default\Preferences'
-
-    try {
-        if (Test-Path $localStatePath) {
-            $localState = Get-Content -Path $localStatePath -Raw | ConvertFrom-Json
-
-            if ($localState.profile -and $localState.profile.info_cache) {
-                foreach ($entry in $localState.profile.info_cache.PSObject.Properties) {
-                    $profile = $entry.Value
-                    $profile | Add-Member -NotePropertyName avatar_icon -NotePropertyValue 'chrome://theme/IDR_PROFILE_AVATAR_0' -Force
-                    $profile | Add-Member -NotePropertyName is_using_gaia_picture -NotePropertyValue $false -Force
-                    $profile | Add-Member -NotePropertyName gaia_name -NotePropertyValue '' -Force
-                    $profile | Add-Member -NotePropertyName user_name -NotePropertyValue '' -Force
-                    $profile | Add-Member -NotePropertyName background_apps -NotePropertyValue $false -Force
-                }
-
-                $localState | ConvertTo-Json -Depth 100 | Set-Content -Path $localStatePath -Encoding UTF8
-            }
-        }
-
-        if (Test-Path $preferencesPath) {
-            $preferences = Get-Content -Path $preferencesPath -Raw | ConvertFrom-Json
-
-            if ($preferences.profile) {
-                $preferences.profile | Add-Member -NotePropertyName avatar_index -NotePropertyValue 0 -Force
-                $preferences.profile | Add-Member -NotePropertyName name -NotePropertyValue 'ChatGPT' -Force
-                $preferences.profile | Add-Member -NotePropertyName using_default_avatar -NotePropertyValue $true -Force
-                $preferences.profile | Add-Member -NotePropertyName using_gaia_avatar -NotePropertyValue $false -Force
-
-                $preferences | ConvertTo-Json -Depth 100 | Set-Content -Path $preferencesPath -Encoding UTF8
-            }
-        }
-
-        $avatarFiles = @(
-            (Join-Path $profileRoot 'Default\Google Profile Picture.png'),
-            (Join-Path $profileRoot 'Default\Accounts\Avatar Images')
-        )
-
-        foreach ($avatarPath in $avatarFiles) {
-            if (Test-Path $avatarPath) {
-                Remove-Item -LiteralPath $avatarPath -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        if ($LogPath) {
-            Write-AppModeLog -LogPath $LogPath -Message 'Disabled Chromium profile badge metadata.'
-        }
-    }
-    catch {
-        if ($LogPath) {
-            Write-AppModeLog -LogPath $LogPath -Message "Could not disable Chromium profile badge metadata: $($_.Exception.Message)"
-        }
-    }
-}
+# Profile metadata is owned by Chromium; launchers never rewrite it.
 
 function Ensure-TopMostServerRunning {
     param(
         [Parameter(Mandatory)][string]$AppRoot,
-        [string]$LogPath
+        [string]$LogPath,
+        [switch]$ForceRestart
     )
 
     $serverScript = Join-Path $AppRoot 'Start-ChatGPT-TopMostServer.ps1'
@@ -284,7 +266,7 @@ function Ensure-TopMostServerRunning {
     $existingServer = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
-            $_.CommandLine -like '*Start-ChatGPT-TopMostServer.ps1*'
+            $_.CommandLine.IndexOf($serverScript, [StringComparison]::OrdinalIgnoreCase) -ge 0
         } |
         Select-Object -First 1
 
@@ -294,7 +276,10 @@ function Ensure-TopMostServerRunning {
             $serverProcess = Get-Process -Id $existingServer.ProcessId -ErrorAction Stop
             $serverStartTime = $serverProcess.StartTime
 
-            if ($serverStartTime -ge $serverWriteTime) {
+            $dependencyWriteTime = (Get-Item (Join-Path $AppRoot 'tools\AppMode.Windows.ps1')).LastWriteTime
+            $helperWriteTime = (Get-Item (Join-Path $AppRoot 'tools\AppMode.State.ps1')).LastWriteTime
+            $sharedWriteTime = (Get-Item (Join-Path $AppRoot 'tools\ChatGPT-AppMode.Helpers.ps1')).LastWriteTime
+            if (-not $ForceRestart -and $serverStartTime -ge $serverWriteTime -and $serverStartTime -ge $dependencyWriteTime -and $serverStartTime -ge $helperWriteTime -and $serverStartTime -ge $sharedWriteTime) {
                 return
             }
 
@@ -513,38 +498,11 @@ function Get-ChromiumPortableWindow {
 
     Initialize-WindowIdentityApi
 
-    $normalizedRoot = $ChromiumRoot.TrimEnd('\', '/')
-    $processInfoById = @{}
-
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
-        $processInfoById[[int]$_.ProcessId] = $_
-    }
-
-    $processes = Get-Process -ErrorAction SilentlyContinue | Where-Object {
-        try {
-            $cimInfo = $processInfoById[$_.Id]
-            $candidatePaths = @(
-                $_.Path,
-                $cimInfo.ExecutablePath,
-                $cimInfo.CommandLine
-            ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
-
-            foreach ($candidatePath in $candidatePaths) {
-                if ([string]$candidatePath -like "$normalizedRoot*") {
-                    return $true
-                }
-
-                if ([string]$candidatePath -like "*$normalizedRoot*") {
-                    return $true
-                }
-            }
-
-            return $false
-        }
-        catch {
-            $false
-        }
-    }
+    $normalizedRoot = [IO.Path]::GetFullPath($ChromiumRoot).TrimEnd('\', '/') + '\'
+    $processes = @(Get-Process -Name chrome -ErrorAction SilentlyContinue | Where-Object {
+        try { $_.Path -and $_.Path.StartsWith($normalizedRoot, [StringComparison]::OrdinalIgnoreCase) }
+        catch { $false }
+    })
 
     foreach ($process in $processes) {
         $handles = [ChatGptAppModeWindowIdentity]::GetVisibleTopLevelWindowsForProcessId($process.Id)
@@ -568,7 +526,8 @@ function Set-ChromiumPortableWindowIdentity {
         [string]$AppUserModelId = "OpenAI.ChatGPT.AppMode",
         [string]$IconPath,
         [int]$TimeoutSeconds = 15,
-        [string]$LogPath
+        [string]$LogPath,
+        $Config
     )
 
     Initialize-WindowIdentityApi
@@ -578,7 +537,11 @@ function Set-ChromiumPortableWindowIdentity {
 
     while ((Get-Date) -lt $deadline -and $windows.Count -eq 0) {
         Start-Sleep -Milliseconds 250
-        $windows = @(Get-ChromiumPortableWindow -ChromiumRoot $ChromiumRoot)
+        if ($Config) {
+            $windows = @(Get-AppModeOwnedWindows $Config | ForEach-Object {
+                [pscustomobject]@{ Id=$_.processId; MainWindowHandle=[IntPtr]$_.handle }
+            })
+        } else { $windows = @(Get-ChromiumPortableWindow -ChromiumRoot $ChromiumRoot) }
     }
 
     if ($windows.Count -eq 0) {

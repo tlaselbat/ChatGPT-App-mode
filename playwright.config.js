@@ -10,14 +10,14 @@ module.exports = defineConfig({
     toHaveScreenshot: {
       animations: 'disabled',
       caret: 'hide',
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixels: 50,
     },
   },
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
-  outputDir: 'test-results',
+  outputDir: 'test-results/runs',
   use: {
     headless: false,
     screenshot: 'only-on-failure',

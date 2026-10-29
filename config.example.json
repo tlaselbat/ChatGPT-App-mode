@@ -1,5 +1,6 @@
 {
   "appName": "ChatGPT App Mode",
+  "installRoot": "<APP_ROOT>",
   "url": "https://chatgpt.com/",
   "chromiumPortableExe": "<APP_ROOT>\\Browser\\ChromiumPortable\\ChromiumPortable.exe",
   "chromiumDirectExe": "<APP_ROOT>\\Browser\\ChromiumPortable\\App\\Chromium\\chrome.exe",
@@ -10,6 +11,19 @@
   "restoreLastUrl": true,
   "enableLocalExtension": true,
   "useAppMode": true,
+  "windowHost": "electron",
+  "rememberWindowPlacement": true,
+  "runAtStartup": false,
+  "pinnedWindow": {
+    "fadeWhenInactive": true,
+    "inactiveOpacityPercent": 30
+  },
+  "privacy": {
+    "saveLastSession": true,
+    "trackRecentChats": true,
+    "showChatTitles": true,
+    "retentionDays": 30
+  },
   "window": {
     "width": 1280,
     "height": 900,

@@ -41,42 +41,142 @@ body.faux-chatgpt-app-mode {
   background: rgba(120, 120, 120, 0.48);
 }
 
+/* Scope native-control styling to the header that actually hosts our toolbar.
+   If ChatGPT changes its header structure, conversation/menu buttons are untouched. */
+body.faux-chatgpt-app-mode {
+  /* Custom themes may recolor the app without updating ChatGPT's tokens.
+     Inherit the rendered text color and let the actual app surface show through. */
+  --app-mode-control-color: inherit;
+  --app-mode-control-border: color-mix(in srgb, currentColor 24%, transparent);
+  --app-mode-control-bg: color-mix(in srgb, currentColor 6%, transparent);
+  --app-mode-control-hover: color-mix(in srgb, currentColor 12%, transparent);
+  --app-mode-active-color: light-dark(#08755e, #7edac0);
+  --app-mode-active-bg: light-dark(#e0f3ed, #203e36);
+  --app-mode-warning-color: light-dark(#9a3412, #f5b98b);
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) {
+  align-items: center;
+  column-gap: 6px;
+  min-height: 48px;
+  padding-inline: 12px;
+  /* Follow the rendered theme even when custom surface tokens are stale. */
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button,
 .chatgpt-app-mode-pin-button {
-  position: fixed;
-  top: 96px;
-  right: 22px;
-  z-index: 2147483647;
-  width: 46px;
-  height: 46px;
+  box-sizing: border-box;
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid var(--app-mode-control-border);
+  border-radius: 8px;
+  color: var(--app-mode-control-color);
+  background: var(--app-mode-control-bg);
+  box-shadow: none;
+  vertical-align: middle;
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button:hover {
+  background: var(--app-mode-control-hover);
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button:focus-visible {
+  outline: 2px solid var(--app-mode-control-color);
+  outline-offset: 2px;
+}
+
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.chatgpt-app-mode-pin-button {
+  /* The site's header can inherit pointer-events:none or be a window drag
+     region. This injected control must remain an explicit interactive island. */
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  position: relative;
+  flex: 0 0 32px;
+  width: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(120, 120, 120, 0.35);
-  border-radius: 10px;
-  color: currentColor;
-  background: color-mix(in srgb, canvas 82%, transparent);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
   cursor: pointer;
 }
 
+.chatgpt-app-mode-toolbar {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-inline-start: auto;
+  padding-inline-start: 0;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+/* Keep the pin beside existing actions; use auto spacing only for a bare header. */
+body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(button:not(.chatgpt-app-mode-pin-button)) .chatgpt-app-mode-toolbar {
+  margin-inline-start: 0;
+}
+
+#chatgpt-app-mode-toolbar-fallback {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 48px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
+}
+
+.chatgpt-app-mode-pin-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .chatgpt-app-mode-pin-button svg {
-  width: 27px;
-  height: 27px;
+  width: 20px;
+  height: 20px;
   fill: currentColor;
 }
 
 .chatgpt-app-mode-pin-button:hover {
-  background: color-mix(in srgb, canvas 70%, currentColor 8%);
+  background: var(--app-mode-control-hover);
 }
 
-.chatgpt-app-mode-pin-button.is-active {
-  color: #0f7b65;
-  border-color: rgba(15, 123, 101, 0.55);
-  background: rgba(15, 123, 101, 0.12);
+body.faux-chatgpt-app-mode .chatgpt-app-mode-pin-button.is-active {
+  color: var(--app-mode-active-color);
+  border-color: var(--app-mode-active-color);
+  background: var(--app-mode-active-bg);
 }
 
-.chatgpt-app-mode-pin-button.is-unavailable {
-  color: #9a3412;
-  border-color: rgba(154, 52, 18, 0.5);
+body.faux-chatgpt-app-mode .chatgpt-app-mode-pin-button.is-unavailable {
+  color: var(--app-mode-warning-color);
+  border-color: var(--app-mode-warning-color);
 }
 
 .chatgpt-app-mode-pin-button:disabled {
