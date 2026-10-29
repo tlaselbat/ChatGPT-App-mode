@@ -1,5 +1,20 @@
 const fs = require('node:fs');
 const path = require('node:path');
+
+function isTrustedReviewOrigin(currentUrl) {
+  try {
+    const url = new URL(currentUrl);
+    return url.protocol === 'https:' && url.hostname === 'chatgpt.com' &&
+      !url.port && !url.username && !url.password;
+  } catch { return false; }
+}
+
+function captureMaskHeight(zoomFactor) {
+  // capturePage's 64 DIP clip reaches farther into CSS pixels below 100% zoom.
+  // Mask a conservative CSS-height region before it is rasterized.
+  return Math.max(64, 64 / (Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1));
+}
+
 async function run(win, request, sourceRoot, outputRoot) {
   if (request.action === 'reload') { win.webContents.reload(); return {status:'review-home-reloading'}; }
   if (request.action === 'sidebar') {
@@ -11,13 +26,14 @@ async function run(win, request, sourceRoot, outputRoot) {
     return {status:clicked?'review-sidebar-toggled':'sidebar-control-unavailable'};
   }
   if (request.action === 'open-conversation') {
+    if (!isTrustedReviewOrigin(win.webContents.getURL())) return {status:'review-navigation-origin-rejected'};
     // Follow the first plain /c/<id> link already rendered on the page so the
     // reviewer can measure the conversation header. The target is never read.
     const opened=await win.webContents.executeJavaScript(`(() => {
       const link=[...document.querySelectorAll('a[href]')].find(el=>{
-        let pathname; try { pathname=new URL(el.href).pathname; } catch { return false; }
+        let url; try { url=new URL(el.href); } catch { return false; }
         const r=el.getBoundingClientRect();
-        return /^\/c\/[^/]+$/.test(pathname)&&r.width>0&&r.height>0&&!el.closest('[aria-hidden="true"],[inert]');
+        return url.origin==='https://chatgpt.com'&&/^\/c\/[^/]+$/.test(url.pathname)&&r.width>0&&r.height>0&&!el.closest('[aria-hidden="true"],[inert]');
       });
       if(link) { link.click(); return 'opened'; }
       // The list only renders while the sidebar is open. Press the leftmost
@@ -31,11 +47,12 @@ async function run(win, request, sourceRoot, outputRoot) {
     return {status:{opened:'review-conversation-opening','sidebar-opening':'review-sidebar-opening'}[opened]||'conversation-link-unavailable'};
   }
   if (request.action === 'home') {
+    if (!isTrustedReviewOrigin(win.webContents.getURL())) return {status:'review-navigation-origin-rejected'};
     const opened=await win.webContents.executeJavaScript(`(() => {
       const link=[...document.querySelectorAll('a[href]')].find(el=>{
-        let pathname; try { pathname=new URL(el.href).pathname; } catch { return false; }
+        let url; try { url=new URL(el.href); } catch { return false; }
         const r=el.getBoundingClientRect();
-        return /^\/c\//.test(pathname)===false&&r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
+        return url.origin==='https://chatgpt.com'&&/^\/c\//.test(url.pathname)===false&&r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
       });
       if(!link) return false; link.click(); return true;
     })()`);
@@ -60,17 +77,24 @@ async function run(win, request, sourceRoot, outputRoot) {
     return {status:'review-source-reloading'};
   }
   if (request.action === 'capture') {
+    const maskHeight = captureMaskHeight(win.webContents.getZoomFactor());
     await win.webContents.executeJavaScript(`(() => {
       const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
       while(walker.nextNode()) {
         const node=walker.currentNode,parent=node.parentElement;
         if(!parent || parent.closest('svg,script,style')) continue;
         const box=parent.getBoundingClientRect();
-        if(box.bottom>0 && box.top<64 && node.nodeValue.trim() && !/^(Chat|Work|Log in|Sign up)$/.test(node.nodeValue.trim())) parent.setAttribute('data-review-mask-text','');
+        if(box.bottom>0 && box.top<${maskHeight} && node.nodeValue.trim() && !/^(Chat|Work|Log in|Sign up)$/.test(node.nodeValue.trim())) parent.setAttribute('data-review-mask-text','');
       }
     })()`);
-    const css = await win.webContents.insertCSS('[data-review-mask-text]{color:transparent!important;text-shadow:none!important}img,video,canvas{visibility:hidden!important}');
+    // The screenshot is a diagnostic artifact. Hide every image-derived or SVG
+    // glyph in its clip because text may be baked into those visuals.
+    const css = await win.webContents.insertCSS('[data-review-mask-text]{color:transparent!important;text-shadow:none!important}svg,svg *{fill:transparent!important;stroke:transparent!important;color:transparent!important}img,video,canvas{visibility:hidden!important}*{background-image:none!important}', { cssOrigin: 'user' });
     try {
+      // Let the renderer commit the masking rule before reading compositor
+      // pixels. This also keeps offscreen review capture from sampling a
+      // pre-injection frame.
+      await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
       const bounds = win.getContentBounds();
       const image = await win.webContents.capturePage({x:0,y:0,width:bounds.width,height:64});
       fs.writeFileSync(path.join(outputRoot,'header.png'),image.toPNG());
@@ -109,4 +133,4 @@ async function run(win, request, sourceRoot, outputRoot) {
       })};
   })()`);
 }
-module.exports={run};
+module.exports={run,isTrustedReviewOrigin,captureMaskHeight};

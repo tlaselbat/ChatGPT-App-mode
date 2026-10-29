@@ -16,6 +16,9 @@
 
 # Native header host limitations
 
+- The native overlay is 48 device-independent pixels high and scales its CSS header cap with page zoom. Visible site top rows are normalized to that cap; selectors may need adjustment after site changes. Site tooltips intersecting this compact header are suppressed to avoid obscuring its controls.
+- The installer no longer writes retired Chromium `flags`. Existing custom/legacy keys are preserved during configuration merging. `chromiumPortableRoot` remains a compatibility name used internally by shared reset guards; the Electron runtime boundary is `node_modules/electron`. It is not a supported host selection setting.
+
 - The native host requires Node.js 22.12+ for installation and its pinned Electron runtime; it is the only supported host. A missing runtime or an immediate nonzero startup exit warns and aborts the launch; failures after the 1.5-second startup check need a manual reinstall with `Install-WindowHost.ps1`.
 - Sign in separately in the native host. Its dedicated profile does not share sessions with any other browser. `Reset-AppMode-HostProfile.ps1` deletes that profile only.
 - Offline native-window tests cover caption buttons, dragging, border resizing, pinning through the real isolated loopback server, narrow layout, navigation and sandbox boundaries. They do not establish actual ChatGPT authentication, every third-party sign-in path, voice/video, or authenticated site layout. Those remain manual live checks.

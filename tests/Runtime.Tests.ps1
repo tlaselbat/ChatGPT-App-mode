@@ -58,12 +58,18 @@ Assert-Rejected { Assert-AppModeResetTarget $config $Scratch } 'Nested junction 
 Remove-Item -LiteralPath $nestedJunction -Force
 function Get-CimInstance { return [pscustomobject]@{ExecutablePath=(Join-Path $config.chromiumPortableRoot 'dist\electron.exe'); Name='electron.exe'; CommandLine='synthetic'} }
 Assert-Rejected { Assert-AppModeBrowserStopped $config } 'Running host was accepted.'
+function Get-CimInstance { return [pscustomobject]@{ExecutablePath='C:\Synthetic\electron.exe'; CommandLine=('electron.exe --user-data-dir="' + $config.appProfileDir + '-review"')} }
+Assert-AppModeBrowserStopped $config
+function Get-CimInstance { return [pscustomobject]@{ExecutablePath='C:\Synthetic\electron.exe'; CommandLine=('electron.exe "--user-data-dir=' + $config.appProfileDir + '"')} }
+Assert-Rejected { Assert-AppModeBrowserStopped $config } 'Exact profile in an external runtime was accepted.'
 Remove-Item Function:\Get-CimInstance
 
 $windowArgs = @(Get-AppModeWindowArgs -Config $config)
 Assert ($windowArgs[0] -eq '--window-size=1100,700') 'Configured dimensions missing.'
 foreach ($url in @('https://chatgpt.com.evil.test/c/synthetic', 'https://chatgpt.com:444/c/synthetic', 'https://x@chatgpt.com/c/synthetic', 'https://chatgpt.com/c/synthetic?token=synthetic', "'https://chatgpt.com/c/synthetic'", 'https://chatgpt.com/g/synthetic" --user-data-dir=synthetic')) {
     Assert (-not (Test-RestorableChatGptUrl $url)) 'Unsafe restore URL accepted.'
+    $unsafeConfig = [pscustomobject]@{url=$url; restoreLastUrl=$false}
+    Assert ((Get-AppLaunchUrl -Config $unsafeConfig -NewSession) -eq 'https://chatgpt.com/') 'Unsafe configured URL reached native argv.'
 }
 $area = [pscustomobject]@{Left=-1920; Top=0; Width=1920; Height=1080; Right=0; Bottom=1080}
 $bounds = Get-SafeWindowBounds -Bounds ([pscustomobject]@{x=99999;y=-99999;width=3000;height=1600}) -WorkingArea $area
@@ -100,7 +106,7 @@ $refs = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETF
 $launcherDir = Join-Path $Scratch 'TaskbarLauncher'
 New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
 $exe = Join-Path $launcherDir 'launcher.exe'
-& $compiler /nologo /target:winexe /platform:x64 "/out:$exe" "/reference:$refs\PresentationFramework.dll" "/reference:$refs\PresentationCore.dll" "/reference:$refs\WindowsBase.dll" "/reference:$refs\System.Xaml.dll" (Join-Path $root 'TaskbarLauncher\Program.cs')
+& (Join-Path $root 'Build-TaskbarLauncher.ps1') -SkipRegistration -OutputPath $exe
 Assert ($LASTEXITCODE -eq 0) 'Taskbar build failed.'
 $assembly = [Reflection.Assembly]::LoadFile($exe)
 $program = $assembly.GetType('ChatGPTTaskbarLauncher.Program')
@@ -186,6 +192,10 @@ function Get-CimInstance { return $script:syntheticProcesses }
 $owned = @(Get-AppModeOwnedWindows $config)
 Assert ($owned.Count -eq 2 -and $owned[0].processId -eq 1001 -and $owned[1].processId -eq 1001) 'Ownership accepted another profile, executable boundary, or renderer.'
 Assert (-not (Get-AppModeTargetWindow -Config $config -Handle 100101 -ProcessId 7777)) 'Stale PID was accepted.'
+[AppModeNative]::Foreground = 999999
+Assert (-not (Get-AppModeTargetWindow -Config $config)) 'Background target leaked into foreground-only controls.'
+Assert ((Get-AppModeTargetWindow -Config $config -AllowBackground).handle -eq 100101) 'Mini launcher did not reuse a background owned window.'
+[AppModeNative]::Foreground = 100101
 $serverAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'Start-ChatGPT-TopMostServer.ps1'), [ref]$null, [ref]$null)
 $serverAst.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]}, $false) | ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 $ConfigPath = Join-Path $Scratch 'config.json'

@@ -5,7 +5,7 @@ $AppRoot = $PSScriptRoot
 $config = Get-Content -LiteralPath (Join-Path $AppRoot 'config.json') -Raw | ConvertFrom-Json
 New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot 'logs') | Out-Null
 Ensure-TopMostServerRunning -AppRoot $AppRoot
-$target = Get-AppModeTargetWindow $config
+$target = Get-AppModeTargetWindow $config -AllowBackground
 if (-not $target) {
     # Create a dedicated window rather than resizing an arbitrary browser or review profile.
     $before = @(Get-AppModeOwnedWindows $config | ForEach-Object { $_.handle })

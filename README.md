@@ -41,6 +41,7 @@ npm ci
 npx playwright install chromium
 npm test
 npm run test:runtime
+npm run test:host
 ```
 
 The browser tests open Playwright's Chromium with disposable profiles under ignored `test-results/runs/` (set `APP_MODE_CHROMIUM_EXE` to pin a different browser). They route `https://chatgpt.com` to a synthetic fixture. Control-server calls are mocked; a separate integration check uses an isolated server on a temporary port to verify allowed/rejected origins. No production host profile, authenticated page, private conversation, or live ChatGPT request is used.
@@ -79,6 +80,8 @@ For native-host review against the real site, run `node tools/live-host-review.c
 Build the taskbar launcher with `Build-TaskbarLauncher.ps1` using the .NET Framework 4.8 compiler/reference assemblies. `-SkipRegistration` builds without refreshing the Windows jump list. The project file targets the same framework. No runtime binaries are tracked in Git.
 
 ## Project notes
+
+Use `npm run test:all` as the aggregate offline verification gate. `npm test` alone covers Chromium fixtures only. See [source release packaging](docs/RELEASING.md) for the committed-source ZIP workflow.
 
 - [Fresh install instructions](docs/FRESH-INSTALL-INSTRUCTIONS.txt)
 - [Architecture](docs/ARCHITECTURE.md)

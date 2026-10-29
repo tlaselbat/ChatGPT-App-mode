@@ -243,11 +243,15 @@ function Get-AppModeOwnedWindows {
 }
 
 function Get-AppModeTargetWindow {
-    param($Config, [long]$Handle = 0, [int]$ProcessId = 0)
+    param($Config, [long]$Handle = 0, [int]$ProcessId = 0, [switch]$AllowBackground)
     Initialize-AppModeNativeApi
     $windows = @(Get-AppModeOwnedWindows $Config)
     $foreground = [AppModeNative]::GetForegroundWindow().ToInt64()
-    if (-not $Handle) { return $windows | Where-Object { $_.handle -eq $foreground } | Select-Object -First 1 }
+    if (-not $Handle) {
+        $target = $windows | Where-Object { $_.handle -eq $foreground } | Select-Object -First 1
+        if (-not $target -and $AllowBackground) { $target = $windows | Select-Object -First 1 }
+        return $target
+    }
     # PID revalidation prevents reusing a stale HWND after its original process exits.
     return $windows | Where-Object { $_.handle -eq $Handle -and $_.processId -eq $ProcessId } | Select-Object -First 1
 }

@@ -5,7 +5,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const scratchRoot = path.join(root, 'test-results', 'runtime-tests');
+const scratchRoot = path.join(root, 'test-results', 'runs', 'runtime-tests');
 fs.mkdirSync(scratchRoot, { recursive: true });
 const scratch = fs.mkdtempSync(path.join(scratchRoot, 'run-'));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,8 +36,19 @@ test('isolated server rejects untrusted traffic, bounds reads and preserves allo
   const appRoot = path.join(scratch, 'server'); fs.mkdirSync(appRoot, { recursive: true });
   const config = { chromiumPortableRoot: path.join(appRoot, 'Browser', 'ChromiumPortable'), appProfileDir: path.join(appRoot, 'Browser', 'Profile'), privacy: { retentionDays: 7, showChatTitles: false, trackRecentChats: true, saveLastSession: true }, rememberWindowPlacement: false };
   fs.writeFileSync(path.join(appRoot, 'config.json'), JSON.stringify(config));
-  const server = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'Start-ChatGPT-TopMostServer.ps1'), '-AppRoot', appRoot, '-Port', String(port)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  let diagnostics = ''; server.stderr.on('data', data => diagnostics += data);
+  let diagnostics = '';
+  const startServer = () => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'Start-ChatGPT-TopMostServer.ps1'), '-AppRoot', appRoot, '-Port', String(port)], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stderr.on('data', data => diagnostics += data);
+    return child;
+  };
+  let server = startServer();
+  let mutexHolder;
+  const stop = async child => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    child.kill();
+    await new Promise(resolve => child.once('exit', resolve));
+  };
   function raw(request, end = false) {
     return new Promise((resolve, reject) => {
       const socket = net.connect(port, '127.0.0.1'); let data = '';
@@ -59,6 +70,29 @@ test('isolated server rejects untrusted traffic, bounds reads and preserves allo
       try { const response = await request(); assert.match(response, /200 Response/); ready = true; break; } catch { await delay(100); }
     }
     assert.ok(ready, diagnostics || 'Server did not start');
+    // Keep the named object alive across termination, reproducing both an
+    // abandoned owner and an existing object that is not newly created.
+    const holderScript = path.join(appRoot, 'hold-mutex.ps1');
+    const marker = path.join(appRoot, 'mutex-ready');
+    fs.writeFileSync(holderScript, `param($Name, $Marker)\n$m = [Threading.Mutex]::OpenExisting($Name)\ntry { [IO.File]::WriteAllText($Marker, 'ready'); Start-Sleep -Seconds 40 } finally { $m.Dispose() }`);
+    mutexHolder = spawn('powershell.exe', ['-NoProfile', '-File', holderScript, '-Name', `Local\\ChatGPTAppModeTopMostServer-${port}`, '-Marker', marker], { windowsHide: true, stdio: 'ignore' });
+    for (let i = 0; i < 50 && !fs.existsSync(marker); ++i) await delay(100);
+    assert.ok(fs.existsSync(marker), 'Mutex retention helper did not start');
+    const duplicate = startServer();
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { duplicate.kill(); reject(Error('Duplicate server did not exit')); }, 5000);
+      duplicate.once('exit', code => { clearTimeout(timeout); assert.equal(code, 0); resolve(); });
+    });
+    assert.match(await request(), /200 Response/);
+    await stop(server);
+    server = startServer();
+    ready = false;
+    for (let i = 0; i < 100; ++i) {
+      if (server.exitCode !== null) throw Error(diagnostics || 'Replacement server exited');
+      try { assert.match(await request(), /200 Response/); ready = true; break; } catch { await delay(100); }
+    }
+    assert.ok(ready, 'Replacement server failed to acquire abandoned mutex');
+    await stop(mutexHolder);
     for (const origin of ['https://chatgpt.com', 'https://chat.openai.com']) {
       const response = await request({ origin });
       assert.match(response, /200 Response/); assert.ok(response.includes(`Access-Control-Allow-Origin: ${origin}\r\n`));
@@ -95,7 +129,7 @@ test('isolated server rejects untrusted traffic, bounds reads and preserves allo
     const log = fs.readFileSync(path.join(appRoot, 'logs', 'topmost-server.log'), 'utf8');
     assert.ok(!log.includes('synthetic-server-id') && !log.includes('Synthetic'));
   } finally {
-    server.kill();
-    await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve); });
+    await stop(server);
+    await stop(mutexHolder);
   }
 });

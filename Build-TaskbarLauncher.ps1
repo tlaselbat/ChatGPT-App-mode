@@ -1,10 +1,10 @@
-param([switch]$SkipRegistration)
+param([switch]$SkipRegistration, [string]$OutputPath)
 $ErrorActionPreference = 'Stop'
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $ReferenceRoot = "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8"
-$OutputPath = Join-Path $AppRoot 'TaskbarLauncher\ChatGPTTaskbarLauncher.exe'
+if (-not $OutputPath) { $OutputPath = Join-Path $AppRoot 'TaskbarLauncher\ChatGPTTaskbarLauncher.exe' }
 $SourcePath = Join-Path $AppRoot 'TaskbarLauncher\Program.cs'
 $IconPath = Join-Path $AppRoot 'assets\OpenAI-white.ico'
 

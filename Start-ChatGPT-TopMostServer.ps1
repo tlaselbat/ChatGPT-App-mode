@@ -212,9 +212,13 @@ function Handle-Request {
     } finally { $Client.Close() }
 }
 
-$createdNew = $false
-$mutex = [Threading.Mutex]::new($true, "Local\ChatGPTAppModeTopMostServer-$Port", [ref]$createdNew)
-if (-not $createdNew) { $mutex.Dispose(); return }
+$mutex = [Threading.Mutex]::new($false, "Local\ChatGPTAppModeTopMostServer-$Port")
+try {
+    $acquired = $false
+    try { $acquired = $mutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $acquired = $true }
+    if (-not $acquired) { $mutex.Dispose(); return }
+} catch { $mutex.Dispose(); throw }
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
 $opacityWindows = @()
 $opacityConfig = $null

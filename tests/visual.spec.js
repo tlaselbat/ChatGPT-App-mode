@@ -7,6 +7,7 @@ const http = require('node:http');
 
 const root = path.resolve(__dirname, '..');
 const extensionPath = path.join(root, 'extension');
+const headerLayoutScript = fs.readFileSync(path.join(root, 'WindowHost', 'header.js'), 'utf8');
 const profilePath = path.join(root, 'test-results', 'runs', 'browser-profile');
 const fixtureProfile = testId => `${profilePath}-${testId.replace(/[^a-z0-9]/gi, '').slice(-24)}`;
 const configuredChrome = process.env.APP_MODE_CHROMIUM_EXE;
@@ -65,6 +66,123 @@ const fixture = `<!doctype html>
 <div class="message user">Can you help me organize a visual review?</div>
 <div class="message">Here is a clean offline fixture for checking layout, narrow-window behavior, and extension controls. No private conversation data is included.</div>
 <div class="composer">Message ChatGPT</div></section></main></div></body></html>`;
+
+test('header layout ignores overlays, reconciles changed branches, and follows scrolling strips', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/header-layout-fixture');
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+
+  await page.evaluate(() => {
+    const hidden = document.createElement('div');
+    hidden.id = 'hidden-tabs';
+    hidden.setAttribute('role', 'tablist');
+    hidden.style.visibility = 'hidden';
+    hidden.innerHTML = '<button aria-pressed="true">One</button><button aria-pressed="false">Two</button>';
+    document.querySelector('header').prepend(hidden);
+  });
+  await expect(page.locator('#hidden-tabs')).not.toHaveAttribute('data-app-mode-header-tabs', '');
+
+  await page.evaluate(() => {
+    const header = document.querySelector('header');
+    const oldBranch = document.createElement('div');
+    oldBranch.id = 'old-mode-branch';
+    oldBranch.innerHTML = '<div id="old-tabs" role="tablist"><button aria-pressed="true">One</button><button aria-pressed="false">Two</button></div>';
+    header.prepend(oldBranch);
+  });
+  await expect(page.locator('#old-mode-branch')).toHaveAttribute('data-app-mode-header-mode-branch', '');
+
+  await page.evaluate(() => {
+    document.getElementById('old-tabs').removeAttribute('role');
+    document.getElementById('old-mode-branch').append(Object.assign(document.createElement('button'), { textContent: 'Menu' }));
+    const replacement = document.createElement('div');
+    replacement.id = 'replacement-mode-branch';
+    replacement.innerHTML = '<div role="tablist"><button aria-pressed="true">One</button><button aria-pressed="false">Two</button></div>';
+    document.querySelector('header').prepend(replacement);
+  });
+  await expect(page.locator('#old-mode-branch')).not.toHaveAttribute('data-app-mode-header-mode-branch', '');
+  await expect(page.locator('#old-mode-branch')).toHaveAttribute('data-app-mode-header-control-branch', 'actions');
+
+  await page.evaluate(() => {
+    const overlay = document.createElement('div');
+    overlay.id = 'top-dialog';
+    overlay.setAttribute('role', 'dialog');
+    overlay.innerHTML = '<button>Overlay action</button>';
+    Object.assign(overlay.style, { position: 'fixed', inset: '0 auto auto 0', width: '100%', height: '48px', zIndex: '1000' });
+    document.body.append(overlay);
+  });
+  await expect(page.locator('#top-dialog')).not.toHaveAttribute('data-app-mode-header-strip', '');
+
+  await page.evaluate(() => {
+    document.getElementById('top-dialog').remove();
+    const strip = document.createElement('div');
+    strip.id = 'scroll-strip';
+    strip.innerHTML = '<button>Scrolled control</button>';
+    Object.assign(strip.style, { position: 'absolute', top: '300px', left: '0', width: '100%', height: '48px' });
+    document.body.style.minHeight = '1200px';
+    document.body.append(strip);
+    window.scrollTo(0, 300);
+  });
+  await expect(page.locator('#scroll-strip')).toHaveAttribute('data-app-mode-header-strip', '');
+
+  await page.evaluate(() => {
+    const tabs = document.querySelector('#replacement-mode-branch [role="tablist"]');
+    tabs.replaceChildren(Object.assign(document.createElement('button'), { textContent: 'Only control' }));
+  });
+  await expect(page.locator('#replacement-mode-branch [role="tablist"]')).not.toHaveAttribute('data-app-mode-header-tabs', '');
+
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.getElementById('replacement-mode-branch').remove();
+    const legacy = document.createElement('div');
+    legacy.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);width:224px';
+    legacy.innerHTML = '<div id="legacy-tabs" style="display:flex"><button>Chat</button><button>Work</button></div>';
+    document.querySelector('header').prepend(legacy);
+  });
+  await expect(page.locator('#legacy-tabs')).toHaveAttribute('data-app-mode-header-tabs', '');
+  await page.evaluate(() => document.querySelector('header').classList.toggle('synthetic-rerender'));
+  await expect(page.locator('#legacy-tabs')).toHaveAttribute('data-app-mode-header-tabs', '');
+});
+
+test('a stale pin refresh cannot replace the accepted window binding', async ({ page }) => {
+  let statusRequests = 0;
+  let staleStatusRoute;
+  const activityBodies = [];
+  const reply = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', async route => {
+    if (route.request().url().endsWith('/session')) return reply(route, { saved: true });
+    const body = route.request().postData() || '';
+    const action = new URLSearchParams(body).get('action');
+    if (action === 'status') {
+      if (++statusRequests === 1) {
+        staleStatusRoute = route;
+        return;
+      }
+      return reply(route, { enabled: false, handle: 'fresh-handle', processId: 222 });
+    }
+    if (action === 'activity') {
+      activityBodies.push(body);
+      return reply(route, { enabled: true, handle: 'fresh-handle', processId: 222 });
+    }
+    if (action === 'on') {
+      await reply(route, { enabled: true, handle: 'fresh-handle', processId: 222 });
+      await staleStatusRoute.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: false, handle: 'stale-handle', processId: 111 }) });
+      return;
+    }
+    return reply(route, { enabled: false, handle: 'fresh-handle', processId: 222 });
+  });
+
+  await page.goto('https://chatgpt.com/c/pin-binding-fixture');
+  await page.bringToFront();
+  await expect.poll(() => Boolean(staleStatusRoute)).toBe(true);
+  const pin = page.locator('#chatgpt-app-mode-pin-toggle');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.wheel(0, 1);
+  await expect.poll(() => activityBodies.length).toBe(1);
+  expect(Object.fromEntries(new URLSearchParams(activityBodies[0]))).toMatchObject({ action: 'activity', handle: 'fresh-handle', processId: '222' });
+});
 
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {
   const sessionPosts = [];

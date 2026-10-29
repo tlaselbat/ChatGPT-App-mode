@@ -32,6 +32,10 @@ There is currently one override stylesheet, not a token/component architecture. 
 
 ## Native header host
 
+For trusted ChatGPT responses, the host extends `connect-src` to permit its numeric loopback control origin. The effective `default-src` fallback is preserved when `connect-src` is absent; policies with no connection restriction remain unrestricted. This exception applies to connection destinations, not scripts or other resource directives.
+
+Local-network access is automatically allowed only for a trusted main-frame ChatGPT request so the local control endpoint can work. Optional media, clipboard, and notification grants require native consent. Consent is tied to the requesting document and expires on main-frame navigation.
+
 All launch paths use `WindowHost/main.cjs` through `Start-AppModeNativeHost`. The runtime is pinned in `package-lock.json`, installed by `Install-WindowHost.ps1`, and remains untracked under `node_modules/electron/dist`.
 
 The native host uses `titleBarStyle: hidden` with a transparent 48px native Windows controls overlay. Shared site overrides provide the translucent header; `WindowHost/header.css` reserves caption-button space and makes header background areas draggable. `WindowHost/header.js` normalizes visible mode switches into flex layout while retaining their nodes and event handlers. The switch and buttons become compact at narrow widths, preserving one header row. Windows retains caption-button handling, resizing, maximize/restore, and Snap.

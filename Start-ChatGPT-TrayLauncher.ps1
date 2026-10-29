@@ -166,7 +166,8 @@ function Stop-AppModeWindows {
         Initialize-AppModeNativeApi
         foreach ($target in ($targets | Sort-Object processId -Unique)) {
             # Revalidate ownership after the confirmation; HWNDs can be recycled.
-            if ([AppModeNative]::WindowMatchesProcess([IntPtr]$target.handle, $target.processId)) {
+            if ((Get-AppModeTargetWindow -Config $config -Handle $target.handle -ProcessId $target.processId) -and
+                [AppModeNative]::WindowMatchesProcess([IntPtr]$target.handle, $target.processId)) {
                 Stop-Process -Id $target.processId -Force -ErrorAction Stop
             }
         }

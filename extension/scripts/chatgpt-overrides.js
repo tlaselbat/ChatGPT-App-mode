@@ -144,9 +144,12 @@
     const binding = action === "status" && document.hasFocus() ? "" : windowHandle;
     const result = await postJson(controlUrl,
       `action=${encodeURIComponent(action)}&handle=${encodeURIComponent(binding)}&processId=${windowProcessId}`);
+    return result;
+  }
+
+  function applyTopMostBinding(result) {
     windowHandle = result.handle || "";
     windowProcessId = result.processId || 0;
-    return result;
   }
 
   function setPinState(button, enabled) {
@@ -170,13 +173,17 @@
   async function togglePin(button) {
     if (pinPending) return;
     pinPending = true;
-    ++pinRevision;
+    const revision = ++pinRevision;
     button.disabled = true;
     try {
       // Recover the current HWND/PID and native state on every user click.
       // Explicit on/off avoids a second toggle if a response is delayed/lost.
       const current = await callTopMostControl("status");
+      if (revision !== pinRevision) return;
+      applyTopMostBinding(current);
       const result = await callTopMostControl(current.enabled ? "off" : "on");
+      if (revision !== pinRevision) return;
+      applyTopMostBinding(result);
       setPinState(document.getElementById(pinButtonId) || button, Boolean(result.enabled));
     } catch (error) {
       showPinError(document.getElementById(pinButtonId) || button, error);
@@ -194,6 +201,7 @@
     try {
       const result = await callTopMostControl("status");
       if (revision !== pinRevision) return;
+      applyTopMostBinding(result);
       setPinState(button, Boolean(result.enabled));
     } catch (error) {
       if (revision !== pinRevision) return;

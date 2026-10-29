@@ -31,10 +31,8 @@ function Get-CoveringWindowDescription {
     if ($covering -eq [IntPtr]::Zero) { return 'no window under pointer' }
     $coverPid = [uint32]0
     [HostFixtureNative]::GetWindowThreadProcessId($covering, [ref]$coverPid) | Out-Null
-    $title = New-Object System.Text.StringBuilder 256
-    [HostFixtureNative]::GetWindowText($covering, $title, 256) | Out-Null
     $procName = try { (Get-Process -Id $coverPid -ErrorAction Stop).ProcessName } catch { "pid $coverPid" }
-    return "covered by '$($title.ToString())' ($procName, hwnd $($covering.ToInt64()), pid $coverPid)"
+    return "covered by process $procName (hwnd $($covering.ToInt64()), pid $coverPid)"
 }
 $hwnd = [IntPtr]$Handle
 $rect = New-Object HostFixtureNative+RECT

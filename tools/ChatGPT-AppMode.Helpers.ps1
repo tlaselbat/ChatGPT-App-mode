@@ -49,6 +49,9 @@ function Get-AppLaunchUrl {
     )
 
     $fallbackUrl = [string]$Config.url
+    if ([string]::IsNullOrWhiteSpace($fallbackUrl) -or -not (Test-RestorableChatGptUrl -Url $fallbackUrl)) {
+        $fallbackUrl = 'https://chatgpt.com/'
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($LaunchUrl) -and (Test-RestorableChatGptUrl -Url $LaunchUrl)) {
         return $LaunchUrl

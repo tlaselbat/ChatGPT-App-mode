@@ -5,8 +5,17 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const net = require('node:net');
 const { _electron } = require('playwright');
-const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission } = require('../WindowHost/policy.cjs');
+const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission,
+  allowControlOriginInCsp, singleFlight, canApplyDocumentResult, tryCreateWindow } = require('../WindowHost/policy.cjs');
 const root = path.resolve(__dirname, '..');
+
+function linkRuntime(source, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name), to = path.join(destination, entry.name);
+    if (entry.isDirectory()) linkRuntime(from, to); else fs.linkSync(from, to);
+  }
+}
 
 test('host URL policy rejects lookalikes, privileged schemes and embedded credentials', () => {
   for (const url of ['https://chatgpt.com/', 'https://chat.openai.com/c/synthetic']) assert.equal(isChatGptUrl(url), true);
@@ -24,6 +33,86 @@ test('host URL policy rejects lookalikes, privileged schemes and embedded creden
   assert.equal(isTrustedPermission('https://chatgpt.com/', { requestingUrl: 'https://chatgpt.com/', isMainFrame: true }), true);
 });
 
+test('host policy preserves CSP fallback semantics and lifecycle guards', async () => {
+  const control = 'http://127.0.0.1:17863';
+  assert.equal(allowControlOriginInCsp("default-src 'self' https://api.example", control),
+    "default-src 'self' https://api.example; connect-src 'self' https://api.example http://127.0.0.1:17863");
+  assert.equal(allowControlOriginInCsp("default-src 'none'", control), `default-src 'none'; connect-src ${control}`);
+  assert.equal(allowControlOriginInCsp("connect-src 'none'; img-src https:", control),
+    ` connect-src ${control}; img-src https:`);
+  assert.equal(allowControlOriginInCsp("connect-src 'none' https://api.example", control),
+    ` connect-src https://api.example ${control}`);
+  assert.equal(allowControlOriginInCsp("script-src 'self'", control), "script-src 'self'");
+  assert.deepEqual(["default-src 'self'", "connect-src 'none'"].map(policy => allowControlOriginInCsp(policy, control)), [
+    `default-src 'self'; connect-src 'self' ${control}`, ` connect-src ${control}`,
+  ]);
+  assert.equal(allowControlOriginInCsp("default-src 'self', connect-src 'none'", control),
+    `default-src 'self'; connect-src 'self' ${control}, connect-src ${control}`);
+
+  let release;
+  const started = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  const poll = singleFlight(async () => { calls++; await started; });
+  const first = poll();
+  assert.equal(await poll(), false);
+  release();
+  assert.equal(await first, true);
+  assert.equal(await poll(), true);
+  assert.equal(calls, 2);
+  assert.equal(canApplyDocumentResult({ response: 1, contentsAlive: true, requestedGeneration: 4, currentGeneration: 4, trusted: true }), true);
+  assert.equal(canApplyDocumentResult({ response: 1, contentsAlive: true, requestedGeneration: 4, currentGeneration: 5, trusted: true }), false);
+  assert.equal(tryCreateWindow(() => { throw new Error('synthetic invalid config'); }, []), false);
+});
+
+test('native host preserves default-src sources while allowing the loopback control origin', { timeout: 30000 }, async () => {
+  const runs = path.join(root, 'test-results', 'runs'); fs.mkdirSync(runs, { recursive: true });
+  const scratch = fs.mkdtempSync(path.join(runs, 'native-host-csp-'));
+  fs.writeFileSync(path.join(scratch, 'config.json'), JSON.stringify({
+    installRoot: scratch, url: 'https://chatgpt.com/c/synthetic-csp',
+    window: { width: 800, height: 600 }, rememberWindowPlacement: false,
+  }));
+  linkRuntime(path.join(root, 'node_modules/electron/dist'), path.join(scratch, 'node_modules/electron/dist'));
+  const listener = net.createServer();
+  await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
+  const port = listener.address().port;
+  await new Promise(resolve => listener.close(resolve));
+  const server = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'Start-ChatGPT-TopMostServer.ps1'),
+    '-AppRoot', scratch, '-Port', String(port)], { windowsHide: true, stdio: 'ignore' });
+  const fixture = path.join(scratch, 'fixture.html');
+  fs.writeFileSync(fixture, '<!doctype html><title>Synthetic CSP fixture</title><body>fixture</body>');
+  let electron;
+  try {
+    const env = { ...process.env, APP_MODE_HOST_FIXTURE: '1', APP_MODE_HOST_TEST_PORT: String(port) };
+    delete env.ELECTRON_RUN_AS_NODE;
+    electron = await _electron.launch({
+      executablePath: path.join(scratch, 'node_modules', 'electron', 'dist', 'electron.exe'),
+      args: [path.join(root, 'WindowHost', 'main.cjs'), `--app-mode-root=${scratch}`,
+        `--user-data-dir=${hostProfile(scratch)}`, `--fixture=${fixture}`, "--fixture-csp=default-src 'self'"],
+      env, timeout: 25000,
+    });
+    const page = await electron.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
+    const response = await page.reload();
+    assert.equal(response.headers()['content-security-policy'], `default-src 'self'; connect-src 'self' http://127.0.0.1:${port}`);
+    await page.bringToFront();
+    const binding = await electron.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      return { handle: win.getNativeWindowHandle().readUInt32LE(0), processId: process.pid };
+    });
+    const result = await page.evaluate(async ({ testPort, handle, processId }) => Promise.all([
+      fetch('https://chatgpt.com/csp-self').then(response => response.ok),
+      fetch(`http://127.0.0.1:${testPort}/topmost`, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: `action=status&handle=${handle}&processId=${processId}`,
+      }).then(response => response.ok),
+    ]), { testPort: port, ...binding });
+    assert.deepEqual(result, [true, true]);
+  } finally {
+    if (electron) await electron.close().catch(() => {});
+    server.kill();
+  }
+});
+
 test('native header host preserves sandbox, overlay, window actions, navigation and resizing', { timeout: 90000 }, async () => {
   const runs = path.join(root, 'test-results', 'runs'); fs.mkdirSync(runs, { recursive: true });
   const scratch = fs.mkdtempSync(path.join(runs, 'native-host-'));
@@ -35,13 +124,6 @@ test('native header host preserves sandbox, overlay, window actions, navigation 
     window: { width: 1000, height: 700 },
   };
   fs.writeFileSync(path.join(scratch, 'config.json'), JSON.stringify(config));
-  const linkRuntime = (source, destination) => {
-    fs.mkdirSync(destination, { recursive: true });
-    for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-      const from = path.join(source, entry.name), to = path.join(destination, entry.name);
-      if (entry.isDirectory()) linkRuntime(from, to); else fs.linkSync(from, to);
-    }
-  };
   // Independent directory tree; hard-linked runtime files avoid a large copy
   // while preserving the exact executable path used by ownership checks.
   linkRuntime(path.join(root, 'node_modules/electron/dist'), path.join(scratch, 'node_modules/electron/dist'));
@@ -66,7 +148,7 @@ test('native header host preserves sandbox, overlay, window actions, navigation 
     electron = await _electron.launch({
       executablePath: path.join(scratch, 'node_modules', 'electron', 'dist', 'electron.exe'),
       args: [path.join(root, 'WindowHost', 'main.cjs'), `--app-mode-root=${scratch}`,
-        `--user-data-dir=${hostProfile(scratch)}`, `--fixture=${fixture}`],
+        `--user-data-dir=${hostProfile(scratch)}`, `--fixture=${fixture}`, "--fixture-csp=default-src 'self'; style-src 'unsafe-inline'"],
       env,
       timeout: 25000,
     });
@@ -127,12 +209,12 @@ test('native header host preserves sandbox, overlay, window actions, navigation 
       });
     });
     await native('ZoomIn');
-    await page.waitForTimeout(150);
+    await page.waitForFunction(ratio => devicePixelRatio > ratio, basePixelRatio);
     assert.ok(await getZoom() > 1, 'Ctrl+wheel up must zoom in');
     assert.ok(await page.evaluate(() => devicePixelRatio) > basePixelRatio, 'Zoom must scale the rendered page');
     const zoomedIn = await getZoom();
     await native('ZoomOut');
-    await page.waitForTimeout(150);
+    await page.waitForFunction(zoom => devicePixelRatio < zoom, zoomedIn);
     assert.ok(await getZoom() < zoomedIn, 'Ctrl+wheel down must zoom out');
     await native('ZoomKeyIn');
     assert.ok(await getZoom() > 1, JSON.stringify(await electron.evaluate(() => globalThis.syntheticHostInputs)));
@@ -190,8 +272,15 @@ test('native header host preserves sandbox, overlay, window actions, navigation 
     });
     await page.waitForSelector('[data-app-mode-header-tabs]');
     for (const width of [690, 448, 390, 1024]) {
-      await electron.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setBounds({ width, height: 700 }), width);
-      await page.waitForTimeout(200);
+      const expectedWidth = await electron.evaluate(({ BrowserWindow }, width) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win.setBounds({ width, height: 700 });
+        return win.getContentBounds().width / win.webContents.getZoomFactor();
+      }, width);
+      await page.waitForFunction(expected => {
+        const area = navigator.windowControlsOverlay.getTitlebarAreaRect();
+        return Math.abs(innerWidth - expected) <= 1 && area.width > 0 && area.right <= innerWidth + 1;
+      }, expectedWidth);
       const layout = await page.evaluate(() => {
         const header = document.querySelector('header').getBoundingClientRect();
         const rects = [...document.querySelectorAll('header button')].map(el => el.getBoundingClientRect());
@@ -232,10 +321,14 @@ test('native header host preserves sandbox, overlay, window actions, navigation 
     await page.evaluate(html => { document.querySelector('header').innerHTML = html; }, fs.readFileSync(path.join(__dirname, 'fixtures/fixed-layer-header.html'),'utf8'));
     await page.waitForSelector('.real-mode-grid[data-app-mode-header-tabs]');
     for (const zoom of [1,1.25]) for (const width of [390,489,690]) {
-      await electron.evaluate(({BrowserWindow},{zoom,width}) => {
+      const expectedWidth = await electron.evaluate(({BrowserWindow},{zoom,width}) => {
         const win=BrowserWindow.getAllWindows()[0]; win.setBounds({width,height:700}); win.webContents.setZoomFactor(zoom);
+        return win.getContentBounds().width / zoom;
       },{zoom,width});
-      await page.waitForTimeout(200);
+      await page.waitForFunction(expected => {
+        const area = navigator.windowControlsOverlay.getTitlebarAreaRect();
+        return Math.abs(innerWidth - expected) <= 1 && area.width > 0 && area.right <= innerWidth + 1 && Math.abs(area.height - 48) <= 1;
+      }, expectedWidth, { timeout: 5000 });
       const layout=await page.evaluate(() => {
         const header=document.querySelector('header').getBoundingClientRect();
         const safe=navigator.windowControlsOverlay.getTitlebarAreaRect();

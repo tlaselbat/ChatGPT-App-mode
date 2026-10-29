@@ -93,12 +93,18 @@ try {
     $fixture = New-Object Windows.Forms.Form
     $script:ownedTarget = [pscustomobject]@{ handle=$fixture.Handle.ToInt64(); processId=$PID }
     function Get-AppModeOwnedWindows { param($Config); return $script:ownedTarget }
+    function Get-AppModeTargetWindow { param($Config, $Handle, $ProcessId); if ($script:ownerStillValid) { return $script:ownedTarget } }
+    $script:ownerStillValid = $true
     function Confirm-TrayForceClose { return $false }
     Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 0) 'Canceled force close terminated a process.'
     function Confirm-TrayForceClose { return $true }
     Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 1 -and $script:stopped[0] -eq $PID) 'Force close did not use the validated profile owner.'
+    $script:ownerStillValid = $false
+    Stop-AppModeWindows
+    Assert ($script:stopped.Count -eq 1) 'Lost executable/profile ownership was allowed to terminate a process.'
+    $script:ownerStillValid = $true
     $script:ownedTarget.processId = 2147483647
     Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 1) 'Recycled/mismatched HWND was allowed to terminate a process.'

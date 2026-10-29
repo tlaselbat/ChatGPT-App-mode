@@ -62,11 +62,6 @@ $config = [ordered]@{
         height = 900
         startMaximized = $false
     }
-    flags = @(
-        '--no-first-run',
-        '--disable-features=Translate',
-        '--disable-session-crashed-bubble'
-    )
 }
 
 . $HelperPath

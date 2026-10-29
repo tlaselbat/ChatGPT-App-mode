@@ -2,7 +2,8 @@
 const { app, BrowserWindow, session, shell, screen, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
-const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission } = require('./policy.cjs');
+const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission,
+  allowControlOriginInCsp, singleFlight, canApplyDocumentResult, tryCreateWindow } = require('./policy.cjs');
 const { installBrowserShortcuts } = require('./shortcuts.cjs');
 const sourceRoot = path.resolve(__dirname, '..');
 const option = (args, name) => args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -21,6 +22,7 @@ let browserSession;
 let fixturePath;
 const liveReview = process.argv.includes('--live-review');
 const permissionGrants = new Map();
+const navigationGenerations = new WeakMap();
 
 function readConfig() {
   return JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
@@ -45,9 +47,11 @@ function openExternal(url) {
 }
 
 function guardNavigation(contents) {
+  navigationGenerations.set(contents, 0);
   installBrowserShortcuts(contents);
   contents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
+      navigationGenerations.set(contents, (navigationGenerations.get(contents) || 0) + 1);
       for (const key of permissionGrants.keys()) if (key.startsWith(`${contents.id}:`)) permissionGrants.delete(key);
     }
   });
@@ -63,19 +67,21 @@ function guardNavigation(contents) {
     if (!isChatGptUrl(url) && !isLoginUrl(url)) event.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    if (isChatGptUrl(url)) createWindow([`--url=${url}`]);
-    else if (isLoginUrl(url)) {
-      const login = new BrowserWindow({ width: 600, height: 800, autoHideMenuBar: true,
-        webPreferences: { session: browserSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false } });
-      guardNavigation(login.webContents);
-      login.webContents.on('did-navigate', (_event, destination) => {
-        if (isChatGptUrl(destination)) {
-          if (!contents.isDestroyed()) contents.loadURL(destination).catch(() => {});
-          login.close();
-        }
-      });
-      login.loadURL(url).catch(() => {});
-    } else openExternal(url);
+    tryCreateWindow(() => {
+      if (isChatGptUrl(url)) createWindow([`--url=${url}`]);
+      else if (isLoginUrl(url)) {
+        const login = new BrowserWindow({ width: 600, height: 800, autoHideMenuBar: true,
+          webPreferences: { session: browserSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false } });
+        guardNavigation(login.webContents);
+        login.webContents.on('did-navigate', (_event, destination) => {
+          if (isChatGptUrl(destination)) {
+            if (!contents.isDestroyed()) contents.loadURL(destination).catch(() => {});
+            login.close();
+          }
+        });
+        login.loadURL(url).catch(() => {});
+      } else openExternal(url);
+    });
     return { action: 'deny' };
   });
   contents.on('will-attach-webview', event => event.preventDefault());
@@ -126,18 +132,23 @@ function createWindow(args) {
   // at 48 CSS pixels of header or the caption row drifts off the shared center.
   let symbolColor = '#dddddd';
   let overlayZoom = 0;
-  const contrast = setInterval(async () => {
+  const pollContrast = singleFlight(async () => {
     if (win.isDestroyed() || !isChatGptUrl(win.webContents.getURL())) return;
+    const generation = navigationGenerations.get(win.webContents);
     try {
       const zoom = win.webContents.getZoomFactor();
       const color = await win.webContents.executeJavaScript('getComputedStyle(document.body).color');
       const valid = /^rgba?\([\d\s.,]+\)$/.test(color);
-      if ((valid && color !== symbolColor) || zoom !== overlayZoom) {
+      if (generation === navigationGenerations.get(win.webContents) &&
+        ((valid && color !== symbolColor) || zoom !== overlayZoom)) {
         if (valid) symbolColor = color;
         overlayZoom = zoom;
         if (!win.isDestroyed()) win.setTitleBarOverlay({ color: '#00000000', symbolColor, height: Math.round(48 * zoom) });
       }
     } catch { }
+  });
+  const contrast = setInterval(() => {
+    pollContrast().catch(() => {});
   }, 1500);
   win.on('closed', () => clearInterval(contrast));
   return win;
@@ -154,7 +165,9 @@ async function start() {
     throw new Error('Live review requires the dedicated development root.');
   }
   if (!app.requestSingleInstanceLock()) { app.quit(); return; }
-  app.on('second-instance', (_event, argv) => createWindow(argv));
+  app.on('second-instance', (_event, argv) => {
+    tryCreateWindow(createWindow, argv);
+  });
   await app.whenReady();
   browserSession = session.defaultSession;
   if (liveReview) {
@@ -170,10 +183,7 @@ async function start() {
     const headers = { ...(details.responseHeaders || {}) };
     const key = Object.keys(headers).find(name => name.toLowerCase() === 'content-security-policy');
     if (key) {
-      headers[key] = headers[key].map(policy =>
-        /connect-src/i.test(policy)
-          ? policy.replace(/connect-src[^;]*/i, directive => `${directive} ${controlOrigin}`)
-          : `${policy}; connect-src ${controlOrigin}`);
+      headers[key] = headers[key].map(policy => allowControlOriginInCsp(policy, controlOrigin));
     }
     callback({ responseHeaders: headers });
   });
@@ -184,12 +194,15 @@ async function start() {
     if (!trusted) { callback(false); return; }
     if (permission === 'local-network-access') { callback(true); return; }
     if (!['media', 'clipboard-read', 'notifications', 'fullscreen'].includes(permission)) { callback(false); return; }
+    const generation = navigationGenerations.get(contents);
     dialog.showMessageBox(BrowserWindow.fromWebContents(contents), {
       type: 'question', title: 'ChatGPT permission',
       message: `Allow ChatGPT to use ${permission === 'media' ? 'your microphone or camera' : permission}?`,
       buttons: ['Deny', 'Allow'], defaultId: 0, cancelId: 0,
     }).then(result => {
-      const allowed = result.response === 1 && !contents.isDestroyed() && isTrustedPermission(contents.getURL(), details);
+      const allowed = canApplyDocumentResult({ response: result.response, contentsAlive: !contents.isDestroyed(),
+        requestedGeneration: generation, currentGeneration: navigationGenerations.get(contents),
+        trusted: isTrustedPermission(contents.getURL(), details) });
       if (allowed) permissionGrants.set(`${contents.id}:${permission}`, true);
       callback(allowed);
     }, () => callback(false));
@@ -204,8 +217,15 @@ async function start() {
   });
   if (fixturePath) {
     const html = fs.readFileSync(fixturePath, 'utf8');
+    const csp = option(process.argv, 'fixture-csp');
+    // Custom protocol responses bypass Electron's webRequest response-header
+    // hook, so the isolated fixture applies the same policy transform here.
+    const fixtureControlOrigin = /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')
+      ? `http://127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}` : 'http://127.0.0.1:17863';
+    const fixtureCsp = csp && allowControlOriginInCsp(csp, fixtureControlOrigin);
     browserSession.protocol.handle('https', request => new Response(isChatGptUrl(request.url) ? html : 'Blocked', {
-      status: isChatGptUrl(request.url) ? 200 : 403, headers: { 'content-type': 'text/html' },
+      status: isChatGptUrl(request.url) ? 200 : 403,
+      headers: { 'content-type': 'text/html', ...(fixtureCsp ? { 'content-security-policy': fixtureCsp } : {}) },
     }));
   }
   const firstWindow = createWindow(process.argv);

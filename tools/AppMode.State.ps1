@@ -102,7 +102,10 @@ function Assert-AppModeBrowserStopped {
     $runtime = if ($Config.chromiumPortableRoot) { [IO.Path]::GetFullPath([string]$Config.chromiumPortableRoot).TrimEnd('\', '/') + '\' } else { '' }
     $running = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
         ($runtime -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase)) -or
-        ($_.CommandLine -and $_.CommandLine.IndexOf($profile, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+        ($_.CommandLine -and @(foreach ($match in [regex]::Matches($_.CommandLine, '(?:^|\s)(?:"--user-data-dir=([^"]+)"|--user-data-dir=(?:"([^"]+)"|([^\s"]+)))')) {
+            $value = if ($match.Groups[1].Success) { $match.Groups[1].Value } elseif ($match.Groups[2].Success) { $match.Groups[2].Value } else { $match.Groups[3].Value }
+            try { if ([IO.Path]::GetFullPath($value).TrimEnd('\', '/').Equals($profile.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase)) { $true } } catch { }
+        }).Count -gt 0)
     })
     if ($running.Count) { throw 'Close all App Mode windows before resetting the profile.' }
 }
