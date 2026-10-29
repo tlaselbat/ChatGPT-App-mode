@@ -49,8 +49,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-strip] {
   box-sizing: border-box;
 }
 /* Rows nested inside the managed bar must fit its content area instead of
-   the full strip height, or their controls sit below the shared center. */
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] > [data-app-mode-header-strip] {
+   the full strip height, or their controls sit below the shared center.
+   :has() matches re-rendered nodes before paint, unlike attribute tagging. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :has(button, a, [role="button"]):not(.chatgpt-app-mode-toolbar):not([data-app-mode-header-tabs]) {
   height: 36px !important;
   max-height: 36px !important;
   align-self: center !important;
