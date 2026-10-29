@@ -22,8 +22,20 @@ public static class HostFixtureNative {
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int count);
 }
 '@
+function Get-CoveringWindowDescription {
+    $covering = [AppModeNative]::GetPointerWindow()
+    if ($covering -eq [IntPtr]::Zero) { return 'no window under pointer' }
+    $coverPid = [uint32]0
+    [HostFixtureNative]::GetWindowThreadProcessId($covering, [ref]$coverPid) | Out-Null
+    $title = New-Object System.Text.StringBuilder 256
+    [HostFixtureNative]::GetWindowText($covering, $title, 256) | Out-Null
+    $procName = try { (Get-Process -Id $coverPid -ErrorAction Stop).ProcessName } catch { "pid $coverPid" }
+    return "covered by '$($title.ToString())' ($procName, hwnd $($covering.ToInt64()), pid $coverPid)"
+}
 $hwnd = [IntPtr]$Handle
 $rect = New-Object HostFixtureNative+RECT
 [HostFixtureNative]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
@@ -31,7 +43,7 @@ function Click-At([int]$X, [int]$Y) {
     [HostFixtureNative]::SetForegroundWindow($hwnd) | Out-Null
     [HostFixtureNative]::SetCursorPos($X, $Y) | Out-Null
     Start-Sleep -Milliseconds 120
-    if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw 'Fixture is covered; refusing to click another window.' }
+    if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw "Fixture is covered; refusing to click another window ($(Get-CoveringWindowDescription))." }
     [HostFixtureNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [HostFixtureNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
     Start-Sleep -Milliseconds 250
@@ -61,7 +73,7 @@ switch ($Mode) {
         [HostFixtureNative]::SetForegroundWindow($hwnd) | Out-Null
         [HostFixtureNative]::SetCursorPos(($rect.Left + 150), ($rect.Top + 150)) | Out-Null
         Start-Sleep -Milliseconds 120
-        if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw 'Fixture is covered; refusing wheel input.' }
+        if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw "Fixture is covered; refusing wheel input ($(Get-CoveringWindowDescription))." }
         try {
             [HostFixtureNative]::keybd_event(17,0,0,[UIntPtr]::Zero)
             Start-Sleep -Milliseconds 40
@@ -83,7 +95,7 @@ switch ($Mode) {
         $hit = [HostFixtureNative]::SendMessage($hwnd, 0x84, [IntPtr]::Zero, [IntPtr](($y -shl 16) -bor ($x -band 65535))).ToInt64()
         [HostFixtureNative]::SetCursorPos($x,$y) | Out-Null
         Start-Sleep -Milliseconds 100
-        if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw 'Fixture is covered; refusing to drag another window.' }
+        if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw "Fixture is covered; refusing to drag another window ($(Get-CoveringWindowDescription))." }
         [HostFixtureNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
         Start-Sleep -Milliseconds 150
         for ($step = 1; $step -le 8; $step++) {

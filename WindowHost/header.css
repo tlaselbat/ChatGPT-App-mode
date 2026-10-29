@@ -68,7 +68,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-i
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { display: grid !important; width: 36px !important; min-width: 36px !important; }
 body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   -webkit-app-region: no-drag;
-  display: flex;
+  display: flex !important;
   align-items: center;
   flex: 0 1 192px;
   width: clamp(96px, 28vw, 192px) !important;
