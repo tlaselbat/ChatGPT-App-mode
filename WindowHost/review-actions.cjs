@@ -10,6 +10,37 @@ async function run(win, request, sourceRoot, outputRoot) {
     })()`);
     return {status:clicked?'review-sidebar-toggled':'sidebar-control-unavailable'};
   }
+  if (request.action === 'open-conversation') {
+    // Follow the first plain /c/<id> link already rendered on the page so the
+    // reviewer can measure the conversation header. The target is never read.
+    const opened=await win.webContents.executeJavaScript(`(() => {
+      const link=[...document.querySelectorAll('a[href]')].find(el=>{
+        let pathname; try { pathname=new URL(el.href).pathname; } catch { return false; }
+        const r=el.getBoundingClientRect();
+        return /^\/c\/[^/]+$/.test(pathname)&&r.width>0&&r.height>0&&!el.closest('[aria-hidden="true"],[inert]');
+      });
+      if(link) { link.click(); return 'opened'; }
+      // The list only renders while the sidebar is open. Press the leftmost
+      // top-band control once; the caller repeats this action to retry.
+      const toggle=[...document.querySelectorAll('button')].find(el=>{
+        const r=el.getBoundingClientRect();
+        return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
+      });
+      if(!toggle) return 'unavailable'; toggle.click(); return 'sidebar-opening';
+    })()`);
+    return {status:{opened:'review-conversation-opening','sidebar-opening':'review-sidebar-opening'}[opened]||'conversation-link-unavailable'};
+  }
+  if (request.action === 'home') {
+    const opened=await win.webContents.executeJavaScript(`(() => {
+      const link=[...document.querySelectorAll('a[href]')].find(el=>{
+        let pathname; try { pathname=new URL(el.href).pathname; } catch { return false; }
+        const r=el.getBoundingClientRect();
+        return /^\/c\//.test(pathname)===false&&r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
+      });
+      if(!link) return false; link.click(); return true;
+    })()`);
+    return {status:opened?'review-home-opening':'home-link-unavailable'};
+  }
   if (request.action === 'escape') {
     win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});
     win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});

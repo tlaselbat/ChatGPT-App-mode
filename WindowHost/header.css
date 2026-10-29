@@ -48,6 +48,13 @@ body.faux-chatgpt-app-mode [data-app-mode-header-strip] {
   max-height: 48px !important;
   box-sizing: border-box;
 }
+/* Rows nested inside the managed bar must fit its content area instead of
+   the full strip height, or their controls sit below the shared center. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] > [data-app-mode-header-strip] {
+  height: 36px !important;
+  max-height: 36px !important;
+  align-self: center !important;
+}
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   display: flex !important;
   align-items: center !important;

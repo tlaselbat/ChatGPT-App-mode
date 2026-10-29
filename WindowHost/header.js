@@ -63,6 +63,16 @@
         element.setAttribute('data-app-mode-header-strip', '');
         next.add(element);
       }
+      // Conversation headers nest a taller row inside the managed 48px bar,
+      // so the y=2 probe never reaches it. Cap any oversized direct child;
+      // the deeper selector in the stylesheet centers it on the 24px line.
+      for (const child of header.children) {
+        if (!visible(child) || child.classList.contains('chatgpt-app-mode-toolbar')) continue;
+        if (child.getBoundingClientRect().height <= 36) continue;
+        if (!child.querySelector('button, a, [role="button"]')) continue;
+        child.setAttribute('data-app-mode-header-strip', '');
+        next.add(child);
+      }
       if (tabs) {
         tabs.setAttribute('data-app-mode-header-tabs', '');
         next.add(tabs);

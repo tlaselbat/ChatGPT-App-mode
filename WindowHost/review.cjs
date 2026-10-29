@@ -16,10 +16,13 @@ function install(win, reviewRoot, sourceRoot) {
       lastId = request.id;
       const url = new URL(win.webContents.getURL());
       let result = { status: 'select-blank-home' };
-      if (url.origin === 'https://chatgpt.com' && url.pathname === '/' && !url.search && !url.hash) {
+      // Blank home route or a plain /c/<id> conversation; never query/hash.
+      const standardRoute = url.pathname === '/' || /^\/c\/[^/]+$/.test(url.pathname);
+      if (url.origin === 'https://chatgpt.com' && standardRoute && !url.search && !url.hash) {
         const actionsPath = path.join(__dirname, 'review-actions.cjs');
         delete require.cache[require.resolve(actionsPath)];
         result = await require(actionsPath).run(win, request, sourceRoot, outputRoot);
+        result.route = url.pathname === '/' ? 'home' : 'conversation';
       }
       fs.writeFileSync(path.join(outputRoot, 'measurements.json'), JSON.stringify({ requestId: lastId, ...result }, null, 2));
     } catch { /* Never write URLs, labels, errors containing page data, or DOM. */ }
