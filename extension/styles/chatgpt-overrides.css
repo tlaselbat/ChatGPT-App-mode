@@ -184,6 +184,12 @@ body.faux-chatgpt-app-mode .chatgpt-app-mode-pin-button.is-unavailable {
   opacity: 0.72;
 }
 
+/* Site tooltips pop over header and caption buttons in the compact window;
+   suppress them. The pin uses a native title tooltip, which is unaffected. */
+body.faux-chatgpt-app-mode [role="tooltip"] {
+  display: none !important;
+}
+
 /*
   Optional examples:
 
