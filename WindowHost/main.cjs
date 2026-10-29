@@ -122,11 +122,21 @@ function createWindow(args) {
     if (!win.isDestroyed()) win.show();
   });
   // Match caption-symbol contrast to custom site themes as well as light/dark.
+  // Page zoom scales the 48px header but not the overlay, so keep its height
+  // at 48 CSS pixels of header or the caption row drifts off the shared center.
+  let symbolColor = '#dddddd';
+  let overlayZoom = 0;
   const contrast = setInterval(async () => {
     if (win.isDestroyed() || !isChatGptUrl(win.webContents.getURL())) return;
     try {
+      const zoom = win.webContents.getZoomFactor();
       const color = await win.webContents.executeJavaScript('getComputedStyle(document.body).color');
-      if (/^rgba?\([\d\s.,]+\)$/.test(color) && !win.isDestroyed()) win.setTitleBarOverlay({ symbolColor: color });
+      const valid = /^rgba?\([\d\s.,]+\)$/.test(color);
+      if ((valid && color !== symbolColor) || zoom !== overlayZoom) {
+        if (valid) symbolColor = color;
+        overlayZoom = zoom;
+        if (!win.isDestroyed()) win.setTitleBarOverlay({ color: '#00000000', symbolColor, height: Math.round(48 * zoom) });
+      }
     } catch { }
   }, 1500);
   win.on('closed', () => clearInterval(contrast));
