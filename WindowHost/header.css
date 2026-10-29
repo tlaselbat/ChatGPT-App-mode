@@ -41,6 +41,13 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tab-path] {
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) { padding: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-header-mode-branch] { order: 1; }
+/* Site top rows render taller than the 48px caption overlay; cap them so
+   their buttons share the same centerline as the window controls. */
+body.faux-chatgpt-app-mode [data-app-mode-header-strip] {
+  height: 48px !important;
+  max-height: 48px !important;
+  box-sizing: border-box;
+}
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   display: flex !important;
   align-items: center !important;

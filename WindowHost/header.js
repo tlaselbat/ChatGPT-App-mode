@@ -51,6 +51,18 @@
           while (tabs !== positioned && !tabs.contains(buttons[1])) tabs = tabs.parentElement;
         }
       }
+      // The site's own top rows (sidebar strip, conversation header) render
+      // slightly taller than the 48px caption overlay, drifting their buttons
+      // off the shared centerline. Cap every control-bearing row in the band.
+      const probes = new Set();
+      for (let x = 24; x < innerWidth; x += 96) for (const element of document.elementsFromPoint(x, 2)) probes.add(element);
+      for (const element of probes) {
+        const box = element.getBoundingClientRect();
+        if (box.top > 1 || box.height < 40 || box.height > 64) continue;
+        if (!element.querySelector('button, a, [role="button"]')) continue;
+        element.setAttribute('data-app-mode-header-strip', '');
+        next.add(element);
+      }
       if (tabs) {
         tabs.setAttribute('data-app-mode-header-tabs', '');
         next.add(tabs);
@@ -85,7 +97,7 @@
     }
     for (const element of marked) {
       if (next.has(element)) continue;
-      for (const attribute of ['data-app-mode-header-layout', 'data-app-mode-header-tabs', 'data-app-mode-header-tab-path', 'data-app-mode-header-mode-branch', 'data-app-mode-header-control-branch', 'data-app-mode-header-icon-path', 'data-app-mode-header-icon']) element.removeAttribute(attribute);
+      for (const attribute of ['data-app-mode-header-layout', 'data-app-mode-header-tabs', 'data-app-mode-header-tab-path', 'data-app-mode-header-mode-branch', 'data-app-mode-header-control-branch', 'data-app-mode-header-icon-path', 'data-app-mode-header-icon', 'data-app-mode-header-strip']) element.removeAttribute(attribute);
     }
     marked = next;
   }
