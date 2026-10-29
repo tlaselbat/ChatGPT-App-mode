@@ -8,12 +8,13 @@ body.faux-chatgpt-app-mode #chatgpt-app-mode-toolbar-fallback {
   align-items: center;
   flex-wrap: nowrap;
   gap: 6px;
-  min-height: 48px;
-  height: 48px;
+  min-height: 48px !important;
+  height: 48px !important;
+  max-height: 48px !important;
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: 6px calc(var(--app-mode-caption-space) + 10px) 6px 12px;
+  padding: 6px calc(var(--app-mode-caption-space) + 10px) 6px 12px !important;
 }
 
 body.faux-chatgpt-app-mode :where(button, a, input, textarea, select, [role="button"], [contenteditable="true"], .chatgpt-app-mode-toolbar) {
