@@ -7,7 +7,7 @@ const LIVE_URL = 'https://chatgpt.com/';
 const EXTENSION = path.join(ROOT, 'extension');
 const PROFILE = path.join(ROOT, 'test-results', 'live-review-profile');
 const OUTPUT_ROOT = path.join(ROOT, 'test-results', 'live-audits');
-const CHROME = process.env.APP_MODE_CHROMIUM_EXE || path.join(ROOT, 'Browser', 'ChromiumPortable', 'App', 'Chromium', 'chrome.exe');
+const CHROME = process.env.APP_MODE_CHROMIUM_EXE || '';
 const VIEWPORTS = [
   { width: 1920, height: 1080 },
   { width: 1440, height: 900 },
@@ -31,7 +31,7 @@ if (process.argv.includes('--dry-run')) {
   process.exit(0);
 }
 
-if (!fs.existsSync(CHROME)) {
+if (CHROME && !fs.existsSync(CHROME)) {
   throw new Error(`Chromium not found at ${CHROME}. Set APP_MODE_CHROMIUM_EXE to a local chrome.exe.`);
 }
 if (!fs.existsSync(path.join(EXTENSION, 'manifest.json'))) {
@@ -70,7 +70,7 @@ function startContext(mode) {
   }
 
   return chromium.launchPersistentContext(PROFILE, {
-    executablePath: CHROME,
+    ...(CHROME ? { executablePath: CHROME } : {}),
     headless: false,
     viewport: { width: 1920, height: 1080 },
     args,

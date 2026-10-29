@@ -17,14 +17,11 @@ namespace ChatGPTTaskbarLauncher
         {
             { "--app", "Launch-ChatGPT-AppMode.ps1" },
             { "--new-session", "Launch-ChatGPT-AppMode.ps1" },
-            { "--normal", "Open-Chromium-Normal.ps1" },
             { "--topmost", "Launch-ChatGPT-TopMost.ps1" },
             { "--tray", "Start-ChatGPT-TrayLauncher.ps1" },
             { "--config", "Open-Config.ps1" },
             { "--settings", "Open-AppMode-Settings.ps1" },
-            { "--extension", "Open-Extension-Folder.ps1" },
-            { "--toggle-extension", "Toggle-LocalExtension.ps1" },
-            { "--reset-profile", "Reset-Portable-Chromium-Profile.ps1" },
+            { "--reset-profile", "Reset-AppMode-HostProfile.ps1" },
         };
 
         [STAThread]

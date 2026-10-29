@@ -2,7 +2,7 @@
 
 ## Current status
 
-**Live capture completed, but it was unauthenticated.** The production Chromium profile was not opened. The captured screenshots visibly show ChatGPT “Log in” / “Sign up” controls, so signed-in conversation UI, account-specific appearance, and authenticated sidebar behavior remain unverified.
+**Live capture completed, but it was unauthenticated.** The production host profile was not opened. The captured screenshots visibly show ChatGPT “Log in” / “Sign up” controls, so signed-in conversation UI, account-specific appearance, and authenticated sidebar behavior remain unverified.
 
 The repeatable runner is available as `npm run live:audit`. It opens the separate `test-results/live-review-profile`, pauses for the user to sign in and click the in-page capture control, then captures the blank home route or a user-confirmed test conversation (`/c/<id>`) with the extension enabled and disabled. Message text and media are redacted in screenshots. Extension requests to the local control server are mocked in Playwright, so the server is not contacted. It writes the timestamped report, screenshot set, and numeric measurements under ignored `test-results/live-audits/`.
 

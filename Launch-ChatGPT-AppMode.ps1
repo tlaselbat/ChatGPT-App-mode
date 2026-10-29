@@ -52,26 +52,8 @@ Ensure-TopMostServerRunning -AppRoot $AppRoot -LogPath $LogPath
 
 $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
 if (Start-AppModeNativeHost -Config $config -AppRoot $AppRoot -NewSession:$NewSession -LaunchUrl $Url) {
-    Write-AppModeLog -LogPath $LogPath -Message 'Launched native header host.'
+    Write-AppModeLog -LogPath $LogPath -Message 'Launched native window host.'
+    Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
     return
 }
-$chromiumExe = [string]$config.chromiumPortableExe
-$chromiumDirectExe = [string]$config.chromiumDirectExe
-$chromiumRoot = [string]$config.chromiumPortableRoot
-$chromiumIni = [string]$config.chromiumPortableIni
-
-$launchExe = if ($chromiumDirectExe -and (Test-Path $chromiumDirectExe)) { $chromiumDirectExe } else { $chromiumExe }
-
-if (-not (Test-Path $launchExe)) {
-    throw "Chromium executable not found: $launchExe"
-}
-
-
-$argLine = ConvertTo-ArgLine -Config $config -Mode App -NewSession:$NewSession -LaunchUrl $Url
-Write-ChromiumPortableIni -IniPath $chromiumIni -AdditionalParameters $argLine
-
-Write-AppModeLog -LogPath $LogPath -Message "Wrote INI: $chromiumIni"
-Write-AppModeLog -LogPath $LogPath -Message "Launching: $launchExe"
-
-Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe) -ArgumentList $argLine
-Set-ChromiumPortableWindowIdentity -Config $config -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
+throw 'Native window host is unavailable. Run Install-WindowHost.ps1, then launch again.'

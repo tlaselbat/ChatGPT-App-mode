@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 New-Item -ItemType Directory -Force -Path $Scratch | Out-Null
 $configPath = Join-Path $Scratch 'config.json'
-@{ enableLocalExtension = $true; custom = 'preserve'; pinnedWindow = @{ inactiveOpacityPercent = 30; fadeWhenInactive = $true; custom = 'preserve' } } |
+@{ custom = 'preserve'; pinnedWindow = @{ inactiveOpacityPercent = 30; fadeWhenInactive = $true; custom = 'preserve' } } |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath
 # Build the production menu with a synthetic configuration, no NotifyIcon,
 # service startup, browser launches, or production-profile access.
@@ -29,7 +29,7 @@ try {
     }
     $labels = @($trayMenu.Items | Where-Object { $_ -is [Windows.Forms.ToolStripMenuItem] } | ForEach-Object Text)
     Assert (($labels -join '|') -eq 'Open ChatGPT|New chat|Open pinned mini window|Settings and privacy...|Pinned opacity: 30%|Advanced|Exit tray launcher') 'Primary actions or menu grouping are wrong.'
-    Assert ($toggleExtensionItem.Checked -and $fadeItem.Checked) 'Configuration checks were not loaded.'
+    Assert ($fadeItem.Checked) 'Configuration checks were not loaded.'
     Assert (@($opacityItems | Where-Object Checked).Count -eq 1) 'Opacity preset check is ambiguous.'
     ($opacityItems | Where-Object { $_.Tag.Percent -eq 50 }).PerformClick()
     Update-TrayMenu
@@ -41,9 +41,6 @@ try {
     ($opacityItems | Where-Object { $_.Tag.Percent -eq 75 }).PerformClick()
     Update-TrayMenu
     Assert ($fadeItem.Checked -and $opacityMenu.Text -eq 'Pinned opacity: 75%') 'Choosing opacity did not enable fading.'
-    $toggleExtensionItem.PerformClick()
-    Update-TrayMenu
-    Assert (-not $toggleExtensionItem.Checked) 'Extension preference failed to save.'
     # External Settings edits must be reflected whenever the menu opens.
     Set-TrayOpacity -Percent 42 -Enabled $true
     Update-TrayMenu
@@ -52,32 +49,20 @@ try {
     function Start-Process { param($FilePath, $WindowStyle, $ArgumentList); $script:launchCalls += [pscustomobject]@{file=$FilePath; style=$WindowStyle; args=$ArgumentList} }
     $launchItem.PerformClick()
     $newSessionItem.PerformClick()
-    $extensionsPageItem.PerformClick()
-    Assert ($script:launchCalls.Count -eq 3) 'Launch clicks did not dispatch.'
+    Assert ($script:launchCalls.Count -eq 2) 'Launch clicks did not dispatch.'
     Assert ($script:launchCalls[0].style -eq 'Hidden' -and $script:launchCalls[0].args -contains '-LaunchMode') 'Launch is not offloaded from the tray UI thread.'
     Assert ($script:launchCalls[1].args -contains '-NewSession') 'New chat lost its fresh-session flag.'
-    Assert ($script:launchCalls[2].args -contains 'Extensions') 'Extensions launch mode was lost.'
-    $saved = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-    $saved | Add-Member chromiumDirectExe (Join-Path $Scratch 'synthetic-chrome.exe')
-    $saved | Add-Member chromiumPortableRoot (Join-Path $Scratch 'Browser\ChromiumPortable')
-    $saved | Add-Member chromiumPortableIni (Join-Path $Scratch 'ChromiumPortable.ini')
-    $saved | Add-Member appProfileDir (Join-Path $Scratch 'synthetic-profile')
-    $saved | Add-Member url 'https://chatgpt.com/'
-    $saved | Add-Member useAppMode $true
-    $saved | Add-Member restoreLastUrl $false
-    Write-AppModeJson -Path $configPath -Value $saved
-    New-Item -ItemType File -Path $saved.chromiumDirectExe | Out-Null
     $script:serverEnsured = $false
+    $script:identityApplied = $false
     function Ensure-TopMostServerRunning { param($AppRoot, $LogPath); $script:serverEnsured = $true }
-    function Set-ChromiumPortableWindowIdentity { param($Config, $ChromiumRoot, $IconPath, $LogPath) }
-    Start-ChromiumPortable -Mode App -NewSession
-    Assert ($script:serverEnsured -and $script:launchCalls.Count -eq 4) 'Launch worker did not recover its control server and dispatch Chromium.'
-    Assert ($script:launchCalls[3].args -like '*--app=https://chatgpt.com/*' -and $script:launchCalls[3].args -like '*--user-data-dir=*synthetic-profile*') 'Launch worker lost its URL/profile contract.'
-    Assert (Test-Path -LiteralPath $saved.chromiumPortableIni) 'Shared portable INI writer was not used.'
+    function Start-AppModeNativeHost { param($Config, $AppRoot, $NewSession, $LaunchUrl); return $true }
+    function Set-AppModeWindowIdentity { param($Config, $IconPath, $LogPath); $script:identityApplied = $true }
+    Start-AppModeWindow -NewSession
+    Assert ($script:serverEnsured -and $script:identityApplied) 'Launch worker did not recover its control server or host identity.'
     $settingsItem.PerformClick()
     $customOpacityItem.PerformClick()
-    Assert ($script:launchCalls.Count -eq 6) 'Settings or custom opacity did not dispatch.'
-    Assert ($script:launchCalls[4].args -contains ('"' + (Join-Path $root 'Open-AppMode-Settings.ps1') + '"') -and $script:launchCalls[4].args -contains ('"' + $Scratch + '"')) 'Settings lost its script path or isolated AppRoot.'
+    Assert ($script:launchCalls.Count -eq 4) 'Settings or custom opacity did not dispatch.'
+    Assert ($script:launchCalls[2].args -contains ('"' + (Join-Path $root 'Open-AppMode-Settings.ps1') + '"') -and $script:launchCalls[2].args -contains ('"' + $Scratch + '"')) 'Settings lost its script path or isolated AppRoot.'
     Remove-Item Function:\Start-Process
     # Execute the real tray event and hidden child-process launch. Checking only
     # dispatch or a preview image misses a running dialog hidden by STARTUPINFO.
@@ -109,13 +94,13 @@ try {
     $script:ownedTarget = [pscustomobject]@{ handle=$fixture.Handle.ToInt64(); processId=$PID }
     function Get-AppModeOwnedWindows { param($Config); return $script:ownedTarget }
     function Confirm-TrayForceClose { return $false }
-    Stop-PortableChromium
+    Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 0) 'Canceled force close terminated a process.'
     function Confirm-TrayForceClose { return $true }
-    Stop-PortableChromium
+    Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 1 -and $script:stopped[0] -eq $PID) 'Force close did not use the validated profile owner.'
     $script:ownedTarget.processId = 2147483647
-    Stop-PortableChromium
+    Stop-AppModeWindows
     Assert ($script:stopped.Count -eq 1) 'Recycled/mismatched HWND was allowed to terminate a process.'
     $fixture.Dispose()
     Remove-Item Function:\Stop-Process

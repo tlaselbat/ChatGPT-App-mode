@@ -3,20 +3,16 @@
 
 function Start-AppModeNativeHost {
     param($Config, [string]$AppRoot, [switch]$NewSession, [string]$LaunchUrl)
-    if ($Config.windowHost -eq 'chromium' -or $Config.useAppMode -eq $false) { return $false }
-    if ($Config.windowHost -and $Config.windowHost -notin @('electron', 'chromium')) { throw 'Unknown windowHost setting.' }
+    if ($Config.windowHost -and $Config.windowHost -ne 'electron') {
+        Write-Warning "Unsupported windowHost '$($Config.windowHost)'. The Electron host is the only supported runtime."
+    }
     $hostExe = Join-Path $AppRoot 'node_modules\electron\dist\electron.exe'
     $entry = Join-Path $AppRoot 'WindowHost\main.cjs'
     if (-not (Test-Path -LiteralPath $hostExe) -or -not (Test-Path -LiteralPath $entry)) {
-        # Older portable packages remain usable without a new runtime.
-        Write-Warning 'Native header runtime is missing. Using Chromium title bar. Run Install-WindowHost.ps1 to install integrated controls.'
+        Write-Warning 'Native window runtime is missing. Run Install-WindowHost.ps1 to install it.'
         return $false
     }
     $profile = Join-Path $AppRoot 'Browser\AppModeHostProfile'
-    if ($Config.appProfileDir -and [IO.Path]::GetFullPath($profile).TrimEnd('\').Equals(
-        [IO.Path]::GetFullPath([string]$Config.appProfileDir).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Native host profile must be separate from the Chromium profile.'
-    }
     $url = Get-AppLaunchUrl -Config $Config -NewSession:$NewSession -LaunchUrl $LaunchUrl
     $arguments = @('"' + $entry + '"', '--app-mode-root="' + $AppRoot + '"',
         '--user-data-dir="' + $profile + '"', '--url="' + $url + '"')
@@ -28,7 +24,7 @@ function Start-AppModeNativeHost {
         # Detect immediate configuration/runtime failures, including launch from
         # environments that otherwise hide the child process's error console.
         if ($nativeProcess.WaitForExit(1500) -and $nativeProcess.ExitCode -ne 0) {
-            Write-Warning 'Native header host failed to start. Using Chromium title bar; reinstall with Install-WindowHost.ps1.'
+            Write-Warning 'Native window host failed to start. Reinstall with Install-WindowHost.ps1.'
             return $false
         }
     } finally {
@@ -37,108 +33,10 @@ function Start-AppModeNativeHost {
     return $true
 }
 
-function ConvertTo-ArgLine {
-    param(
-        [Parameter(Mandatory)][object]$Config,
-        [ValidateSet("App", "Normal")][string]$Mode = "App",
-        [switch]$NewSession,
-        [string]$LaunchUrl
-    )
-
-    $list = New-Object System.Collections.Generic.List[string]
-
-    if ($Config.flags) {
-        foreach ($flag in $Config.flags) {
-            if (-not [string]::IsNullOrWhiteSpace([string]$flag)) {
-                if (($NewSession -or $Config.restoreLastUrl -eq $false) -and (Test-NewSessionSuppressedFlag -Flag ([string]$flag))) {
-                    continue
-                }
-
-                $list.Add([string]$flag)
-            }
-        }
-    }
-
-    if (-not $NewSession -and $Config.restoreLastUrl -ne $false -and -not ($list -contains '--restore-last-session')) {
-        $list.Add('--restore-last-session')
-    }
-
-    if ($Config.appProfileDir) {
-        $profileDir = [string]$Config.appProfileDir
-        if (-not [string]::IsNullOrWhiteSpace($profileDir)) {
-            New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-            $list.Add("--user-data-dir=`"$profileDir`"")
-        }
-    }
-
-    if ($Config.enableLocalExtension -eq $true) {
-        $ext = [string]$Config.extensionDir
-        $manifest = Join-Path $ext "manifest.json"
-        if (Test-Path $manifest) {
-            $list.Add("--load-extension=`"$ext`"")
-        }
-    }
-
-    if ($Mode -eq "App") {
-        $url = Get-AppLaunchUrl -Config $Config -NewSession:$NewSession -LaunchUrl $LaunchUrl
-
-        if ($Config.useAppMode -eq $true) {
-            $list.Add("--app=$url")
-        } else {
-            $list.Add($url)
-        }
-
-        foreach ($arg in Get-AppModeWindowArgs -Config $Config -NewSession:$NewSession) {
-            $list.Add($arg)
-        }
-    }
-
-    return ($list -join " ")
-}
-
-function Test-NewSessionSuppressedFlag {
-    param([string]$Flag)
-
-    return (
-        $Flag -eq '--restore-last-session' -or
-        $Flag -eq '--start-maximized' -or
-        $Flag -like '--window-size=*' -or
-        $Flag -like '--window-position=*'
-    )
-}
-
-function Get-NewSessionWindowArgs {
-    $width = 670
-    $height = 1000
-    $x = 80
-    $y = 40
-
-    try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        $area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-        $x = [Math]::Max($area.Left, [int]($area.Left + (($area.Width - $width) / 2)))
-        $y = [Math]::Max($area.Top, [int]($area.Top + (($area.Height - $height) / 2)))
-    }
-    catch {
-    }
-
-    return @(
-        "--window-size=$width,$height",
-        "--window-position=$x,$y"
-    )
-}
-
 function Get-AppRootFromConfig {
     param([Parameter(Mandatory)][object]$Config)
 
     if ($Config.installRoot) { return [string]$Config.installRoot }
-    if ($Config.extensionDir) {
-        return Split-Path -Parent ([string]$Config.extensionDir)
-    }
-
-    if ($Config.chromiumPortableRoot) {
-        return Split-Path -Parent (Split-Path -Parent ([string]$Config.chromiumPortableRoot))
-    }
 
     return $null
 }
@@ -220,20 +118,6 @@ function Test-RestorableChatGptUrl {
     )
 }
 
-function Write-ChromiumPortableIni {
-    param(
-        [Parameter(Mandatory)][string]$IniPath,
-        [Parameter(Mandatory)][string]$AdditionalParameters
-    )
-
-    $lines = @(
-        "[ChromiumPortable]",
-        "AdditionalParameters=$AdditionalParameters"
-    )
-
-    Set-Content -Path $IniPath -Value ($lines -join [Environment]::NewLine) -Encoding UTF8
-}
-
 function Write-AppModeLog {
     param(
         [Parameter(Mandatory)][string]$LogPath,
@@ -244,7 +128,7 @@ function Write-AppModeLog {
     "[$stamp] $Message" | Add-Content -Path $LogPath -Encoding UTF8
 }
 
-# Profile metadata is owned by Chromium; launchers never rewrite it.
+# Profile metadata is owned by the host runtime; launchers never rewrite it.
 
 function Ensure-TopMostServerRunning {
     param(
@@ -493,41 +377,13 @@ public static class ChatGptAppModeWindowIdentity
     Add-Type -TypeDefinition $typeDefinition
 }
 
-function Get-ChromiumPortableWindow {
-    param([Parameter(Mandatory)][string]$ChromiumRoot)
-
-    Initialize-WindowIdentityApi
-
-    $normalizedRoot = [IO.Path]::GetFullPath($ChromiumRoot).TrimEnd('\', '/') + '\'
-    $processes = @(Get-Process -Name chrome -ErrorAction SilentlyContinue | Where-Object {
-        try { $_.Path -and $_.Path.StartsWith($normalizedRoot, [StringComparison]::OrdinalIgnoreCase) }
-        catch { $false }
-    })
-
-    foreach ($process in $processes) {
-        $handles = [ChatGptAppModeWindowIdentity]::GetVisibleTopLevelWindowsForProcessId($process.Id)
-
-        foreach ($handle in $handles) {
-            [pscustomobject]@{
-                Id = $process.Id
-                ProcessName = $process.ProcessName
-                MainWindowHandle = $handle
-                MainWindowTitle = [ChatGptAppModeWindowIdentity]::GetWindowTitle($handle)
-                Path = $process.Path
-                StartTime = $process.StartTime
-            }
-        }
-    }
-}
-
-function Set-ChromiumPortableWindowIdentity {
+function Set-AppModeWindowIdentity {
     param(
-        [Parameter(Mandatory)][string]$ChromiumRoot,
+        [Parameter(Mandatory)]$Config,
         [string]$AppUserModelId = "OpenAI.ChatGPT.AppMode",
         [string]$IconPath,
         [int]$TimeoutSeconds = 15,
-        [string]$LogPath,
-        $Config
+        [string]$LogPath
     )
 
     Initialize-WindowIdentityApi
@@ -537,16 +393,14 @@ function Set-ChromiumPortableWindowIdentity {
 
     while ((Get-Date) -lt $deadline -and $windows.Count -eq 0) {
         Start-Sleep -Milliseconds 250
-        if ($Config) {
-            $windows = @(Get-AppModeOwnedWindows $Config | ForEach-Object {
-                [pscustomobject]@{ Id=$_.processId; MainWindowHandle=[IntPtr]$_.handle }
-            })
-        } else { $windows = @(Get-ChromiumPortableWindow -ChromiumRoot $ChromiumRoot) }
+        $windows = @(Get-AppModeOwnedWindows $Config | ForEach-Object {
+            [pscustomobject]@{ Id=$_.processId; MainWindowHandle=[IntPtr]$_.handle }
+        })
     }
 
     if ($windows.Count -eq 0) {
         if ($LogPath) {
-            Write-AppModeLog -LogPath $LogPath -Message "No visible Chromium window was found for taskbar AppUserModelID."
+            Write-AppModeLog -LogPath $LogPath -Message "No visible App Mode window was found for taskbar AppUserModelID."
         }
 
         return

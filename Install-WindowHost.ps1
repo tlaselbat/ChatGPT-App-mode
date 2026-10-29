@@ -10,5 +10,5 @@ try {
     # Electron 45 uses an explicit install command rather than npm postinstall.
     & node.exe (Join-Path $AppRoot 'node_modules\electron\install.js')
     if ($LASTEXITCODE -ne 0) { throw 'Window host runtime installation failed.' }
-    Write-Output 'Native window host installed. Start App Mode normally. Set windowHost to chromium to roll back.'
+    Write-Output 'Native window host installed. Start App Mode normally.'
 } finally { Pop-Location }

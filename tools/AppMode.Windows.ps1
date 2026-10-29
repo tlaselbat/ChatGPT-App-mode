@@ -229,31 +229,13 @@ function Test-AppModeNativeHostProcess {
 
 function Get-AppModeOwnedWindows {
     param([Parameter(Mandatory)]$Config)
-    # Match the executable boundary AND the browser's explicit user-data-dir.
-    # Never match arbitrary command lines that merely mention the installation.
-    $root = [IO.Path]::GetFullPath([string]$Config.chromiumPortableRoot).TrimEnd('\', '/') + '\'
-    $profile = [string]$Config.appProfileDir
-    if (-not $profile) { $profile = Join-Path $Config.chromiumPortableRoot 'Data\profile' }
+    # Match only the native host: exact Electron executable beneath this
+    # installation, its dedicated profile flag, and a browser process.
     $appRoot = Get-AppRootFromConfig $Config
-    $candidates = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='electron.exe'" -ErrorAction Stop)
-    $processes = @($candidates | Where-Object {
-        $_.Name -eq 'chrome.exe' -and $_.ExecutablePath -and
-        $_.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and
-        $_.CommandLine -and $_.CommandLine -notmatch '(?:^|\s)--type='
-    })
+    if (-not $appRoot) { return }
+    $candidates = @(Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction Stop)
     Initialize-WindowIdentityApi
     foreach ($process in @($candidates | Where-Object { Test-AppModeNativeHostProcess $_ $appRoot })) {
-        foreach ($handle in [ChatGptAppModeWindowIdentity]::GetVisibleTopLevelWindowsForProcessId([int]$process.ProcessId)) {
-            [pscustomobject]@{ handle = $handle.ToInt64(); processId = [int]$process.ProcessId }
-        }
-    }
-    foreach ($process in $processes) {
-        if ($profile) {
-            $match = [regex]::Match($process.CommandLine, '(?:^|\s)--user-data-dir=(?:"([^"]+)"|([^\s]+))')
-            if (-not $match.Success) { continue }
-            $actual = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
-            if (-not [IO.Path]::GetFullPath($actual).TrimEnd('\').Equals([IO.Path]::GetFullPath($profile).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { continue }
-        }
         foreach ($handle in [ChatGptAppModeWindowIdentity]::GetVisibleTopLevelWindowsForProcessId([int]$process.ProcessId)) {
             [pscustomobject]@{ handle = $handle.ToInt64(); processId = [int]$process.ProcessId }
         }

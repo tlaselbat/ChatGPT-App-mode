@@ -72,7 +72,6 @@ function Refresh-JumpList {
 Add-Heading 'Launch and window'
 $restore = Add-Check 'Restore the last conversation' ($config.restoreLastUrl -ne $false -and $privacy.saveLastSession)
 $placement = Add-Check 'Remember window size and monitor position' ($config.rememberWindowPlacement -ne $false)
-$extension = Add-Check 'Enable App Mode controls and styling' ($config.enableLocalExtension -eq $true)
 $startup = Add-Check 'Start the tray launcher when I sign in to Windows' ($config.runAtStartup -eq $true)
 $width = Add-Number 'Default window width (pixels)' $config.window.width 320 7680
 $height = Add-Number 'Default window height (pixels)' $config.window.height 300 4320
@@ -130,7 +129,7 @@ $save.Add_Click({
     try {
         # Re-read to preserve unrelated edits made while this window was open.
         $current = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-        foreach ($entry in @{ restoreLastUrl=$restore.Checked; rememberWindowPlacement=$placement.Checked; enableLocalExtension=$extension.Checked; runAtStartup=$startup.Checked }.GetEnumerator()) {
+        foreach ($entry in @{ restoreLastUrl=$restore.Checked; rememberWindowPlacement=$placement.Checked; runAtStartup=$startup.Checked }.GetEnumerator()) {
             $current | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value -Force
         }
         if (-not $current.window) { $current | Add-Member -NotePropertyName window -NotePropertyValue ([pscustomobject]@{}) -Force }
@@ -156,7 +155,7 @@ $save.Add_Click({
         $last = Join-Path $AppRoot 'logs\last-session.json'
         if (-not $restore.Checked -and (Test-Path -LiteralPath $last)) { Remove-Item -LiteralPath $last -Force }
         Refresh-JumpList
-        $status.Text = 'Settings saved. Relaunch App Mode for extension and default-size changes.'
+        $status.Text = 'Settings saved. Relaunch App Mode for default-size changes.'
     } catch { $status.Text = 'Could not save all settings. Check folder permissions and try again.' }
 })
 try {

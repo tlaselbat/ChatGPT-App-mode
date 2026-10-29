@@ -2,16 +2,18 @@
 
 ## Architecture
 
-- The Windows PowerShell launcher reads the local, ignored `config.json` and delegates shared launch argument, URL restore, portable Chromium INI, window identity, and local-server startup behavior to `tools/ChatGPT-AppMode.Helpers.ps1`.
-- `Launch-ChatGPT-AppMode.ps1` launches Chromium with the configured `appProfileDir`, `extensionDir`, and app URL. The portable Chromium installation is runtime software under `Browser/` and is not source.
-- `extension/manifest.json` loads `extension/styles/chatgpt-overrides.css` and `extension/scripts/chatgpt-overrides.js` on ChatGPT pages. Keep changes small, reversible, and scoped to the extension.
+- The Windows PowerShell launcher reads the local, ignored `config.json` and delegates URL restore, window identity, native host launch, and local-server startup behavior to `tools/ChatGPT-AppMode.Helpers.ps1`.
+- `Launch-ChatGPT-AppMode.ps1` launches the pinned Electron host (`node_modules/electron`) with `WindowHost/main.cjs` and the dedicated `Browser/AppModeHostProfile`. Chromium was retired; the Electron runtime is the only supported host.
+- `extension/styles/chatgpt-overrides.css` and `extension/scripts/chatgpt-overrides.js` are the shared page overrides; the host injects them into ChatGPT pages (the MV3 manifest remains for Playwright/live-audit browser contexts). Keep changes small, reversible, and scoped.
 - `Start-ChatGPT-TrayLauncher.ps1`, `TaskbarLauncher/Program.cs`, and `Start-ChatGPT-TopMostServer.ps1` implement tray/taskbar integration and a loopback control endpoint. Treat server and profile deletion changes as security/data-integrity work.
+- `WindowHost/` is the Electron window host using `Browser/AppModeHostProfile`. Keep its sandbox, navigation, and permission guards intact.
 
 ## Source and private data
 
 - Never commit `config.json`, `Browser/`, `logs/`, `*.zip`, runtime executables, generated build folders, shortcuts, session URLs, chat titles, browser profiles, or Playwright output. Use `config.example.json` for sanitized configuration documentation.
+- `archive/` holds retired installers, snapshots, and deprecated assets. It is ignored local data, not source; old entries under it may contain browser profiles or chat titles and must never be committed or referenced by tests.
 - Do not put credentials, cookies, access tokens, conversation content, or private chat titles in source, test fixtures, screenshots, reports, or logs.
-- Do not run profile reset commands as part of routine development or tests. Never point a test browser at the configured production profile.
+- Do not run profile reset commands as part of routine development or tests. `Reset-AppMode-HostProfile.ps1` targets only `Browser/AppModeHostProfile` with typed confirmation; never point a test host at the configured production profile.
 - The local control server accepts only exact ChatGPT origins and the loopback Host. Preserve allowed/disallowed-origin tests, bounded request reads, window ownership checks, and conditional private-network preflight compatibility when changing it.
 
 ## Coding and verification

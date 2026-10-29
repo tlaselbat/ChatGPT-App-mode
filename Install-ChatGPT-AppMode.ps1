@@ -3,28 +3,16 @@ param(
     [switch]$SkipStartMenuShortcut,
     [switch]$ConfigureOnly,
     [string]$AppName = 'ChatGPT App Mode',
-    [string]$Url = 'https://chatgpt.com/',
-    [string]$ChromiumPortableExe = ''
+    [string]$Url = 'https://chatgpt.com/'
 )
 
 $ErrorActionPreference = 'Stop'
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$TaskbarAppUserModelId = 'OpenAI.ChatGPT.AppMode'
 $ConfigPath = Join-Path $AppRoot 'config.json'
 $priorConfig = $null
 if (Test-Path -LiteralPath $ConfigPath) { $priorConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json }
 
-$ChromiumRoot = Join-Path $AppRoot 'Browser\ChromiumPortable'
-if ($priorConfig.chromiumPortableRoot -and (Test-Path -LiteralPath $priorConfig.chromiumPortableRoot)) { $ChromiumRoot = [string]$priorConfig.chromiumPortableRoot }
-if ($ChromiumPortableExe) { $ChromiumRoot = Split-Path -Parent ([IO.Path]::GetFullPath($ChromiumPortableExe)) }
-$ChromiumExe = Join-Path $ChromiumRoot 'ChromiumPortable.exe'
-$ChromiumDirectExe = Join-Path $ChromiumRoot 'App\Chromium\chrome.exe'
-$ChromiumIni = Join-Path $ChromiumRoot 'ChromiumPortable.ini'
-$ChromiumAppInfo = Join-Path $ChromiumRoot 'App\AppInfo\appinfo.ini'
-$AppProfileDir = Join-Path $AppRoot 'Browser\ChatGPTProfile'
-$ExtensionDir = Join-Path $AppRoot 'extension'
-$ConfigPath = Join-Path $AppRoot 'config.json'
 $HelperPath = Join-Path $AppRoot 'tools\ChatGPT-AppMode.Helpers.ps1'
 $LauncherExe = Join-Path $AppRoot 'TaskbarLauncher\ChatGPTTaskbarLauncher.exe'
 $BuildScript = Join-Path $AppRoot 'Build-TaskbarLauncher.ps1'
@@ -41,21 +29,6 @@ function Assert-Path {
     }
 }
 
-function Set-ChromiumBaseAppId {
-    if (-not (Test-Path $ChromiumAppInfo)) {
-        return
-    }
-
-    $appInfo = Get-Content -Path $ChromiumAppInfo -Raw
-    if ($appInfo -match '(?m)^BaseAppID=') {
-        $appInfo = $appInfo -replace '(?m)^BaseAppID=.*$', "BaseAppID=$TaskbarAppUserModelId"
-    } else {
-        $appInfo = $appInfo -replace '(?m)^\[Control\]\s*$', "[Control]`r`nBaseAppID=$TaskbarAppUserModelId"
-    }
-
-    Set-Content -Path $ChromiumAppInfo -Value $appInfo -Encoding UTF8
-}
-
 function Copy-Shortcut {
     param([Parameter(Mandatory)][string]$Destination)
 
@@ -64,7 +37,6 @@ function Copy-Shortcut {
     Copy-Item -Path $InternalShortcut -Destination $Destination -Force
 }
 
-Assert-Path -Path $ChromiumExe -Label 'Chromium Portable'
 Assert-Path -Path $HelperPath -Label 'Helper script'
 
 New-Item -ItemType Directory -Force -Path (Join-Path $AppRoot 'logs') | Out-Null
@@ -74,15 +46,7 @@ $config = [ordered]@{
     appName = $AppName
     installRoot = $AppRoot
     url = $Url
-    chromiumPortableExe = $ChromiumExe
-    chromiumDirectExe = $ChromiumDirectExe
-    chromiumPortableRoot = $ChromiumRoot
-    chromiumPortableIni = $ChromiumIni
-    appProfileDir = $AppProfileDir
-    extensionDir = $ExtensionDir
     restoreLastUrl = $true
-    enableLocalExtension = $true
-    useAppMode = $true
     windowHost = 'electron'
     rememberWindowPlacement = $true
     runAtStartup = $false
@@ -110,37 +74,13 @@ $defaults = $config | ConvertTo-Json -Depth 10 | ConvertFrom-Json
 $existing = $null
 if (Test-Path -LiteralPath $ConfigPath) {
     $existing = $priorConfig
-    # Missing profile/direct-executable settings identify legacy portable mode.
-    # Adding modern defaults here would silently switch to a fresh profile.
-    if (-not $existing.PSObject.Properties['appProfileDir']) { $existing | Add-Member -NotePropertyName appProfileDir -NotePropertyValue '' }
-    if (-not $existing.PSObject.Properties['chromiumDirectExe']) { $existing | Add-Member -NotePropertyName chromiumDirectExe -NotePropertyValue '' }
-    # Rebase paths belonging to a moved installation; custom external paths stay intact.
-    $oldRoot = $AppRoot
-    if ($existing.installRoot) { $oldRoot = [string]$existing.installRoot }
-    elseif ([string]$existing.chromiumPortableRoot -match '[\\/]Browser[\\/]ChromiumPortable[\\/]?$') {
-        $oldRoot = Split-Path -Parent (Split-Path -Parent ([string]$existing.chromiumPortableRoot).TrimEnd('\', '/'))
-    }
-    if ($oldRoot -and -not $oldRoot.Equals($AppRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        foreach ($name in @('chromiumPortableExe','chromiumDirectExe','chromiumPortableRoot','chromiumPortableIni','appProfileDir','extensionDir')) {
-            $value = [string]$existing.$name
-            if ($value.StartsWith($oldRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
-                $existing.$name = Join-Path $AppRoot $value.Substring($oldRoot.TrimEnd('\').Length + 1)
-            }
-        }
-    }
     if ($existing.PSObject.Properties['installRoot']) { $existing.installRoot = $AppRoot }
     Copy-Item -LiteralPath $ConfigPath -Destination (Join-Path $AppRoot 'logs\config-backup.json') -Force
 }
 $config = Merge-AppModeConfig -Defaults $defaults -Existing $existing
 Write-AppModeJson -Path $ConfigPath -Value $config
 if ($ConfigureOnly) { Write-Host 'Configuration saved. Build and shortcut registration skipped.'; return }
-$configObj = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
-if ($configObj.windowHost -eq 'electron') {
-    & (Join-Path $AppRoot 'Install-WindowHost.ps1')
-}
-$initialArgLine = ConvertTo-ArgLine -Config $configObj -Mode App
-Write-ChromiumPortableIni -IniPath $ChromiumIni -AdditionalParameters $initialArgLine
-Set-ChromiumBaseAppId
+& (Join-Path $AppRoot 'Install-WindowHost.ps1')
 
 if (Test-Path $BuildScript) {
     try {

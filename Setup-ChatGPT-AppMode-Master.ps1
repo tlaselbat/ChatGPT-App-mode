@@ -4,11 +4,10 @@
 param(
     [string]$AppRoot = $PSScriptRoot,
     [string]$AppName = 'ChatGPT App Mode',
-    [string]$ChatGptUrl = 'https://chatgpt.com/',
-    [string]$ChromiumPortableExe = ''
+    [string]$ChatGptUrl = 'https://chatgpt.com/'
 )
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path $AppRoot 'Install-ChatGPT-AppMode.ps1'
 if (-not (Test-Path -LiteralPath $installer)) { throw 'Extract the maintained project into AppRoot before running setup.' }
 Write-Host 'Using the maintained installer. Existing configuration and source files are preserved.'
-& $installer -AppName $AppName -Url $ChatGptUrl -ChromiumPortableExe $ChromiumPortableExe
+& $installer -AppName $AppName -Url $ChatGptUrl

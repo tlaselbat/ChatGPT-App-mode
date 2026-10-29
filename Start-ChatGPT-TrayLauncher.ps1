@@ -1,7 +1,7 @@
 param(
     [string]$AppRoot = $PSScriptRoot,
     [switch]$MenuOnly,
-    [ValidateSet('App', 'Normal', 'Extensions')][string]$LaunchMode,
+    [ValidateSet('App')][string]$LaunchMode,
     [switch]$NewSession
 )
 # Relaunch in STA mode when needed. WinForms tray apps behave better in STA.
@@ -86,50 +86,21 @@ function Save-AppConfig {
     Write-AppModeJson -Path $ConfigPath -Value $Config
 }
 
-function New-ChromiumArgLine {
-    param($Config, [ValidateSet('App','Normal','Extensions')][string]$Mode = 'App', [switch]$NewSession)
-    $sharedMode = if ($Mode -eq 'App') { 'App' } else { 'Normal' }
-    $line = ConvertTo-ArgLine -Config $Config -Mode $sharedMode -NewSession:$NewSession
-    if ($Mode -eq 'Extensions') { $line += ' chrome://extensions' }
-    return $line
-}
-
-function Start-ChromiumPortable {
-    param(
-        [ValidateSet('App', 'Normal', 'Extensions')]
-        [string]$Mode = 'App',
-        [switch]$NewSession
-    )
+function Start-AppModeWindow {
+    param([switch]$NewSession)
 
     try {
         $config = Read-AppConfig
         Ensure-TopMostServerRunning -AppRoot $AppRoot -LogPath $LogPath
 
-        if ($Mode -eq 'App' -and (Start-AppModeNativeHost -Config $config -AppRoot $AppRoot -NewSession:$NewSession)) { return }
-
-        $chromiumExe = [string]$config.chromiumPortableExe
-        $chromiumDirectExe = [string]$config.chromiumDirectExe
-        $chromiumRoot = [string]$config.chromiumPortableRoot
-        $chromiumIni = [string]$config.chromiumPortableIni
-
-        $launchExe = if ($chromiumDirectExe -and (Test-Path $chromiumDirectExe)) { $chromiumDirectExe } else { $chromiumExe }
-
-        if (-not (Test-Path $launchExe)) {
-            throw "Chromium executable not found: $launchExe"
+        if (-not (Start-AppModeNativeHost -Config $config -AppRoot $AppRoot -NewSession:$NewSession)) {
+            throw 'Native window host is unavailable. Run Install-WindowHost.ps1.'
         }
 
-
-        $argLine = New-ChromiumArgLine -Config $config -Mode $Mode -NewSession:$NewSession
-        Write-ChromiumPortableIni -IniPath $chromiumIni -AdditionalParameters $argLine
-
-        Write-TrayLog "Mode=$Mode"
-        Write-TrayLog "Launching=$launchExe"
-
-        Start-Process -FilePath $launchExe -WorkingDirectory (Split-Path -Parent $launchExe) -ArgumentList $argLine
-        Set-ChromiumPortableWindowIdentity -Config $config -ChromiumRoot $chromiumRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
+        Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
     }
     catch {
-        Write-TrayLog "ERROR launching Chromium: $($_.Exception.Message)"
+        Write-TrayLog "ERROR launching App Mode: $($_.Exception.Message)"
 
         [System.Windows.Forms.MessageBox]::Show(
             $_.Exception.Message,
@@ -180,35 +151,13 @@ function Open-TextFile {
     }
 }
 
-function Set-LocalExtensionEnabled {
-    param([bool]$Enabled)
-
-    try {
-        $config = Read-AppConfig
-        $config | Add-Member enableLocalExtension $Enabled -Force
-        Save-AppConfig -Config $config
-
-        Write-TrayLog "Local extension enabled: $Enabled"
-        return $true
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            $_.Exception.Message,
-            'ChatGPT App Mode Error',
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return $false
-    }
-}
-
 function Confirm-TrayForceClose {
     return [Windows.Forms.MessageBox]::Show(
-        'Force close all browser windows using the App Mode profile? Unsaved input may be lost. Other browser profiles will stay open.',
+        'Force close all App Mode windows? Unsaved input may be lost. Other applications will stay open.',
         'Force close App Mode', 'YesNo', 'Warning', 'Button2') -eq [Windows.Forms.DialogResult]::Yes
 }
 
-function Stop-PortableChromium {
+function Stop-AppModeWindows {
     try {
         $config = Read-AppConfig
         $targets = @(Get-AppModeOwnedWindows $config)
@@ -232,13 +181,13 @@ function Stop-PortableChromium {
     }
 }
 
-function Reset-PortableProfile {
+function Reset-AppModeProfile {
     # The same validator and typed confirmation are used from every entry point.
-    Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + (Join-Path $AppRoot 'Reset-Portable-Chromium-Profile.ps1') + '"'))
+    Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + (Join-Path $AppRoot 'Reset-AppMode-HostProfile.ps1') + '"'))
 }
 
 function Start-TrayLaunch {
-    param([ValidateSet('App', 'Normal', 'Extensions')][string]$Mode = 'App', [switch]$NewSession)
+    param([ValidateSet('App')][string]$Mode = 'App', [switch]$NewSession)
     # Window discovery may take 15 seconds. Keep it off the tray's UI thread.
     $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', ('"' + $TrayScript + '"'),
         '-AppRoot', ('"' + $AppRoot + '"'), '-LaunchMode', $Mode)
@@ -262,7 +211,7 @@ function Set-TrayOpacity {
     }
 }
 
-if ($LaunchMode) { Start-ChromiumPortable -Mode $LaunchMode -NewSession:$NewSession; return }
+if ($LaunchMode) { Start-AppModeWindow -NewSession:$NewSession; return }
 
 function New-MenuItem {
     param(
@@ -303,8 +252,6 @@ $topMostItem = New-MenuItem 'Open pinned mini window' {
 $launchItem = New-MenuItem 'Open ChatGPT' { Start-TrayLaunch -Mode App }
 $launchItem.Font = [Drawing.Font]::new($menu.Font, [Drawing.FontStyle]::Bold)
 $newSessionItem = New-MenuItem 'New chat' { Start-TrayLaunch -Mode App -NewSession }
-$normalItem = New-MenuItem 'Open browser window' { Start-TrayLaunch -Mode Normal }
-$extensionsPageItem = New-MenuItem 'Manage browser extensions' { Start-TrayLaunch -Mode Extensions }
 
 $openRootItem = New-MenuItem 'Open App Folder' { Open-AppPath -Path $AppRoot }
 $openLogsItem = New-MenuItem 'Open Logs Folder' { Open-AppPath -Path $LogDir }
@@ -330,16 +277,8 @@ $openJsItem = New-MenuItem 'Edit JS Overrides' {
     Open-TextFile -Path (Join-Path $AppRoot 'extension\scripts\chatgpt-overrides.js')
 }
 
-$toggleExtensionItem = New-Object System.Windows.Forms.ToolStripMenuItem
-$toggleExtensionItem.Text = 'Enable app extension (after relaunch)'
-$toggleExtensionItem.Add_Click({
-    if (Set-LocalExtensionEnabled -Enabled (-not $toggleExtensionItem.Checked)) {
-        $toggleExtensionItem.Checked = -not $toggleExtensionItem.Checked
-    }
-})
-
-$killItem = New-MenuItem 'Force close App Mode...' { Stop-PortableChromium }
-$resetItem = New-MenuItem 'Reset browser profile...' { Reset-PortableProfile }
+$killItem = New-MenuItem 'Force close App Mode...' { Stop-AppModeWindows }
+$resetItem = New-MenuItem 'Reset app profile...' { Reset-AppModeProfile }
 
 $opacityMenu = New-Object Windows.Forms.ToolStripMenuItem('Pinned window transparency')
 $fadeItem = New-MenuItem 'Fade when inactive' { Set-TrayOpacity -Enabled (-not $fadeItem.Checked) }
@@ -358,11 +297,9 @@ $customOpacityItem = New-MenuItem 'Custom opacity...' { $settingsItem.PerformCli
 [void]$opacityMenu.DropDownItems.Add($customOpacityItem)
 
 $advancedMenu = New-Object Windows.Forms.ToolStripMenuItem('Advanced')
-$browserMenu = New-Object Windows.Forms.ToolStripMenuItem('Browser and extension')
-foreach ($item in @($normalItem, $extensionsPageItem, $toggleExtensionItem)) { [void]$browserMenu.DropDownItems.Add($item) }
 $filesMenu = New-Object Windows.Forms.ToolStripMenuItem('Files and customization')
 foreach ($item in @($openRootItem, $openLogsItem, (New-Separator), $openConfigItem, $openCssItem, $openJsItem)) { [void]$filesMenu.DropDownItems.Add($item) }
-foreach ($item in @($browserMenu, $filesMenu, $restartServerItem, (New-Separator), $killItem, $resetItem)) { [void]$advancedMenu.DropDownItems.Add($item) }
+foreach ($item in @($filesMenu, $restartServerItem, (New-Separator), $killItem, $resetItem)) { [void]$advancedMenu.DropDownItems.Add($item) }
 
 $exitItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $exitItem.Text = 'Exit tray launcher'
@@ -381,8 +318,6 @@ $exitItem.ToolTipText = 'Leave ChatGPT windows open and remove this tray icon.'
 function Update-TrayMenu {
     try {
         $config = Read-AppConfig
-        $toggleExtensionItem.Checked = [bool]$config.enableLocalExtension
-        $toggleExtensionItem.Enabled = $true
         $settings = Get-AppModeOpacitySettings $config
         $fadeItem.Checked = $settings.enabled
         $opacityMenu.Text = if ($settings.enabled) { "Pinned opacity: $($settings.percent)%" } else { 'Pinned transparency: off' }
@@ -390,8 +325,6 @@ function Update-TrayMenu {
         $opacityMenu.Enabled = $true
     }
     catch {
-        $toggleExtensionItem.Checked = $false
-        $toggleExtensionItem.Enabled = $false
         $opacityMenu.Enabled = $false
     }
 }

@@ -28,20 +28,18 @@ Assert (-not (Test-AppModeNativeHostProcess $bad $Scratch)) 'Unrelated Electron 
 $bad = $nativeProcess | ConvertTo-Json | ConvertFrom-Json
 $bad.CommandLine = $bad.CommandLine.Replace('AppModeHostProfile', 'ChromiumProfile')
 Assert (-not (Test-AppModeNativeHostProcess $bad $Scratch)) 'Native ownership accepted a different profile.'
-Assert (-not (Start-AppModeNativeHost -Config ([pscustomobject]@{windowHost='chromium'}) -AppRoot $Scratch)) 'Chromium rollback was ignored.'
-Assert (-not (Start-AppModeNativeHost -Config ([pscustomobject]@{windowHost='electron'}) -AppRoot $Scratch)) 'Missing native runtime did not fall back.'
+Assert (-not (Start-AppModeNativeHost -Config ([pscustomobject]@{windowHost='chromium'}) -AppRoot $Scratch)) 'Deprecated windowHost warning path did not reach the missing-runtime return.'
+Assert (-not (Start-AppModeNativeHost -Config ([pscustomobject]@{windowHost='electron'}) -AppRoot $Scratch)) 'Missing native runtime was reported as launched.'
 $config = [pscustomobject]@{
-    url = 'https://chatgpt.com/'; useAppMode = $true; restoreLastUrl = $false
-    chromiumPortableRoot = (Join-Path $Scratch 'Browser\ChromiumPortable')
-    appProfileDir = (Join-Path $Scratch 'Browser\AppProfile')
-    extensionDir = (Join-Path $Scratch 'extension')
+    url = 'https://chatgpt.com/'; installRoot = $Scratch; restoreLastUrl = $false
+    chromiumPortableRoot = (Join-Path $Scratch 'node_modules\electron')
+    appProfileDir = (Join-Path $Scratch 'Browser\AppModeHostProfile')
     window = [pscustomobject]@{width=1100; height=700; startMaximized=$false}
-    flags = @('--restore-last-session')
     privacy = [pscustomobject]@{trackRecentChats=$true; showChatTitles=$false; retentionDays=7}
 }
 New-Item -ItemType Directory -Force -Path $config.appProfileDir | Out-Null
-Assert ((Assert-AppModeResetTarget $config $Scratch) -eq $config.appProfileDir) 'Reset must resolve the launch profile.'
-foreach ($unsafe in @($Scratch, (Join-Path $Scratch 'Browser'), $config.chromiumPortableRoot, (Join-Path $Scratch 'extension'), (Join-Path $Scratch '..\Outside'), (Join-Path $config.chromiumPortableRoot 'App'), (Join-Path $Scratch 'Browser\ChromiumPortable.\App'))) {
+Assert ((Assert-AppModeResetTarget $config $Scratch) -eq $config.appProfileDir) 'Reset must resolve the host profile.'
+foreach ($unsafe in @($Scratch, (Join-Path $Scratch 'Browser'), $config.chromiumPortableRoot, (Join-Path $Scratch 'extension'), (Join-Path $Scratch '..\Outside'), (Join-Path $config.chromiumPortableRoot 'dist'), (Join-Path $Scratch 'node_modules'), 'C:\')) {
     $copy = $config | ConvertTo-Json -Depth 10 | ConvertFrom-Json
     $copy.appProfileDir = $unsafe
     Assert-Rejected { Assert-AppModeResetTarget $copy $Scratch } 'Unsafe reset path accepted.'
@@ -58,13 +56,12 @@ $nestedJunction = Join-Path $config.appProfileDir 'nested-junction'
 New-Item -ItemType Junction -Path $nestedJunction -Target $outside | Out-Null
 Assert-Rejected { Assert-AppModeResetTarget $config $Scratch } 'Nested junction reset accepted.'
 Remove-Item -LiteralPath $nestedJunction -Force
-function Get-CimInstance { return [pscustomobject]@{ExecutablePath=(Join-Path $config.chromiumPortableRoot 'App\chrome.exe'); Name='chrome.exe'; CommandLine='synthetic'} }
-Assert-Rejected { Assert-AppModeBrowserStopped $config } 'Running browser was accepted.'
+function Get-CimInstance { return [pscustomobject]@{ExecutablePath=(Join-Path $config.chromiumPortableRoot 'dist\electron.exe'); Name='electron.exe'; CommandLine='synthetic'} }
+Assert-Rejected { Assert-AppModeBrowserStopped $config } 'Running host was accepted.'
 Remove-Item Function:\Get-CimInstance
 
-$argsLine = ConvertTo-ArgLine -Config $config
-Assert ($argsLine -like '*--window-size=1100,700*') 'Configured dimensions missing.'
-Assert ($argsLine -notlike '*--restore-last-session*') 'Restore disabled but Chromium restore remains enabled.'
+$windowArgs = @(Get-AppModeWindowArgs -Config $config)
+Assert ($windowArgs[0] -eq '--window-size=1100,700') 'Configured dimensions missing.'
 foreach ($url in @('https://chatgpt.com.evil.test/c/synthetic', 'https://chatgpt.com:444/c/synthetic', 'https://x@chatgpt.com/c/synthetic', 'https://chatgpt.com/c/synthetic?token=synthetic', "'https://chatgpt.com/c/synthetic'", 'https://chatgpt.com/g/synthetic" --user-data-dir=synthetic')) {
     Assert (-not (Test-RestorableChatGptUrl $url)) 'Unsafe restore URL accepted.'
 }
@@ -134,18 +131,15 @@ Assert ($reader.Invoke($null, [object[]]@([string]$Scratch)).Count -eq 0) 'Taskb
 
 # Exercise installer configuration in a disposable copy, never the active install.
 $install = Join-Path $Scratch 'install'
-New-Item -ItemType Directory -Force -Path (Join-Path $install 'tools'), (Join-Path $install 'Browser\ChromiumPortable') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $install 'tools') | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'Install-ChatGPT-AppMode.ps1') -Destination $install
 Copy-Item -Path (Join-Path $root 'tools\*.ps1') -Destination (Join-Path $install 'tools')
-Set-Content -LiteralPath (Join-Path $install 'Browser\ChromiumPortable\ChromiumPortable.exe') -Value 'Synthetic executable placeholder; never executed.'
 $installConfig = Join-Path $install 'config.json'
-$customExtension = Join-Path $Scratch 'custom-extension'
-Write-AppModeJson -Path $installConfig -Value ([pscustomobject]@{url='https://chatgpt.com/';restoreLastUrl=$false;extensionDir=$customExtension;window=[pscustomobject]@{width=875};custom='preserve'})
+Write-AppModeJson -Path $installConfig -Value ([pscustomobject]@{url='https://chatgpt.com/';restoreLastUrl=$false;window=[pscustomobject]@{width=875};custom='preserve'})
 & (Join-Path $install 'Install-ChatGPT-AppMode.ps1') -ConfigureOnly
 $installed = Get-Content -LiteralPath $installConfig -Raw | ConvertFrom-Json
 Assert ($installed.window.width -eq 875 -and $installed.window.height -eq 900 -and -not $installed.restoreLastUrl -and $installed.custom -eq 'preserve') 'Installer overwrote preferences.'
-Assert ($installed.appProfileDir -eq '' -and $installed.chromiumDirectExe -eq '') 'Installer switched a legacy install to a fresh profile.'
-Assert ($installed.extensionDir -eq $customExtension) 'Installer rebased a custom external extension path.'
+Assert ($installed.windowHost -eq 'electron') 'Installer lost the electron host setting.'
 Assert (Test-Path -LiteralPath (Join-Path $install 'logs\config-backup.json')) 'Installer did not back up config.'
 
 # Deterministic window ownership/state checks. Native calls are replaced in this
@@ -183,10 +177,10 @@ public static class ChatGptAppModeWindowIdentity {
 }
 '@
 $script:syntheticProcesses = @(
-    [pscustomobject]@{Name='chrome.exe';ProcessId=1001;ExecutablePath=(Join-Path $config.chromiumPortableRoot 'App\chrome.exe');CommandLine=('--user-data-dir="' + $config.appProfileDir + '" --app=https://chatgpt.com/')},
-    [pscustomobject]@{Name='chrome.exe';ProcessId=1002;ExecutablePath=(Join-Path $config.chromiumPortableRoot 'App\chrome.exe');CommandLine='--user-data-dir="C:\SyntheticOtherProfile"'},
-    [pscustomobject]@{Name='chrome.exe';ProcessId=1003;ExecutablePath=($config.chromiumPortableRoot + '-other\chrome.exe');CommandLine=('--user-data-dir="' + $config.appProfileDir + '"')},
-    [pscustomobject]@{Name='chrome.exe';ProcessId=1004;ExecutablePath=(Join-Path $config.chromiumPortableRoot 'App\chrome.exe');CommandLine=('--user-data-dir="' + $config.appProfileDir + '" --type=renderer')}
+    [pscustomobject]@{Name='electron.exe';ProcessId=1001;ExecutablePath=(Join-Path $Scratch 'node_modules\electron\dist\electron.exe');CommandLine=('electron.exe --app-mode-root="' + $Scratch + '" --user-data-dir="' + $Scratch + '\Browser\AppModeHostProfile"')},
+    [pscustomobject]@{Name='electron.exe';ProcessId=1002;ExecutablePath=(Join-Path $Scratch 'node_modules\electron\dist\electron.exe');CommandLine='electron.exe --app-mode-root="C:\OtherRoot" --user-data-dir="C:\OtherRoot\Browser\AppModeHostProfile"'},
+    [pscustomobject]@{Name='electron.exe';ProcessId=1003;ExecutablePath=(Join-Path $Scratch 'unrelated\electron.exe');CommandLine=('electron.exe --app-mode-root="' + $Scratch + '" --user-data-dir="' + $Scratch + '\Browser\AppModeHostProfile"')},
+    [pscustomobject]@{Name='electron.exe';ProcessId=1004;ExecutablePath=(Join-Path $Scratch 'node_modules\electron\dist\electron.exe');CommandLine=('electron.exe --type=renderer --app-mode-root="' + $Scratch + '" --user-data-dir="' + $Scratch + '\Browser\AppModeHostProfile"')}
 )
 function Get-CimInstance { return $script:syntheticProcesses }
 $owned = @(Get-AppModeOwnedWindows $config)

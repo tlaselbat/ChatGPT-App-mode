@@ -13,13 +13,7 @@ if (-not $target) {
     $launchConfig | Add-Member -NotePropertyName restoreLastUrl -NotePropertyValue $false -Force
     $launchConfig | Add-Member -NotePropertyName rememberWindowPlacement -NotePropertyValue $false -Force
     $launchConfig | Add-Member -NotePropertyName window -NotePropertyValue ([pscustomobject]@{width=$Width;height=$Height;startMaximized=$false}) -Force
-    if (-not (Start-AppModeNativeHost -Config $launchConfig -AppRoot $AppRoot)) {
-    $line = ConvertTo-ArgLine -Config $launchConfig
-    $exe = if ($config.chromiumDirectExe -and (Test-Path -LiteralPath $config.chromiumDirectExe)) { $config.chromiumDirectExe } else { $config.chromiumPortableExe }
-    if (-not (Test-Path -LiteralPath $exe)) { throw 'Chromium executable not found.' }
-    Write-ChromiumPortableIni -IniPath $config.chromiumPortableIni -AdditionalParameters $line
-    Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList $line
-    }
+    if (-not (Start-AppModeNativeHost -Config $launchConfig -AppRoot $AppRoot)) { throw 'Native window host is unavailable.' }
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     while (-not $target -and [DateTime]::UtcNow -lt $deadline) {
         Start-Sleep -Milliseconds 300
@@ -33,4 +27,4 @@ $area = [Windows.Forms.Screen]::FromHandle([IntPtr]$target.handle).WorkingArea
 $bounds = Get-SafeWindowBounds -Bounds ([pscustomobject]@{x=$X;y=$Y;width=$Width;height=$Height}) -WorkingArea $area
 [AppModeNative]::Resize([IntPtr]$target.handle, $bounds.x, $bounds.y, $bounds.width, $bounds.height)
 if (-not [AppModeNative]::SetTopMost([IntPtr]$target.handle, $true)) { throw 'Could not pin this App Mode window.' }
-Set-ChromiumPortableWindowIdentity -Config $config -ChromiumRoot $config.chromiumPortableRoot -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -TimeoutSeconds 1
+Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -TimeoutSeconds 1

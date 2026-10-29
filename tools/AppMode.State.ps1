@@ -98,13 +98,13 @@ function Assert-AppModeResetTarget {
 
 function Assert-AppModeBrowserStopped {
     param([Parameter(Mandatory)]$Config)
-    $runtime = [IO.Path]::GetFullPath([string]$Config.chromiumPortableRoot).TrimEnd('\', '/') + '\'
     $profile = Get-ActiveProfileDirectory $Config
+    $runtime = if ($Config.chromiumPortableRoot) { [IO.Path]::GetFullPath([string]$Config.chromiumPortableRoot).TrimEnd('\', '/') + '\' } else { '' }
     $running = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase)) -or
-        ($_.Name -match '^(chrome|chromium)\.exe$' -and $_.CommandLine -and $_.CommandLine.IndexOf($profile, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+        ($runtime -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine.IndexOf($profile, [StringComparison]::OrdinalIgnoreCase) -ge 0)
     })
-    if ($running.Count) { throw 'Close Chromium and all App Mode review windows before resetting the profile.' }
+    if ($running.Count) { throw 'Close all App Mode windows before resetting the profile.' }
 }
 
 function Merge-AppModeConfig {

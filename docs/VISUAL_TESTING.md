@@ -2,7 +2,7 @@
 
 ## Offline automated checks
 
-Run `npm ci` once, then `npm test`. The Playwright test launches the project's Chromium executable with only the local extension enabled and a dedicated user-data directory under `test-results/browser-profile`. The configured active `Browser/ChatGPTProfile` is never read or reused.
+Run `npm ci` once, then `npm test` (install a browser first with `npx playwright install chromium`, or set `APP_MODE_CHROMIUM_EXE` to a local chrome.exe). The Playwright test launches its browser with only the local extension enabled and a dedicated user-data directory under `test-results/`. The configured `Browser/AppModeHostProfile` is never read or reused.
 
 The test fulfills a ChatGPT-shaped fixture at `https://chatgpt.com` without contacting the site. It checks extension injection, page title, body marker, the always-on-top button, desktop/narrow layouts, a mocked button action, a client-side URL change, and recovery after a DOM re-render. The fixture contains synthetic text only. Control-server calls are intercepted and do not reach the real local server.
 
@@ -18,11 +18,11 @@ These generated files are ignored by Git. Preserve or copy failure artifacts els
 
 ## Actual ChatGPT review
 
-Fixture checks do not prove compatibility with the current live ChatGPT frontend. Start a separate development profile with `./Start-ChatGPT-Visual-Review.ps1`, install/sign into that profile if required, and manually inspect the actual page at desktop and narrow widths. The script stores its profile under ignored `test-results/live-review-profile`. Do not automate against or copy the active user's profile. Do not put real conversations in fixture snapshots or reports. Record the Chromium version, tested URL class (for example a blank page or synthetic/non-sensitive chat), viewport sizes, and any required sign-in. If authenticated testing is unavailable, report that limitation explicitly.
+Fixture checks do not prove compatibility with the current live ChatGPT frontend. For native-host review, run `node tools/live-host-review.cjs`; it launches a dedicated development root under ignored `test-results/live-review-profile/native-host` with production control-server calls blocked. Sign in there if required and manually inspect the actual page at desktop and narrow widths. Do not automate against or copy the active user's profile. Do not put real conversations in fixture snapshots or reports. Record the runtime version, tested URL class (for example a blank page or synthetic/non-sensitive chat), viewport sizes, and any required sign-in. If authenticated testing is unavailable, report that limitation explicitly.
 
 For repeatable screenshots and measurements, run `npm run live:audit`. This launches Playwright against the same `test-results/live-review-profile` using a user-controlled in-page readiness button. The user may confirm the blank home route or a standard `/c/<id>` test-conversation route without query/hash; the runner does not infer authentication, so verify the visible account state before treating a run as authenticated. It hides sidebar contents, home headings, and conversation message text/media in screenshots, and writes no page text, labels, URLs, cookies, or DOM snapshots. Calls to the local control server are intercepted and mocked by Playwright. The runner restarts the same profile with an empty extension in the allowlist for the stock pass, and refuses stock screenshots if the local extension marker or pin remains. Measurements and screenshots stay in ignored `test-results/live-audits/<timestamp>/`.
 
-The runner asks Chromium for light/dark media preferences and tries sidebar expanded/collapsed states using accessible button state labels. If the current frontend does not expose those controls, the report marks those states unavailable. Live screenshot dimensions are CSS viewport sizes; outer window dimensions are included separately. See [the live audit status and remaining checks](LIVE_UI_AUDIT.md).
+The runner asks the browser for light/dark media preferences and tries sidebar expanded/collapsed states using accessible button state labels. If the current frontend does not expose those controls, the report marks those states unavailable. Live screenshot dimensions are CSS viewport sizes; outer window dimensions are included separately. See [the live audit status and remaining checks](LIVE_UI_AUDIT.md).
 
 ## Visual regression discipline
 

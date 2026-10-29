@@ -1,0 +1,32 @@
+ChatGPT App Mode fresh installation
+
+1. Extract the ZIP to the final folder where you want the app to live.
+   Example: E:\Tools\ChatGPT-App-mode
+
+2. Install Node.js 22.12 or newer, then right-click Install-ChatGPT-AppMode.ps1
+   and choose Run with PowerShell. Internet access is required if the pinned
+   Electron runtime is not already present. For an existing checkout,
+   Install-WindowHost.ps1 installs just that runtime.
+   If PowerShell blocks scripts, run this from the extracted folder:
+
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ChatGPT-AppMode.ps1
+
+3. The installer preserves existing settings, backs up config.json, installs
+   the Electron runtime, rebuilds the taskbar launcher when the local .NET
+   compiler is available, and creates Desktop / Start Menu shortcuts.
+
+4. To pin the taskbar launcher, pin:
+
+   shortcuts\ChatGPT Taskbar Launcher.lnk
+
+   If an older ChatGPT icon is already pinned, unpin it first.
+
+The ZIP intentionally does not include live profiles, cookies, or sign-in data.
+The app runs on Electron with its own Browser\AppModeHostProfile and requires a
+one-time sign-in there. Minimize, maximize/restore, and close share the
+translucent header; dragging, resizing, and Windows Snap remain native.
+
+Use Settings and privacy in the tray menu to configure startup, window size,
+conversation restore, local history, and title visibility. Alt+Shift+P toggles
+pinning in the focused App Mode window. Restart the tray launcher after upgrading
+to refresh its menu. No profile reset is needed for an upgrade.

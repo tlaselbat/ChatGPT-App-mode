@@ -6,7 +6,8 @@
 |---|---|---|
 | Content script | `extension/scripts/chatgpt-overrides.js` | Body marker, title normalization, pin button, session URL reporting, mutation observation |
 | Override styles | `extension/styles/chatgpt-overrides.css` | Scrollbar treatment, header pin/status states, and flow-toolbar fallback |
-| Extension manifest | `extension/manifest.json` | MV3 content script matching and load order |
+| Host header layer | `WindowHost/header.css`, `WindowHost/header.js` | Caption-button spacing, drag region, header layout normalization |
+| Extension manifest | `extension/manifest.json` | MV3 matching for Playwright/live-audit browser contexts |
 | Control endpoint | `Start-ChatGPT-TopMostServer.ps1` | Loopback JSON responses for topmost and session operations |
 | Settings | `Open-AppMode-Settings.ps1` | Launch preferences, window sizing, startup, privacy/retention, and recovery |
 

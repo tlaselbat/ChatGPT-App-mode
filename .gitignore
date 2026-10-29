@@ -1,4 +1,4 @@
-# Chromium installation and user data
+# Native host profile and user data
 /Browser/
 /logs/
 /config.json
@@ -28,6 +28,7 @@
 *-session.json
 /recent-chats.json
 /.backup/
+/archive/
 
 # Common editor and OS files
 .DS_Store

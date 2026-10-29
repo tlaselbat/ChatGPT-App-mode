@@ -10,14 +10,9 @@ const extensionPath = path.join(root, 'extension');
 const profilePath = path.join(root, 'test-results', 'runs', 'browser-profile');
 const fixtureProfile = testId => `${profilePath}-${testId.replace(/[^a-z0-9]/gi, '').slice(-24)}`;
 const configuredChrome = process.env.APP_MODE_CHROMIUM_EXE;
-const candidates = [
-  configuredChrome,
-  path.join(root, 'Browser', 'ChromiumPortable', 'App', 'Chromium', 'chrome.exe'),
-];
-const executablePath = candidates.find((candidate) => candidate && fs.existsSync(candidate));
-if (!executablePath) {
-  throw new Error('Chromium was not found. Install the project Chromium runtime or set APP_MODE_CHROMIUM_EXE.');
-}
+// Playwright's bundled Chromium is the default; set APP_MODE_CHROMIUM_EXE to
+// pin a specific local browser instead.
+const executablePath = configuredChrome && fs.existsSync(configuredChrome) ? configuredChrome : undefined;
 
 const test = base.extend({
   context: async ({}, use, testInfo) => {

@@ -13,7 +13,7 @@ for (const directory of [path.join(root, 'Browser'), profile]) {
     throw new Error('Native host profile directories must not be links or junctions.');
   }
 }
-// Never adopt --user-data-dir from the command line or the Chromium config.
+// Never adopt --user-data-dir from the command line or configuration.
 app.setPath('userData', profile);
 app.setPath('sessionData', profile);
 app.setAppUserModelId('OpenAI.ChatGPT.AppMode');
@@ -134,10 +134,6 @@ function createWindow(args) {
 }
 
 async function start() {
-  const config = readConfig();
-  if (path.resolve(profile).toLowerCase() === path.resolve(config.appProfileDir || '.').toLowerCase()) {
-    throw new Error('Native host profile must be separate from the Chromium profile.');
-  }
   // Only the explicitly isolated fixture harness may intercept HTTPS locally.
   fixturePath = option(process.argv, 'fixture');
   if (fixturePath) {
