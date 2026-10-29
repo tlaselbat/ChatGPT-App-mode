@@ -152,6 +152,21 @@ async function start() {
     // session metadata to, or mutate windows through, the production server.
     browserSession.webRequest.onBeforeRequest({ urls: ['http://127.0.0.1:17863/*'] }, (_details, callback) => callback({ cancel: true }));
   }
+  // Injected overrides call the loopback server from the page's main world,
+  // where the site's connect-src applies. Widen it by one exact origin on the
+  // trusted hosts only; every other directive stays intact.
+  const controlOrigin = 'http://127.0.0.1:17863';
+  browserSession.webRequest.onHeadersReceived({ urls: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] }, (details, callback) => {
+    const headers = { ...(details.responseHeaders || {}) };
+    const key = Object.keys(headers).find(name => name.toLowerCase() === 'content-security-policy');
+    if (key) {
+      headers[key] = headers[key].map(policy =>
+        /connect-src/i.test(policy)
+          ? policy.replace(/connect-src[^;]*/i, directive => `${directive} ${controlOrigin}`)
+          : `${policy}; connect-src ${controlOrigin}`);
+    }
+    callback({ responseHeaders: headers });
+  });
   // A local-network grant is needed only for the existing strict loopback
   // server. All other permission prompts stay explicit and user-controlled.
   browserSession.setPermissionRequestHandler((contents, permission, callback, details) => {
