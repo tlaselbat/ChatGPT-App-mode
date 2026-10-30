@@ -184,18 +184,32 @@ test('a stale pin refresh cannot replace the accepted window binding', async ({ 
   expect(Object.fromEntries(new URLSearchParams(activityBodies[0]))).toMatchObject({ action: 'activity', handle: 'fresh-handle', processId: '222' });
 });
 
-for (const popup of ['menu', 'dialog', 'no-hint', 'unlabeled']) test(`Share moves into its conversation menu and survives keyboard use and navigation (${popup} trigger)`, async ({ page }) => {
-  const html = fixture.replace('<button aria-label="Conversation options">···</button>', `<button id="conversation-options" aria-label="Conversation options" ${popup === 'no-hint' ? '' : `aria-haspopup="${popup}"`} aria-expanded="false" aria-controls="conversation-menu">···</button>`)
-    .replace('aria-label="Share conversation"', popup === 'no-hint' ? '' : popup === 'dialog' ? 'aria-label="Share chat"' : 'aria-label="Share conversation"')
-    .replace(popup === 'unlabeled' ? 'aria-label="Conversation options"' : '__no_replace__', '')
-    .replace('aria-haspopup="unlabeled"', 'aria-haspopup="menu"');
+const shareSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7"/></svg>';
+const shareButton = (attrs = 'aria-label="Share conversation"') => `<button id="share-action" ${attrs}>${shareSvg}Share</button>`;
+const shareTriggerVariants = {
+  // Labeled popup/menu/dialog triggers, aria hints omitted or idiosyncratic.
+  menu: `${shareButton()}<button id="conversation-options" aria-label="Conversation options" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  dialog: `${shareButton('aria-label="Share chat"')}<button id="conversation-options" aria-label="Conversation options" aria-haspopup="dialog" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  'no-hint': `${shareButton()}<button id="conversation-options" aria-label="Conversation options" aria-expanded="false">···</button>`,
+  unlabeled: `${shareButton()}<button id="conversation-options" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  // Test IDs on wrapper elements around unlabeled controls, each in its own
+  // wrapper, matching sites that mount tooltip/slot containers per action.
+  'wrapped-testid': `<div class="hdr-slot" data-testid="share-chat-button">${shareButton('')}</div><div class="hdr-slot" data-testid="conversation-options-button"><button id="conversation-options">${shareSvg.replace('fill="none" stroke="currentColor"', 'fill="currentColor"').replace('stroke-width="1.5"', '')}</button></div>`,
+  // Non-button controls (Radix-style div[role=button]) beside a real Share.
+  'role-button': `${shareButton()}<div id="conversation-options" role="button" tabindex="0" aria-label="Conversation options" aria-haspopup="menu">···</div>`,
+  // An unlabeled ellipsis trailing Share inside a separate wrapper element.
+  'unlabeled-after': `<div class="hdr-slot">${shareButton()}</div><div class="hdr-slot"><button id="conversation-options" aria-expanded="false">${shareSvg.replace('fill="none" stroke="currentColor"', 'fill="currentColor"').replace('stroke-width="1.5"', '')}</button></div>`,
+};
+
+for (const popup of Object.keys(shareTriggerVariants)) test(`Share moves into its conversation menu and survives keyboard use and navigation (${popup} trigger)`, async ({ page }) => {
+  const html = fixture.replace(/<div class="header-actions">[\s\S]*?<\/div><\/header>/, `<div class="header-actions">${shareTriggerVariants[popup]}</div></header>`);
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
   await page.goto('https://chatgpt.com/c/share-fixture');
   await page.evaluate(() => {
     window.syntheticShareCalls = 0;
     document.addEventListener('click', event => {
-      const button = event.target.closest('button');
+      const button = event.target.closest('button, [role="button"], a[href]');
       if (button?.id === 'conversation-options') {
         const old = document.getElementById('conversation-menu');
         button.setAttribute('aria-expanded', String(!old));
@@ -207,7 +221,7 @@ for (const popup of ['menu', 'dialog', 'no-hint', 'unlabeled']) test(`Share move
         menu.innerHTML = '<button role="menuitem">Rename</button><button role="menuitem">Archive</button>';
         document.body.append(menu);
         menu.querySelector('button').focus();
-      } else if (button?.closest('header') && button.textContent.trim() === 'Share') {
+      } else if (button?.id === 'share-action') {
         window.syntheticShareCalls++;
         const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog');
         dialog.textContent = 'Synthetic share dialog'; document.body.append(dialog);

@@ -538,13 +538,15 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const safeRight=innerWidth-parseFloat(getComputedStyle(header).getPropertyValue('--app-mode-window-controls-width'));
         const buttons=[...header.querySelectorAll('button')].filter(button=>!button.closest('[aria-hidden="true"]'));
         const rects=buttons.map(button=>button.getBoundingClientRect());
-        return {count:buttons.length,height:bounds.height,aligned:rects.every(rect=>Math.abs(rect.y+rect.height/2-24)<=0.5),
+        return {count:buttons.length,height:bounds.height,aligned:rects.every((rect,i)=>buttons[i].hasAttribute('data-app-mode-relocated-share')||Math.abs(rect.y+rect.height/2-24)<=0.5),
           bounded:rects.every(rect=>rect.left>=0&&rect.right<=safeRight+1&&rect.top>=bounds.top&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
       assert.deepEqual(layout,{count:5,height:48,aligned:true,bounded:true,overlap:false,overflow:false},JSON.stringify({zoom,width,layout}));
-      for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).click();
+      // The relocated Share is intentionally display:none; activate it by
+      // dispatch like the in-page handler, click the visible controls normally.
+      for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
       if(zoom===1) {
         await native('Capture');
         fs.copyFileSync(path.join(scratch,'native-header-desktop.png'),path.join(scratch,`header-full-${width}.png`));
