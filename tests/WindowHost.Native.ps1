@@ -1,4 +1,4 @@
-param([long]$Handle, [int]$OwnerId, [ValidateSet('ZoomKeyIn','ZoomReset','Reload','ForceReload','ReloadR','ForceReloadR','DevTools','ZoomIn','ZoomOut','Activate','Capture','CaptureNarrow','Maximize','Restore','Minimize','Drag','Resize','Close')][string]$Mode, [string]$Scratch)
+param([long]$Handle, [int]$OwnerId, [ValidateSet('ZoomKeyIn','ZoomReset','Reload','ForceReload','ReloadR','ForceReloadR','DevTools','ZoomIn','ZoomOut','Activate','Capture','CaptureNarrow','HoverMaximize','DoubleClickTitlebar','Maximize','Restore','Minimize','Drag','Resize','Close')][string]$Mode, [string]$Scratch, [int]$ControlX = -1, [int]$ControlY = -1)
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\ChatGPT-AppMode.Helpers.ps1')
 Initialize-AppModeNativeApi
@@ -37,11 +37,15 @@ function Get-CoveringWindowDescription {
 $hwnd = [IntPtr]$Handle
 $rect = New-Object HostFixtureNative+RECT
 [HostFixtureNative]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
-function Click-At([int]$X, [int]$Y) {
+function Click-At([int]$X, [int]$Y, [bool]$RequireClient = $false) {
     [HostFixtureNative]::SetForegroundWindow($hwnd) | Out-Null
     [HostFixtureNative]::SetCursorPos($X, $Y) | Out-Null
     Start-Sleep -Milliseconds 120
     if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw "Fixture is covered; refusing to click another window ($(Get-CoveringWindowDescription))." }
+    if ($RequireClient) {
+        $hit = [HostFixtureNative]::SendMessage($hwnd, 0x84, [IntPtr]::Zero, [IntPtr](($Y -shl 16) -bor ($X -band 65535))).ToInt64()
+        if ($hit -ne 1) { throw "Custom control is not an interactive client region (hit=$hit, x=$X, y=$Y)." }
+    }
     [HostFixtureNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [HostFixtureNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
     Start-Sleep -Milliseconds 250
@@ -82,10 +86,30 @@ switch ($Mode) {
         Start-Sleep -Milliseconds 200
     }
     'Activate' { Click-At ($rect.Left + 300) ($rect.Top + 24) }
-    'Maximize' { Click-At ($rect.Right - 69) ($rect.Top + 24) }
-    'Restore' { Click-At ($rect.Right - 69) ($rect.Top + 24) }
-    'Minimize' { Click-At ($rect.Right - 115) ($rect.Top + 24) }
-    'Close' { Click-At ($rect.Right - 23) ($rect.Top + 24) }
+    'HoverMaximize' {
+        if ($ControlX -lt 0 -or $ControlY -lt 0) { throw 'Measured control coordinates are required.' }
+        [HostFixtureNative]::SetCursorPos($ControlX, $ControlY) | Out-Null
+        Start-Sleep -Milliseconds 150
+    }
+    { $_ -in 'Maximize','Restore','Minimize','Close' } {
+        if ($ControlX -lt 0 -or $ControlY -lt 0) { throw 'Measured control coordinates are required.' }
+        Click-At $ControlX $ControlY $true
+    }
+    'DoubleClickTitlebar' {
+        $x = $rect.Left + 300; $y = $rect.Top + 24
+        $hit = [HostFixtureNative]::SendMessage($hwnd, 0x84, [IntPtr]::Zero, [IntPtr](($y -shl 16) -bor ($x -band 65535))).ToInt64()
+        if ($hit -ne 2) { throw "Double-click target is not a draggable title region (hit=$hit)." }
+        [HostFixtureNative]::SetForegroundWindow($hwnd) | Out-Null
+        [HostFixtureNative]::SetCursorPos($x,$y) | Out-Null
+        Start-Sleep -Milliseconds 120
+        if ([AppModeNative]::GetPointerWindow().ToInt64() -ne $Handle) { throw 'Fixture is covered; refusing title-bar double-click.' }
+        [HostFixtureNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        [HostFixtureNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 80
+        [HostFixtureNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        [HostFixtureNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 250
+    }
     { $_ -in 'Drag','Resize' } {
         [HostFixtureNative]::SetForegroundWindow($hwnd) | Out-Null
         $x = if ($Mode -eq 'Drag') { $rect.Left + 300 } else { $rect.Right - 1 }

@@ -3,8 +3,9 @@ const { app, BrowserWindow, session, shell, screen, dialog } = require('electron
 const fs = require('node:fs');
 const path = require('node:path');
 const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission,
-  allowControlOriginInCsp, singleFlight, canApplyDocumentResult, tryCreateWindow } = require('./policy.cjs');
+  allowControlOriginInCsp, canApplyDocumentResult, tryCreateWindow } = require('./policy.cjs');
 const { installBrowserShortcuts } = require('./shortcuts.cjs');
+const { installWindowControls } = require('./controls-host.cjs');
 const sourceRoot = path.resolve(__dirname, '..');
 const option = (args, name) => args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 const root = path.resolve(option(process.argv, 'app-mode-root') || sourceRoot);
@@ -96,12 +97,12 @@ function createWindow(args) {
     title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'OpenAI-white.ico'),
     backgroundColor: '#212121', autoHideMenuBar: true, show: false,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#00000000', symbolColor: '#dddddd', height: 48 },
     webPreferences: { session: browserSession, sandbox: true, contextIsolation: true,
       nodeIntegration: false, webviewTag: false, navigateOnDragDrop: false },
   });
   win.removeMenu();
   guardNavigation(win.webContents);
+  installWindowControls(win, { isChatGptUrl });
   win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
   win.webContents.on('did-finish-load', async () => {
     if (!isChatGptUrl(win.webContents.getURL())) return;
@@ -117,7 +118,7 @@ function createWindow(args) {
       await win.webContents.insertCSS(css + '\n' + hostCss);
       await win.webContents.executeJavaScript(script);
       await win.webContents.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
-    } catch { /* Keep native controls available if a page or selector changes. */ }
+    } catch { /* The trusted controls remain available if page selectors change. */ }
   });
   win.once('ready-to-show', () => {
     if (args.includes('--start-maximized')) win.maximize();
@@ -127,30 +128,6 @@ function createWindow(args) {
     // Never log navigation URLs, titles, or page content.
     if (!win.isDestroyed()) win.show();
   });
-  // Match caption-symbol contrast to custom site themes as well as light/dark.
-  // Page zoom scales the 48px header but not the overlay, so keep its height
-  // at 48 CSS pixels of header or the caption row drifts off the shared center.
-  let symbolColor = '#dddddd';
-  let overlayZoom = 0;
-  const pollContrast = singleFlight(async () => {
-    if (win.isDestroyed() || !isChatGptUrl(win.webContents.getURL())) return;
-    const generation = navigationGenerations.get(win.webContents);
-    try {
-      const zoom = win.webContents.getZoomFactor();
-      const color = await win.webContents.executeJavaScript('getComputedStyle(document.body).color');
-      const valid = /^rgba?\([\d\s.,]+\)$/.test(color);
-      if (generation === navigationGenerations.get(win.webContents) &&
-        ((valid && color !== symbolColor) || zoom !== overlayZoom)) {
-        if (valid) symbolColor = color;
-        overlayZoom = zoom;
-        if (!win.isDestroyed()) win.setTitleBarOverlay({ color: '#00000000', symbolColor, height: Math.round(48 * zoom) });
-      }
-    } catch { }
-  });
-  const contrast = setInterval(() => {
-    pollContrast().catch(() => {});
-  }, 1500);
-  win.on('closed', () => clearInterval(contrast));
   return win;
 }
 
@@ -187,12 +164,12 @@ async function start() {
     }
     callback({ responseHeaders: headers });
   });
-  // A local-network grant is needed only for the existing strict loopback
-  // server. All other permission prompts stay explicit and user-controlled.
+  // Automatically allow the loopback control and sanitized clipboard writes
+  // only for trusted documents. Other permission prompts remain explicit.
   browserSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const trusted = isTrustedPermission(contents.getURL(), details);
     if (!trusted) { callback(false); return; }
-    if (permission === 'local-network-access') { callback(true); return; }
+    if (permission === 'local-network-access' || permission === 'clipboard-sanitized-write') { callback(true); return; }
     if (!['media', 'clipboard-read', 'notifications', 'fullscreen'].includes(permission)) { callback(false); return; }
     const generation = navigationGenerations.get(contents);
     dialog.showMessageBox(BrowserWindow.fromWebContents(contents), {
@@ -209,7 +186,8 @@ async function start() {
   });
   browserSession.setPermissionCheckHandler((contents, permission, origin, details) =>
     Boolean(contents && isTrustedPermission(contents.getURL(), details, origin) &&
-      (permission === 'local-network-access' || permissionGrants.get(`${contents.id}:${permission}`))));
+      (permission === 'local-network-access' || permission === 'clipboard-sanitized-write' ||
+        permissionGrants.get(`${contents.id}:${permission}`))));
   browserSession.on('will-download', (_event, item) => {
     // Electron's native Save dialog requires the user to choose the destination;
     // never silently write a server-supplied filename into a default directory.

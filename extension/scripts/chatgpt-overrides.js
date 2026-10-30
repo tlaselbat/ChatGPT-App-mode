@@ -20,6 +20,61 @@
   let pinRevision = 0;
   let activityPending = false;
   let activityRetryAt = 0;
+  let relocatedShare = null;
+  let shareMenuTrigger = null;
+
+  function ensureShareMenu() {
+    const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+    // Site assumptions: the conversation's own Share and options controls have
+    // these accessible names/test IDs. Unknown markup keeps the original Share.
+    const buttons = header ? [...header.querySelectorAll('button')].filter(button => !button.closest('[role="menu"], [role="dialog"], [aria-hidden="true"], [inert]')) : [];
+    const share = buttons.find(button => button.matches('[data-testid="share-chat-button"], [data-testid="share-conversation-button"]') ||
+      /^(share|share chat|share conversation)$/i.test(button.getAttribute('aria-label')?.trim() || '') || /^share$/i.test(button.textContent.trim()));
+    // Some site versions expose this as a popover/dialog, or omit haspopup.
+    // Identify the named conversation control independently of that ARIA hint.
+    let trigger = buttons.find(button => button.matches('[data-testid="conversation-options-button"]') ||
+      /^(?:(?:open )?(?:conversation|chat) (?:options|menu)|more(?: options)?)$/i.test(button.getAttribute('aria-label')?.trim() || ''));
+    // The site's unlabeled ellipsis popup sits immediately before Share in the
+    // same action group. Require that relationship and popup semantics; never
+    // select an arbitrary settings, sidebar, or history menu elsewhere.
+    if (!trigger && share) {
+      const previous = buttons[buttons.indexOf(share) - 1];
+      if (previous?.parentElement === share.parentElement && !previous.getAttribute('aria-label') &&
+          previous.matches('[aria-haspopup="menu"], [aria-haspopup="dialog"]')) trigger = previous;
+    }
+    if (relocatedShare && (relocatedShare !== share || !trigger)) relocatedShare.removeAttribute('data-app-mode-relocated-share');
+    relocatedShare = trigger && share ? share : null;
+    shareMenuTrigger = relocatedShare ? trigger : null;
+    if (relocatedShare && !relocatedShare.hasAttribute('data-app-mode-relocated-share')) relocatedShare.setAttribute('data-app-mode-relocated-share', '');
+    const menus = [...document.querySelectorAll('[role="menu"]')].filter(menu => {
+      const box = menu.getBoundingClientRect();
+      return box.width && box.height && getComputedStyle(menu).visibility !== 'hidden' && !menu.closest('[aria-hidden="true"], [inert]');
+    });
+    const menu = relocatedShare && menus.find(menu =>
+      menu.id === trigger.getAttribute('aria-controls') ||
+      (trigger.id && menu.getAttribute('aria-labelledby')?.split(/\s+/).includes(trigger.id)) ||
+      (menus.length === 1 && (trigger.getAttribute('aria-expanded') === 'true' || trigger.getAttribute('data-state') === 'open')));
+    for (const item of document.querySelectorAll('[data-app-mode-share-menu-item]')) {
+      if (item.closest('[role="menu"]') !== menu) item.remove();
+    }
+    if (!menu) return;
+    const nativeShare = [...menu.querySelectorAll('[role="menuitem"]')].some(item =>
+      !item.hasAttribute('data-app-mode-share-menu-item') && /^(share|share conversation)$/i.test(item.textContent.trim()));
+    let item = menu.querySelector('[data-app-mode-share-menu-item]');
+    if (nativeShare) { item?.remove(); return; }
+    if (!item) {
+      item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('role', 'menuitem');
+      item.tabIndex = -1;
+      item.setAttribute('data-app-mode-share-menu-item', '');
+      item.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7"/></svg><span>Share</span>';
+      const first = menu.querySelector('[role="menuitem"]');
+      if (first) first.before(item); else menu.prepend(item);
+    }
+    const disabled = share.disabled || share.getAttribute('aria-disabled') === 'true';
+    if (item.getAttribute('aria-disabled') !== String(disabled)) item.setAttribute('aria-disabled', String(disabled));
+  }
 
   function markBody() {
     if (document.body && !document.body.classList.contains(markerClass)) {
@@ -55,6 +110,7 @@
     reportCurrentSession();
     setTitle();
     ensurePinButton();
+    ensureShareMenu();
   }
 
   function getCurrentChatId() {
@@ -306,11 +362,41 @@
   // Delegate in the capture phase: React may clone/replace the header nodes,
   // discarding per-button listeners, or handle bubbled header clicks itself.
   document.addEventListener("click", (event) => {
+    const shareItem = event.target instanceof Element ? event.target.closest('[data-app-mode-share-menu-item]') : null;
+    if (shareItem) {
+      event.preventDefault();
+      event.stopPropagation();
+      const original = relocatedShare;
+      const trigger = shareMenuTrigger;
+      if (shareItem.getAttribute('aria-disabled') === 'true' || !original?.isConnected || !trigger?.isConnected) return;
+      // Let the site's trigger dismiss its own menu before opening its original
+      // Share dialog. Never recreate sharing, read conversation data, or publish.
+      trigger.click();
+      requestAnimationFrame(() => {
+        if (original.isConnected && relocatedShare === original && !original.disabled && original.getAttribute('aria-disabled') !== 'true') original.click();
+      });
+      return;
+    }
     const button = event.target instanceof Element ? event.target.closest(`#${pinButtonId}`) : null;
     if (!button) return;
     event.preventDefault();
     event.stopPropagation();
     togglePin(button);
+  }, true);
+
+  // Include the added entry in the site's menu keyboard navigation without
+  // relying on a framework's private roving-focus registry.
+  document.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+    const menu = event.target instanceof Element ? event.target.closest('[role="menu"]') : null;
+    if (!menu?.querySelector('[data-app-mode-share-menu-item]')) return;
+    const items = [...menu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]')].filter(item =>
+      item.closest('[role="menu"]') === menu && item.getAttribute('aria-disabled') !== 'true' && !item.disabled && item.getClientRects().length);
+    if (!items.length) return;
+    const current = items.findIndex(item => item === document.activeElement || item.contains(document.activeElement));
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 :
+      (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    event.preventDefault(); event.stopPropagation(); items[index].focus();
   }, true);
 
   // Delegation survives ChatGPT navigation and replaced scroll containers.
@@ -321,6 +407,7 @@
   const observer = new MutationObserver(() => {
     markBody();
     ensurePinButton();
+    ensureShareMenu();
     reportCurrentSession();
     setTitle();
   });
@@ -328,7 +415,7 @@
   observer.observe(document.documentElement, {
     childList: true,
     attributes: true,
-    attributeFilter: ["class", "style", "hidden", "aria-hidden", "inert", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
+    attributeFilter: ["class", "style", "hidden", "aria-hidden", "inert", "aria-expanded", "aria-label", "aria-controls", "aria-haspopup", "data-testid", "id", "data-state", "disabled", "aria-disabled", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
     subtree: true
   });
 
