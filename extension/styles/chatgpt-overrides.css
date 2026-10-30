@@ -157,6 +157,53 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   vertical-align: middle;
 }
 
+/* Thin separator between the pin and the native Minimize caption button. */
+.chatgpt-app-mode-toolbar::after {
+  content: "";
+  flex: 0 0 1px;
+  width: 1px;
+  height: 18px;
+  margin-inline-start: 4px;
+  margin-inline-end: 2px;
+  background: var(--app-mode-control-border);
+}
+
+/* Second row: a slim transparent spacer keeps conversation content clear of
+   the right-aligned action cluster. The cluster nodes stay in the site's
+   header tree and are only visually moved, so menus anchor correctly. */
+#chatgpt-app-mode-secondary-row {
+  position: sticky;
+  top: var(--app-mode-header-bottom, 48px);
+  z-index: 29;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 40px;
+  padding: 4px 10px 8px;
+  box-sizing: border-box;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
+  position: fixed !important;
+  top: calc(var(--app-mode-header-bottom, 48px) + 6px);
+  inset-inline-end: calc(10px + var(--app-mode-secondary-trailing, 0px));
+  z-index: 29;
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+body.faux-chatgpt-app-mode [data-app-mode-secondary-newchat] {
+  position: fixed !important;
+  top: calc(var(--app-mode-header-bottom, 48px) + 6px);
+  inset-inline-end: 10px;
+  z-index: 29;
+  -webkit-app-region: no-drag;
+}
+
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(button:not(.chatgpt-app-mode-pin-button)) .chatgpt-app-mode-toolbar {
   margin-inline-start: 0;

@@ -286,6 +286,65 @@ for (const popup of Object.keys(shareTriggerVariants)) test(`Share moves into it
   await expect(entry).toHaveCount(0);
 });
 
+test('two-row header keeps only sidebar left and parks conversation actions right-aligned below', async ({ page }) => {
+  const html = fixture.replace('<span class="header-title">',
+    '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button>' +
+    '<button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/two-row-fixture');
+  const header = page.locator('header');
+  const sidebar = header.locator('[aria-label="Sidebar"]');
+  const newChat = header.locator('[aria-label="New chat"]');
+  const options = header.locator('[aria-label="Conversation options"]');
+  const row = page.locator('#chatgpt-app-mode-secondary-row');
+  await expect(row).toHaveCount(1);
+  const geometry = await page.evaluate(() => {
+    const headerBox = document.querySelector('header').getBoundingClientRect();
+    const box = element => element.getBoundingClientRect();
+    return {
+      headerBottom: headerBox.bottom,
+      sidebar: box(document.querySelector('[aria-label="Sidebar"]')),
+      newChat: box(document.querySelector('[aria-label="New chat"]')),
+      options: box(document.querySelector('[aria-label="Conversation options"]')),
+      pin: box(document.getElementById('chatgpt-app-mode-pin-toggle')),
+      row: box(document.getElementById('chatgpt-app-mode-secondary-row')),
+      innerWidth,
+    };
+  });
+  // Top row: sidebar stays inside the header band, centered on its midline;
+  // pin is the last top-right control.
+  const headerMid = geometry.headerBottom - (await header.evaluate(el => el.getBoundingClientRect().height)) / 2;
+  expect(Math.abs(geometry.sidebar.y + geometry.sidebar.height / 2 - headerMid)).toBeLessThanOrEqual(2);
+  expect(geometry.pin.bottom).toBeLessThanOrEqual(geometry.headerBottom + 1);
+  // Second row: right-aligned cluster below the header; New Chat rightmost
+  // with its right edge on the 10px native-controls inset line.
+  expect(geometry.options.top).toBeGreaterThanOrEqual(geometry.headerBottom);
+  expect(Math.abs(geometry.newChat.right - (geometry.innerWidth - 10))).toBeLessThanOrEqual(2);
+  expect(geometry.options.right).toBeLessThanOrEqual(geometry.newChat.left + 6);
+  expect(geometry.row.top).toBeGreaterThanOrEqual(geometry.headerBottom - 0.5);
+  // Original handlers still fire exactly once after relocation.
+  await page.evaluate(() => {
+    window.actionLog = [];
+    for (const button of document.querySelectorAll('header button')) {
+      button.addEventListener('click', () => window.actionLog.push(button.getAttribute('aria-label') || button.id));
+    }
+  });
+  await newChat.click();
+  await options.click();
+  await expect.poll(() => page.evaluate(() => window.actionLog)).toEqual(['New chat', 'Conversation options']);
+  // Re-render: the cluster must re-locate onto the replaced nodes once.
+  await page.evaluate(() => {
+    const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true));
+  });
+  await expect(page.locator('header [data-app-mode-secondary-newchat]')).toHaveCount(1);
+  await expect(page.locator('header [data-app-mode-secondary-actions]')).toHaveCount(1);
+  // Removing the header releases every fixed marker and the spacer row.
+  await page.evaluate(() => document.querySelector('header').remove());
+  await expect(row).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')).toHaveCount(0);
+});
+
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {
   const sessionPosts = [];
   let pinEnabled = false;

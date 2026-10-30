@@ -536,14 +536,27 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const layout=await page.evaluate(()=>{
         const header=document.querySelector('header'),bounds=header.getBoundingClientRect();
         const safeRight=innerWidth-parseFloat(getComputedStyle(header).getPropertyValue('--app-mode-window-controls-width'));
-        const buttons=[...header.querySelectorAll('button')].filter(button=>!button.closest('[aria-hidden="true"]'));
+        const secondary='[data-app-mode-secondary-actions],[data-app-mode-secondary-newchat]';
+        const topRow=button=>!button.closest('[aria-hidden="true"],'+secondary);
+        const buttons=[...header.querySelectorAll('button')].filter(topRow);
         const rects=buttons.map(button=>button.getBoundingClientRect());
+        const actions=document.querySelector('[data-app-mode-secondary-actions]');
+        const newChat=document.querySelector('[data-app-mode-secondary-newchat]');
+        const secondaryRects={actions:actions?.getBoundingClientRect(),newChat:newChat?.getBoundingClientRect()};
         return {count:buttons.length,height:bounds.height,aligned:rects.every((rect,i)=>buttons[i].hasAttribute('data-app-mode-relocated-share')||Math.abs(rect.y+rect.height/2-24)<=0.5),
           bounded:rects.every(rect=>rect.left>=0&&rect.right<=safeRight+1&&rect.top>=bounds.top&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
+          secondary:secondaryRects.actions&&secondaryRects.newChat?{
+            // Cluster sits below the 48px header; New Chat is rightmost and its
+            // right edge aligns with the native Close button's 10px inset.
+            row:Math.abs(secondaryRects.actions.top-bounds.bottom-6)<=2&&Math.abs(secondaryRects.newChat.top-bounds.bottom-6)<=2,
+            order:secondaryRects.actions.right<=secondaryRects.newChat.left+6,
+            rightEdge:Math.abs(secondaryRects.newChat.right-(innerWidth-10))<=2,
+            belowHeader:secondaryRects.newChat.top>=bounds.bottom,
+          }:null,
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
-      assert.deepEqual(layout,{count:5,height:48,aligned:true,bounded:true,overlap:false,overflow:false},JSON.stringify({zoom,width,layout}));
+      assert.deepEqual(layout,{count:2,height:48,aligned:true,bounded:true,overlap:false,secondary:{row:true,order:true,rightEdge:true,belowHeader:true},overflow:false},JSON.stringify({zoom,width,layout}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');

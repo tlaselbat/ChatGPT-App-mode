@@ -22,6 +22,7 @@
   let activityRetryAt = 0;
   let relocatedShare = null;
   let shareMenuTrigger = null;
+  let detectedTrigger = null;
 
   function actionGroupOf(element, header) {
     // Buttons in the site's action strip may each sit in their own wrapper
@@ -87,6 +88,7 @@
           candidate.getAttribute('aria-expanded') !== null || candidate.id && document.querySelector(`[aria-labelledby~="${candidate.id}"]`)));
     }
     if (relocatedShare && (relocatedShare !== share || !trigger)) relocatedShare.removeAttribute('data-app-mode-relocated-share');
+    detectedTrigger = trigger || null;
     relocatedShare = trigger && share ? share : null;
     shareMenuTrigger = relocatedShare ? trigger : null;
     if (relocatedShare && !relocatedShare.hasAttribute('data-app-mode-relocated-share')) relocatedShare.setAttribute('data-app-mode-relocated-share', '');
@@ -128,6 +130,72 @@
     if (item.getAttribute('aria-disabled') !== String(disabled)) item.setAttribute('aria-disabled', String(disabled));
   }
 
+  // Two-row header: conversation actions and New Chat render in a compact
+  // right-aligned band below the header. The original nodes stay in the site
+  // tree and are only visually moved with fixed positioning, so React-owned
+  // handlers and menu anchoring keep working. The transparent spacer row only
+  // reserves clearance; controls themselves never get reparented.
+  function clearSecondaryMarks() {
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')) {
+      element.removeAttribute('data-app-mode-secondary-actions');
+      element.removeAttribute('data-app-mode-secondary-newchat');
+    }
+  }
+
+  function ensureSecondaryRow() {
+    const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+    let row = document.getElementById('chatgpt-app-mode-secondary-row');
+    if (!header) {
+      row?.remove();
+      clearSecondaryMarks();
+      return;
+    }
+    const controls = [...header.querySelectorAll('button, [role="button"], a[href]')]
+      .filter(element => !element.closest('[role="menu"], [role="dialog"], [aria-hidden="true"], [inert]'));
+    const ourToolbar = header.querySelector('.chatgpt-app-mode-toolbar');
+    const sidebar = controls.find(element => element !== shareMenuTrigger &&
+      (hasTestId(element, ['open-sidebar-button', 'close-sidebar-button']) || /sidebar/i.test(accessibleName(element))));
+    const newChat = controls.find(element => element !== shareMenuTrigger && element !== sidebar &&
+      (hasTestId(element, ['create-new-chat-button', 'new-chat-button']) || /^new (chat|conversation)$/i.test(accessibleName(element)) ||
+        /^new (chat|conversation)$/i.test(element.textContent.trim())));
+    // The secondary actions group is the options trigger's own container. It
+    // must not also hold the sidebar, New Chat or our toolbar; if it does, the
+    // trigger alone moves instead of dragging unrelated controls with it.
+    let group = null;
+    if (detectedTrigger?.isConnected) {
+      const parent = detectedTrigger.parentElement;
+      group = parent && parent !== header && header.contains(parent) &&
+        !(sidebar && parent.contains(sidebar)) && !(newChat && parent.contains(newChat)) &&
+        !(ourToolbar && parent.contains(ourToolbar)) ? parent : detectedTrigger;
+    }
+    const marked = new Set([group, newChat].filter(Boolean));
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')) {
+      if (!marked.has(element)) {
+        element.removeAttribute('data-app-mode-secondary-actions');
+        element.removeAttribute('data-app-mode-secondary-newchat');
+      }
+    }
+    if (!marked.size) { row?.remove(); return; }
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'chatgpt-app-mode-secondary-row';
+    }
+    if (row.parentElement !== header.parentElement || row.previousElementSibling !== header) header.after(row);
+    if (group && !group.hasAttribute('data-app-mode-secondary-actions')) group.setAttribute('data-app-mode-secondary-actions', '');
+    if (newChat && !newChat.hasAttribute('data-app-mode-secondary-newchat')) newChat.setAttribute('data-app-mode-secondary-newchat', '');
+    // The group's right offset clears the rightmost New Chat button plus the
+    // standard gap so the cluster reads options -> ... -> New Chat. The row's
+    // top anchors to the live header bottom; extension contexts render a
+    // taller bar than the 48px host contract.
+    const trailing = newChat ? Math.round(newChat.getBoundingClientRect().width) + 6 : 0;
+    const value = `${trailing}px`;
+    if (document.body.style.getPropertyValue('--app-mode-secondary-trailing') !== value)
+      document.body.style.setProperty('--app-mode-secondary-trailing', value);
+    const bottom = `${Math.round(header.getBoundingClientRect().bottom)}px`;
+    if (document.body.style.getPropertyValue('--app-mode-header-bottom') !== bottom)
+      document.body.style.setProperty('--app-mode-header-bottom', bottom);
+  }
+
   function markBody() {
     if (document.body && !document.body.classList.contains(markerClass)) {
       document.body.classList.add(markerClass);
@@ -163,6 +231,7 @@
     setTitle();
     ensurePinButton();
     ensureShareMenu();
+    ensureSecondaryRow();
   }
 
   function getCurrentChatId() {
@@ -462,6 +531,7 @@
     markBody();
     ensurePinButton();
     ensureShareMenu();
+    ensureSecondaryRow();
     reportCurrentSession();
     setTitle();
   });
