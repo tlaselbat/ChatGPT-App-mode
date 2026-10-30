@@ -188,19 +188,11 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
 body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
   position: fixed !important;
   top: calc(var(--app-mode-header-bottom, 48px) + 6px);
-  inset-inline-end: calc(10px + var(--app-mode-secondary-trailing, 0px));
+  inset-inline-end: var(--app-mode-secondary-offset, 10px);
   z-index: 29;
   display: flex !important;
   align-items: center;
   gap: 6px;
-  -webkit-app-region: no-drag;
-}
-
-body.faux-chatgpt-app-mode [data-app-mode-secondary-newchat] {
-  position: fixed !important;
-  top: calc(var(--app-mode-header-bottom, 48px) + 6px);
-  inset-inline-end: 10px;
-  z-index: 29;
   -webkit-app-region: no-drag;
 }
 

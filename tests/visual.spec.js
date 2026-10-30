@@ -337,12 +337,11 @@ test('two-row header keeps only sidebar left and parks conversation actions righ
   await page.evaluate(() => {
     const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true));
   });
-  await expect(page.locator('header [data-app-mode-secondary-newchat]')).toHaveCount(1);
-  await expect(page.locator('header [data-app-mode-secondary-actions]')).toHaveCount(1);
+  await expect(page.locator('header [data-app-mode-secondary-actions]')).toHaveCount(2);
   // Removing the header releases every fixed marker and the spacer row.
   await page.evaluate(() => document.querySelector('header').remove());
   await expect(row).toHaveCount(0);
-  await expect(page.locator('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-secondary-actions]')).toHaveCount(0);
 });
 
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {

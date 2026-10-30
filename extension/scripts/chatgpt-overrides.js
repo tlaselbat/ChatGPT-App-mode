@@ -136,9 +136,9 @@
   // handlers and menu anchoring keep working. The transparent spacer row only
   // reserves clearance; controls themselves never get reparented.
   function clearSecondaryMarks() {
-    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')) {
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
       element.removeAttribute('data-app-mode-secondary-actions');
-      element.removeAttribute('data-app-mode-secondary-newchat');
+      element.style.removeProperty('--app-mode-secondary-offset');
     }
   }
 
@@ -158,22 +158,40 @@
     const newChat = controls.find(element => element !== shareMenuTrigger && element !== sidebar &&
       (hasTestId(element, ['create-new-chat-button', 'new-chat-button']) || /^new (chat|conversation)$/i.test(accessibleName(element)) ||
         /^new (chat|conversation)$/i.test(element.textContent.trim())));
-    // The secondary actions group is the options trigger's own container. It
-    // must not also hold the sidebar, New Chat or our toolbar; if it does, the
-    // trigger alone moves instead of dragging unrelated controls with it.
+    // The second row holds the header's right-side action cluster: the options
+    // trigger, any sibling controls (list view, etc.) and New Chat. Find the
+    // deepest shared ancestor seeded from New Chat (or the detected options
+    // trigger) that wraps the cluster without swallowing the sidebar control
+    // or our injected toolbar. Seeding does not depend on a Share button being
+    // present, so the cluster also moves on pages without sharing.
+    // Only right-half controls can belong to the actions cluster, plus the
+    // explicitly detected New Chat button wherever the site places it. A
+    // centered mode-switch strip spans the midpoint and stays put for
+    // header.js.
+    const headerBox = header.getBoundingClientRect();
+    const headerMid = headerBox.left + headerBox.width / 2;
+    const secondary = controls.filter(element => element !== sidebar &&
+      (element === newChat || element.getBoundingClientRect().left > headerMid) &&
+      !element.hasAttribute('data-app-mode-relocated-share') &&
+      !element.closest('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs], [data-app-mode-header-mode-branch]') &&
+      !(ourToolbar && ourToolbar.contains(element)));
     let group = null;
-    if (detectedTrigger?.isConnected) {
-      const parent = detectedTrigger.parentElement;
-      group = parent && parent !== header && header.contains(parent) &&
-        !(sidebar && parent.contains(sidebar)) && !(newChat && parent.contains(newChat)) &&
-        !(ourToolbar && parent.contains(ourToolbar)) ? parent : detectedTrigger;
+    const seed = (newChat?.isConnected && newChat) || (detectedTrigger?.isConnected && detectedTrigger) || null;
+    // Without a conversation-actions anchor (options trigger or New Chat),
+    // other headers keep their native single-row layout.
+    if (!seed) {
+      row?.remove();
+      clearSecondaryMarks();
+      return;
     }
-    const marked = new Set([group, newChat].filter(Boolean));
-    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions], [data-app-mode-secondary-newchat]')) {
-      if (!marked.has(element)) {
-        element.removeAttribute('data-app-mode-secondary-actions');
-        element.removeAttribute('data-app-mode-secondary-newchat');
-      }
+    for (let node = seed.parentElement; node && node !== header && header.contains(node); node = node.parentElement) {
+      if (sidebar && node.contains(sidebar)) break;
+      if (ourToolbar && node.contains(ourToolbar)) break;
+      if (secondary.filter(element => node.contains(element)).length >= Math.min(2, secondary.length)) group = node;
+    }
+    const marked = new Set(group ? [group] : secondary);
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
+      if (!marked.has(element)) element.removeAttribute('data-app-mode-secondary-actions');
     }
     if (!marked.size) { row?.remove(); return; }
     if (!row) {
@@ -181,16 +199,24 @@
       row.id = 'chatgpt-app-mode-secondary-row';
     }
     if (row.parentElement !== header.parentElement || row.previousElementSibling !== header) header.after(row);
-    if (group && !group.hasAttribute('data-app-mode-secondary-actions')) group.setAttribute('data-app-mode-secondary-actions', '');
-    if (newChat && !newChat.hasAttribute('data-app-mode-secondary-newchat')) newChat.setAttribute('data-app-mode-secondary-newchat', '');
-    // The group's right offset clears the rightmost New Chat button plus the
-    // standard gap so the cluster reads options -> ... -> New Chat. The row's
-    // top anchors to the live header bottom; extension contexts render a
-    // taller bar than the 48px host contract.
-    const trailing = newChat ? Math.round(newChat.getBoundingClientRect().width) + 6 : 0;
-    const value = `${trailing}px`;
-    if (document.body.style.getPropertyValue('--app-mode-secondary-trailing') !== value)
-      document.body.style.setProperty('--app-mode-secondary-trailing', value);
+    // Right-align the cluster under the caption-controls inset. A single group
+    // keeps its native DOM order and gap; when no shared container exists each
+    // control is offset by the cumulative width of the controls to its right.
+    // Keep New Chat rightmost on the caption inset; other controls keep their
+    // native left-to-right order to its left.
+    const items = [...marked].filter(element => element !== newChat && !(newChat && element.contains?.(newChat)))
+      .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    if (newChat && marked.has(newChat)) items.push(newChat);
+    if (!items.length) items.push(...marked);
+    let trailing = 0;
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const element = items[index];
+      if (!element.hasAttribute('data-app-mode-secondary-actions')) element.setAttribute('data-app-mode-secondary-actions', '');
+      const offset = `calc(10px + ${trailing}px)`;
+      if (element.style.getPropertyValue('--app-mode-secondary-offset') !== offset)
+        element.style.setProperty('--app-mode-secondary-offset', offset);
+      trailing += Math.round(element.getBoundingClientRect().width) + 6;
+    }
     const bottom = `${Math.round(header.getBoundingClientRect().bottom)}px`;
     if (document.body.style.getPropertyValue('--app-mode-header-bottom') !== bottom)
       document.body.style.setProperty('--app-mode-header-bottom', bottom);

@@ -536,12 +536,12 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const layout=await page.evaluate(()=>{
         const header=document.querySelector('header'),bounds=header.getBoundingClientRect();
         const safeRight=innerWidth-parseFloat(getComputedStyle(header).getPropertyValue('--app-mode-window-controls-width'));
-        const secondary='[data-app-mode-secondary-actions],[data-app-mode-secondary-newchat]';
-        const topRow=button=>!button.closest('[aria-hidden="true"],'+secondary);
+        const secondary='[data-app-mode-secondary-actions]';
+        const topRow=button=>!button.closest('[aria-hidden="true"],[data-app-mode-relocated-share],'+secondary);
         const buttons=[...header.querySelectorAll('button')].filter(topRow);
         const rects=buttons.map(button=>button.getBoundingClientRect());
-        const actions=document.querySelector('[data-app-mode-secondary-actions]');
-        const newChat=document.querySelector('[data-app-mode-secondary-newchat]');
+        const actions=header.querySelector('[aria-label="More options"]');
+        const newChat=header.querySelector('[aria-label="New chat"]');
         const secondaryRects={actions:actions?.getBoundingClientRect(),newChat:newChat?.getBoundingClientRect()};
         return {count:buttons.length,height:bounds.height,aligned:rects.every((rect,i)=>buttons[i].hasAttribute('data-app-mode-relocated-share')||Math.abs(rect.y+rect.height/2-24)<=0.5),
           bounded:rects.every(rect=>rect.left>=0&&rect.right<=safeRight+1&&rect.top>=bounds.top&&rect.bottom<=bounds.bottom+1),
