@@ -139,7 +139,7 @@ namespace ChatGPTTaskbarLauncher
                 Path.Combine(shortcutsDir, "ChatGPT Taskbar Launcher.lnk"),
             };
             var exePath = Process.GetCurrentProcess().MainModule.FileName;
-            var iconPath = Path.Combine(appRoot, "assets", "OpenAI-white.ico");
+            var iconPath = Path.Combine(appRoot, "assets", "AppMode-dev-v2.ico");
 
             foreach (var shortcutPath in shortcutPaths)
             {

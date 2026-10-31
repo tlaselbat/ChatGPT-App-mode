@@ -97,7 +97,7 @@ function Start-AppModeWindow {
             throw 'Native window host is unavailable. Run Install-WindowHost.ps1.'
         }
 
-        Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -LogPath $LogPath
+        Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\AppMode-dev-v2.ico') -LogPath $LogPath
     }
     catch {
         Write-TrayLog "ERROR launching App Mode: $($_.Exception.Message)"
@@ -335,7 +335,7 @@ Update-TrayMenu
 # Build the real menu without starting services or creating a notification icon.
 # Used only for isolated rendering and action tests with a disposable AppRoot.
 if ($MenuOnly) { Write-Output -NoEnumerate $menu; return }
-$IconPath = Join-Path $PSScriptRoot 'assets\OpenAI-white.ico'
+$IconPath = Join-Path $PSScriptRoot 'assets\AppMode-dev-v2.ico'
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Text = 'ChatGPT App Mode'
 $notifyIcon.Icon = New-Object System.Drawing.Icon($IconPath)

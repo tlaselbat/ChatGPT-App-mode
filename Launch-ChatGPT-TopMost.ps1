@@ -27,4 +27,4 @@ $area = [Windows.Forms.Screen]::FromHandle([IntPtr]$target.handle).WorkingArea
 $bounds = Get-SafeWindowBounds -Bounds ([pscustomobject]@{x=$X;y=$Y;width=$Width;height=$Height}) -WorkingArea $area
 [AppModeNative]::Resize([IntPtr]$target.handle, $bounds.x, $bounds.y, $bounds.width, $bounds.height)
 if (-not [AppModeNative]::SetTopMost([IntPtr]$target.handle, $true)) { throw 'Could not pin this App Mode window.' }
-Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\OpenAI-white.ico') -TimeoutSeconds 1
+Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\AppMode-dev-v2.ico') -TimeoutSeconds 1
