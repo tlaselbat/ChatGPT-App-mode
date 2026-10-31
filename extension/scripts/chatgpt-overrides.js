@@ -284,14 +284,21 @@
     // header, so it also qualifies the row on its own. Its children must be
     // excluded from the cluster — the container moves as one piece.
     const modeStrip = header.querySelector('[data-app-mode-header-tabs], [role="tablist"], [role="radiogroup"], [role="group"][aria-label*="mode" i]');
+    const personalization = controls.find(element => /^personalized$/i.test(element.textContent.trim()) ||
+      /^personalized\b/i.test(accessibleName(element)));
     const secondary = controls.filter(element => element !== sidebar &&
-      (isNewChat(element) || element.getBoundingClientRect().left > headerMid) &&
+      (element === personalization || isNewChat(element) || element.getBoundingClientRect().left > headerMid) &&
       !element.hasAttribute('data-app-mode-relocated-share') &&
       !element.closest('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs], [data-app-mode-header-mode-branch]') &&
       !(modeStrip && modeStrip.contains(element)) &&
       !(ourToolbar && ourToolbar.contains(element)));
     let group = null;
-    const seed = (newChat?.isConnected && newChat) || (detectedTrigger?.isConnected && detectedTrigger) || null;
+    const seed = (newChat?.isConnected && newChat) || (detectedTrigger?.isConnected && detectedTrigger) || personalization || null;
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-personalization]')) {
+      if (element !== personalization) element.removeAttribute('data-app-mode-secondary-personalization');
+    }
+    if (personalization && !personalization.hasAttribute('data-app-mode-secondary-personalization'))
+      personalization.setAttribute('data-app-mode-secondary-personalization', '');
     // Without a conversation-actions anchor (options trigger, New Chat, or
     // the mode-switch strip), other headers keep their native layout.
     if (!seed && !modeStrip) {

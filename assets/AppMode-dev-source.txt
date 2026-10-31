@@ -1,2 +1,0 @@
-OpenAI mark: Simple Icons v11, CC0-1.0. https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/openai.svg
-Chat badge and layout: project artwork. Small variants enlarge the badge.

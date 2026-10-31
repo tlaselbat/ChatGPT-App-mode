@@ -53,7 +53,7 @@ Ensure-TopMostServerRunning -AppRoot $AppRoot -LogPath $LogPath
 $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
 if (Start-AppModeNativeHost -Config $config -AppRoot $AppRoot -NewSession:$NewSession -LaunchUrl $Url) {
     Write-AppModeLog -LogPath $LogPath -Message 'Launched native window host.'
-    Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\AppMode-dev-v2.ico') -LogPath $LogPath
+    Set-AppModeWindowIdentity -Config $config -IconPath (Join-Path $AppRoot 'assets\AppMode-hex-selected.ico') -LogPath $LogPath
     return
 }
 throw 'Native window host is unavailable. Run Install-WindowHost.ps1, then launch again.'

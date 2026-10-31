@@ -240,6 +240,31 @@ body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"], 
   inline-size: auto;
   padding-inline: revert;
 }
+body.faux-chatgpt-app-mode [data-app-mode-secondary-personalization] {
+  inline-size: auto !important;
+  padding-inline: 8px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) {
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  box-sizing: border-box;
+  padding-block: 0 !important;
+  column-gap: 6px !important;
+  overflow: hidden;
+  border-radius: 8px;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) > * {
+  min-height: 0 !important;
+  max-height: 100% !important;
+  box-sizing: border-box;
+}
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) > .pointer-events-none {
+  visibility: hidden !important;
+}
 
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(button:not(.chatgpt-app-mode-pin-button)) .chatgpt-app-mode-toolbar {

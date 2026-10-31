@@ -94,7 +94,7 @@ function createWindow(args) {
   const url = isChatGptUrl(requested) ? requested : 'https://chatgpt.com/';
   const win = new BrowserWindow({
     ...safeBounds(args, config), minWidth: 390, minHeight: 300,
-    title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'AppMode-dev-v2.ico'),
+    title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'AppMode-hex-selected.ico'),
     backgroundColor: '#212121', autoHideMenuBar: true, show: false,
     titleBarStyle: 'hidden',
     webPreferences: { session: browserSession, sandbox: true, contextIsolation: true,
