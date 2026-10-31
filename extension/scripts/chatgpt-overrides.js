@@ -138,7 +138,13 @@
   function clearSecondaryMarks() {
     for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
       element.removeAttribute('data-app-mode-secondary-actions');
-      element.style.removeProperty('--app-mode-secondary-offset');
+      element.style.removeProperty('--app-mode-secondary-dx');
+      element.style.removeProperty('--app-mode-secondary-dy');
+    }
+    for (const node of document.querySelectorAll('[data-app-mode-secondary-clip]')) {
+      node.removeAttribute('data-app-mode-secondary-clip');
+      node.style.removeProperty('contain');
+      node.style.removeProperty('overflow');
     }
   }
 
@@ -155,23 +161,24 @@
     const ourToolbar = header.querySelector('.chatgpt-app-mode-toolbar');
     const sidebar = controls.find(element => element !== shareMenuTrigger &&
       (hasTestId(element, ['open-sidebar-button', 'close-sidebar-button']) || /sidebar/i.test(accessibleName(element))));
-    const newChat = controls.find(element => element !== shareMenuTrigger && element !== sidebar &&
-      (hasTestId(element, ['create-new-chat-button', 'new-chat-button']) || /^new (chat|conversation)$/i.test(accessibleName(element)) ||
-        /^new (chat|conversation)$/i.test(element.textContent.trim())));
     // The second row holds the header's right-side action cluster: the options
     // trigger, any sibling controls (list view, etc.) and New Chat. Find the
     // deepest shared ancestor seeded from New Chat (or the detected options
     // trigger) that wraps the cluster without swallowing the sidebar control
     // or our injected toolbar. Seeding does not depend on a Share button being
     // present, so the cluster also moves on pages without sharing.
-    // Only right-half controls can belong to the actions cluster, plus the
-    // explicitly detected New Chat button wherever the site places it. A
-    // centered mode-switch strip spans the midpoint and stays put for
-    // header.js.
+    const isNewChat = element => element !== shareMenuTrigger && element !== sidebar &&
+      (hasTestId(element, ['create-new-chat-button', 'new-chat-button']) || /^new (chat|conversation)$/i.test(accessibleName(element)) ||
+        /^new (chat|conversation)$/i.test(element.textContent.trim()));
+    const newChats = controls.filter(isNewChat);
+    const newChat = newChats[0] || null;
+    // Right-half controls make up the actions cluster; every New Chat button
+    // joins it wherever the site places it. A centered mode-switch strip
+    // spans the midpoint and stays put for header.js.
     const headerBox = header.getBoundingClientRect();
     const headerMid = headerBox.left + headerBox.width / 2;
     const secondary = controls.filter(element => element !== sidebar &&
-      (element === newChat || element.getBoundingClientRect().left > headerMid) &&
+      (isNewChat(element) || element.getBoundingClientRect().left > headerMid) &&
       !element.hasAttribute('data-app-mode-relocated-share') &&
       !element.closest('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs], [data-app-mode-header-mode-branch]') &&
       !(ourToolbar && ourToolbar.contains(element)));
@@ -199,23 +206,50 @@
       row.id = 'chatgpt-app-mode-secondary-row';
     }
     if (row.parentElement !== header.parentElement || row.previousElementSibling !== header) header.after(row);
-    // Right-align the cluster under the caption-controls inset. A single group
-    // keeps its native DOM order and gap; when no shared container exists each
-    // control is offset by the cumulative width of the controls to its right.
-    // Keep New Chat rightmost on the caption inset; other controls keep their
-    // native left-to-right order to its left.
-    const items = [...marked].filter(element => element !== newChat && !(newChat && element.contains?.(newChat)))
-      .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-    if (newChat && marked.has(newChat)) items.push(newChat);
+    // Right-align the cluster under the caption-controls inset. New Chat
+    // controls stay rightmost; other controls keep their visual left-to-right
+    // order. Some site ancestors create a fixed-position containing block
+    // (transform/filter), so each element's containing-block origin is
+    // measured from its rendered rect and left/top are written as deltas.
+    const byLeft = (a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left;
+    const items = [...marked].filter(element => !isNewChat(element)).sort(byLeft)
+      .concat([...marked].filter(isNewChat).sort(byLeft));
     if (!items.length) items.push(...marked);
-    let trailing = 0;
+    const rowTop = Math.round(headerBox.bottom) + 6;
+    let nextRight = innerWidth - 10;
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const element = items[index];
       if (!element.hasAttribute('data-app-mode-secondary-actions')) element.setAttribute('data-app-mode-secondary-actions', '');
-      const offset = `calc(10px + ${trailing}px)`;
-      if (element.style.getPropertyValue('--app-mode-secondary-offset') !== offset)
-        element.style.setProperty('--app-mode-secondary-offset', offset);
-      trailing += Math.round(element.getBoundingClientRect().width) + 6;
+      // Site wrappers may paint-clip their subtree (contain: paint or
+      // overflow: hidden); a translated element would be cut off below the
+      // header. Downgrade only those ancestors, keeping layout containment.
+      for (let node = element.parentElement; node && node !== header; node = node.parentElement) {
+        const nodeStyle = getComputedStyle(node);
+        let clipped = false;
+        if (/(^| )paint( |$)|^strict$|^content$/.test(nodeStyle.contain) && node.style.contain !== 'layout') {
+          node.style.setProperty('contain', 'layout', 'important');
+          clipped = true;
+        }
+        if (nodeStyle.overflow === 'hidden' && node.style.overflow !== 'visible') {
+          node.style.setProperty('overflow', 'visible', 'important');
+          clipped = true;
+        }
+        if (clipped && !node.hasAttribute('data-app-mode-secondary-clip')) node.setAttribute('data-app-mode-secondary-clip', '');
+      }
+      const rect = element.getBoundingClientRect();
+      // Measure the untransformed position so the delta converges instead of
+      // snapping back to the origin on every observer pass.
+      const matrix = /matrix\(([^)]+)\)/.exec(getComputedStyle(element).transform);
+      const parts = matrix ? matrix[1].split(',').map(Number) : [];
+      const naturalLeft = rect.left - (parts[4] || 0);
+      const naturalTop = rect.top - (parts[5] || 0);
+      const dxValue = `${Math.round(nextRight - naturalLeft - rect.width)}px`;
+      const dyValue = `${Math.round(rowTop - naturalTop)}px`;
+      if (element.style.getPropertyValue('--app-mode-secondary-dx') !== dxValue)
+        element.style.setProperty('--app-mode-secondary-dx', dxValue);
+      if (element.style.getPropertyValue('--app-mode-secondary-dy') !== dyValue)
+        element.style.setProperty('--app-mode-secondary-dy', dyValue);
+      nextRight -= rect.width + 6;
     }
     const bottom = `${Math.round(header.getBoundingClientRect().bottom)}px`;
     if (document.body.style.getPropertyValue('--app-mode-header-bottom') !== bottom)

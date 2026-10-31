@@ -185,14 +185,14 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   -webkit-app-region: no-drag;
 }
 
+/* Relocate with a transform rather than fixed positioning: site wrappers
+   create containing blocks and stacking contexts that trap fixed elements
+   below page content, while a transform keeps the element in its natural
+   header layer. */
 body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
-  position: fixed !important;
-  top: calc(var(--app-mode-header-bottom, 48px) + 6px);
-  inset-inline-end: var(--app-mode-secondary-offset, 10px);
-  z-index: 29;
-  display: flex !important;
-  align-items: center;
-  gap: 6px;
+  transform: translate3d(var(--app-mode-secondary-dx, 0px), var(--app-mode-secondary-dy, 0px), 0) !important;
+  position: relative;
+  z-index: 30;
   -webkit-app-region: no-drag;
 }
 
