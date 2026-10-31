@@ -279,26 +279,36 @@
     // spans the midpoint and stays put for header.js.
     const headerBox = header.getBoundingClientRect();
     const headerMid = headerBox.left + headerBox.width / 2;
+    // The centered mode-switch strip (Chat/Work tabs) collides with the
+    // right-side caption zone whenever the expanded sidebar squeezes the
+    // header, so it also qualifies the row on its own. Its children must be
+    // excluded from the cluster — the container moves as one piece.
+    const modeStrip = header.querySelector('[data-app-mode-header-tabs], [role="tablist"], [role="radiogroup"], [role="group"][aria-label*="mode" i]');
     const secondary = controls.filter(element => element !== sidebar &&
       (isNewChat(element) || element.getBoundingClientRect().left > headerMid) &&
       !element.hasAttribute('data-app-mode-relocated-share') &&
       !element.closest('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs], [data-app-mode-header-mode-branch]') &&
+      !(modeStrip && modeStrip.contains(element)) &&
       !(ourToolbar && ourToolbar.contains(element)));
     let group = null;
     const seed = (newChat?.isConnected && newChat) || (detectedTrigger?.isConnected && detectedTrigger) || null;
-    // Without a conversation-actions anchor (options trigger or New Chat),
-    // other headers keep their native single-row layout.
-    if (!seed) {
+    // Without a conversation-actions anchor (options trigger, New Chat, or
+    // the mode-switch strip), other headers keep their native layout.
+    if (!seed && !modeStrip) {
       row?.remove();
       clearSecondaryMarks();
       return;
     }
-    for (let node = seed.parentElement; node && node !== header && header.contains(node); node = node.parentElement) {
+    for (let node = seed?.parentElement; node && node !== header && header.contains(node); node = node.parentElement) {
       if (sidebar && node.contains(sidebar)) break;
       if (ourToolbar && node.contains(ourToolbar)) break;
       if (secondary.filter(element => node.contains(element)).length >= Math.min(2, secondary.length)) group = node;
     }
     const marked = new Set(group ? [group] : secondary);
+    // The strip container joins the cluster as the leftmost item; its child
+    // tabs stay excluded above so they are never marked separately. Skip it
+    // when the moved group already carries it.
+    if (modeStrip && ![...marked].some(element => element === modeStrip || element.contains(modeStrip))) marked.add(modeStrip);
     for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
       if (!marked.has(element)) element.removeAttribute('data-app-mode-secondary-actions');
     }
@@ -316,6 +326,11 @@
     const byLeft = (a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left;
     const items = [...marked].filter(element => !isNewChat(element)).sort(byLeft)
       .concat([...marked].filter(isNewChat).sort(byLeft));
+    // Keep the strip leftmost regardless of its centered original position.
+    if (modeStrip && marked.has(modeStrip)) {
+      const stripIndex = items.indexOf(modeStrip);
+      if (stripIndex > 0) items.unshift(items.splice(stripIndex, 1)[0]);
+    }
     if (!items.length) items.push(...marked);
     const rowTop = Math.round(headerBox.bottom) + 6;
     let nextRight = innerWidth - 10;

@@ -212,7 +212,7 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
    create containing blocks and stacking contexts that trap fixed elements
    below page content, while a transform keeps the element in its natural
    header layer. */
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions][data-app-mode-secondary-actions] {
   transform: translate3d(var(--app-mode-secondary-dx, 0px), var(--app-mode-secondary-dy, 0px), 0) !important;
   position: relative;
   z-index: 30;
@@ -231,7 +231,7 @@ body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
    trigger wider than the icon buttons, so normalize every relocated control
    to the 32px square the rest of the row uses. */
 body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is(button, [role="button"], a),
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a) {
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a):not([role="tab"], [role="radio"]) {
   inline-size: 32px;
   padding-inline: 0;
 }
