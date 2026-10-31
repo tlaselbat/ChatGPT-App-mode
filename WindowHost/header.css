@@ -45,6 +45,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tab-path] {
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) { padding: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-header-mode-branch] { order: 1; }
+body.faux-chatgpt-app-mode [data-app-mode-header-spacer] { display: none !important; }
 /* Site top rows render taller than the 40px action row; cap them so their
    buttons share the same centerline as the window controls above. */
 body.faux-chatgpt-app-mode [data-app-mode-header-strip] {
@@ -106,7 +107,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   width: clamp(96px, 28vw, 192px) !important;
   min-width: 96px !important;
   max-width: 192px;
-  height: 28px;
+  height: 28px !important;
+  border: 1px solid var(--app-mode-control-border);
+  border-radius: 8px;
   padding: 2px;
   gap: 2px;
   box-sizing: border-box;
@@ -114,6 +117,16 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
 /* The site uses decorative grid spans, including a viewport-wide backdrop.
    They must not become flex items or cover unrelated controls. */
 body.faux-chatgpt-app-mode [data-app-mode-header-tabs] > [aria-hidden="true"] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="viewport"] [data-app-mode-header-tabs] {
+  position: fixed !important;
+  left: 50vw !important;
+  right: auto !important;
+  top: var(--app-mode-switch-top, 6px) !important;
+  transform: translateX(-50%) !important;
+  height: 28px !important;
+  max-height: 28px;
+  pointer-events: auto;
+}
 /* Wide layouts add hidden sidebar-width spacers to the fixed centering layer.
    They are obsolete once that layer participates in the actual header row. */
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) > [aria-hidden="true"] { display: none !important; }
@@ -140,9 +153,11 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not([data-app-mode-h
 /* Non-control children of the row (the conversation title, labels) keep
    compact title typography, truncate instead of crowding controls, and
    never inherit icon-button or mode-tab sizing. */
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not(:has(button)):not(button):not(.chatgpt-app-mode-toolbar):not([data-app-mode-header-tabs]) {
-  flex-shrink: 1;
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not(:has(button)):not(button):not(.chatgpt-app-mode-toolbar):not([data-app-mode-header-tabs]):not([data-app-mode-header-spacer]) {
+  flex: 1 1 auto;
   min-width: 0;
+  margin-inline: 0 !important;
+  padding-inline: 0 !important;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

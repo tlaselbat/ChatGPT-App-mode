@@ -68,6 +68,149 @@ const fixture = `<!doctype html>
 <div class="message">Here is a clean offline fixture for checking layout, narrow-window behavior, and extension controls. No private conversation data is included.</div>
 <div class="composer">Message ChatGPT</div></section></main></div></body></html>`;
 
+test('visible fixed-layer switch stays viewport-centered with unequal sides through reconciliation', async ({ page }, testInfo) => {
+  const structure = fs.readFileSync(path.join(root, 'tests/fixtures/fixed-layer-header.html'), 'utf8');
+  await page.setViewportSize({ width: 680, height: 800 });
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":false,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(html => {
+    document.querySelector('.shell').style.gridTemplateColumns = '1fr';
+    document.querySelector('aside').style.display = 'none';
+    document.querySelector('header').innerHTML = html;
+    document.querySelector('.fixed-mode-layer').setAttribute('data-app-mode-header-tabs', '');
+    const action = document.querySelector('button[aria-label="Refresh"]');
+    action.after(action.cloneNode(true));
+  }, structure);
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  await expect(page.locator('.real-mode-grid')).toHaveAttribute('data-app-mode-header-tabs', '');
+  const samples = [];
+  for (let sample = 0; sample < 20; sample++) {
+    await page.setViewportSize({ width: sample < 12 ? 680 : [560, 390, 448, 680][sample % 4], height: 800 });
+    await page.evaluate(sample => {
+      document.querySelector('main').style.marginLeft = sample % 2 === 0 && innerWidth > 480 ? '120px' : '0px';
+      const header = document.querySelector('header');
+      if (sample === 12) {
+        const action = header.querySelector('button[aria-label="Refresh"]');
+        for (let index = 0; index < 3; index++) {
+          const extra = action.cloneNode(true);
+          extra.dataset.denseFixture = '';
+          action.after(extra);
+        }
+      } else if (sample === 13) header.querySelectorAll('[data-dense-fixture]').forEach(element => element.remove());
+      header.classList.toggle('sidebar-expanded', sample % 2 === 0);
+      document.querySelector('#synthetic-sidebar-modal')?.remove();
+      if (sample < 12 && sample % 4 === 1) {
+        header.setAttribute('aria-hidden', 'true');
+        const modal = document.createElement('div');
+        modal.id = 'synthetic-sidebar-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.style.cssText = 'position:fixed;left:0;top:0;width:120px;height:100vh';
+        document.body.append(modal);
+      } else header.removeAttribute('aria-hidden');
+      if (sample % 3 === 0) {
+        const layer = header.querySelector('.fixed-mode-layer');
+        layer.replaceWith(layer.cloneNode(true));
+      }
+      const buttons = header.querySelectorAll('.real-mode-grid button');
+      buttons.forEach((button, index) => button.setAttribute('aria-pressed', String(index === sample % 2)));
+      history.pushState({}, '', sample % 2 ? '/c/synthetic-header' : '/');
+    }, sample);
+    await page.waitForTimeout(80);
+    samples.push(await page.evaluate(() => {
+      const rect = element => {
+        const r = element.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
+      };
+      const tabs = document.querySelector('.real-mode-grid');
+      const box = rect(tabs);
+      return { viewport: innerWidth, dpr: devicePixelRatio, switch: box,
+        centering: tabs.closest('header').getAttribute('data-app-mode-header-centering'),
+        outline: getComputedStyle(tabs).borderWidth,
+        error: box.x + box.width / 2 - innerWidth / 2,
+        controls: [...document.querySelectorAll('header button')].filter(el => !el.closest('[aria-hidden="true"]')).map(rect),
+        ancestry: [...document.querySelector('header').children].map(el => {
+          const style = getComputedStyle(el);
+          return { box: rect(el), flex: style.flex, width: style.width, minWidth: style.minWidth, display: style.display };
+        }) };
+    }));
+  }
+  await testInfo.attach('header-css-pixel-samples', { body: JSON.stringify(samples, null, 2), contentType: 'application/json' });
+  for (const [index, sample] of samples.entries()) {
+    if (index === 12) expect(sample.centering).toBe('remaining');
+    if (sample.viewport === 680 || sample.centering === 'viewport') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
+    if (sample.viewport <= 480) expect(sample.centering).toBe('remaining');
+    expect(sample.outline).toBe('1px');
+    expect(Math.abs(sample.switch.y - (40 - sample.switch.bottom))).toBeLessThanOrEqual(2);
+    for (let index = 0; index < sample.controls.length; index++) {
+      const a = sample.controls[index];
+      for (const b of sample.controls.slice(index + 1)) expect(a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y, JSON.stringify(sample)).toBe(false);
+    }
+    for (const control of sample.controls) {
+      expect(control.y).toBeGreaterThanOrEqual(0);
+      expect(control.bottom).toBeLessThanOrEqual(40);
+    }
+  }
+  await page.goto('https://chatgpt.com/c/compact-title-fixture');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  await expect(page.locator('.header-title')).toHaveCSS('font-size', '14px');
+  await expect(page.locator('.header-title')).toHaveCSS('font-weight', '500');
+  await expect(page.locator('.header-title')).toHaveCSS('line-height', '19.6px');
+  await page.goto('https://chatgpt.com/');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(html => {
+    document.querySelector('.shell').style.gridTemplateColumns = '1fr';
+    document.querySelector('aside').style.display = 'none';
+    document.querySelector('header').innerHTML = html;
+  }, structure);
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  await expect.poll(() => page.locator('.real-mode-grid').evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return Math.abs(box.x + box.width / 2 - innerWidth / 2);
+  })).toBeLessThanOrEqual(2);
+});
+
+test('expanded-sidebar offsets collapse so the conversation title stays between the control groups', async ({ page }) => {
+  const structure = fs.readFileSync(path.join(root, 'tests/fixtures/full-header.html'), 'utf8');
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":false,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/spacer-title-fixture');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(html => { document.querySelector('header').innerHTML = html; }, structure);
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  const measure = () => page.evaluate(() => {
+    const header = document.querySelector('header');
+    const box = element => element.getBoundingClientRect();
+    const title = box(header.querySelector('.fixture-title'));
+    const text = box(header.querySelector('.fixture-title .title'));
+    return { viewport: innerWidth,
+      title: { left: title.left, right: title.right }, text: { right: text.right, width: text.width },
+      leadingRight: box(header.querySelector('.fixture-leading')).right,
+      actionsLeft: box(header.querySelector('.fixture-actions')).left,
+      spacersVisible: [...header.querySelectorAll('.fixture-sidebar-spacer,.fixture-title-offset')].filter(element => element.getClientRects().length).map(element => element.className) };
+  });
+  // Expanded-sidebar offsets, collapsed-sidebar re-render, and resizes must
+  // all leave the title between the leading controls and the action group.
+  for (const width of [680, 560, 390, 1024, 680]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect.poll(async () => { const m = await measure(); return m.spacersVisible.length ? m : 0; }).toBe(0);
+    const sample = await measure();
+    expect(sample.title.left, JSON.stringify(sample)).toBeGreaterThanOrEqual(sample.leadingRight - 1);
+    expect(sample.title.right, JSON.stringify(sample)).toBeLessThanOrEqual(sample.actionsLeft + 1);
+    expect(sample.text.width, JSON.stringify(sample)).toBeGreaterThan(8);
+    expect(sample.text.right, JSON.stringify(sample)).toBeLessThanOrEqual(sample.viewport + 1);
+    if (width === 560) {
+      // Re-render drops and re-adds the sidebar offsets; reconciliation
+      // collapses them again without moving the controls.
+      await page.evaluate(html => { document.querySelector('header').innerHTML = html; }, structure);
+      await expect.poll(async () => { const m = await measure(); return m.spacersVisible.length ? m : 0; }).toBe(0);
+    }
+  }
+});
+
 test('header layout detects the current fixed-layer mode switch with nested tabs and data-state', async ({ page }) => {
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));

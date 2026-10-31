@@ -336,6 +336,9 @@
     const existing = document.getElementById(pinButtonId);
     if (existing) {
       const toolbar = existing.parentElement;
+      const heldHeader = toolbar.parentElement;
+      const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
+      if (!header && modal?.getBoundingClientRect().width > 0 && heldHeader?.matches('[data-app-mode-header-layout]') && heldHeader.closest('[aria-hidden="true"]') && heldHeader.getBoundingClientRect().width > 0 && getComputedStyle(heldHeader).visibility !== 'hidden') return;
       if (header && toolbar.parentElement !== header) {
         header.appendChild(toolbar);
         document.getElementById("chatgpt-app-mode-toolbar-fallback")?.remove();

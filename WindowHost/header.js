@@ -16,7 +16,7 @@
     if (!visible(element)) return false;
     const buttons = [...element.querySelectorAll('button')].filter(visible);
     if (buttons.length !== 2) return false;
-    if (buttons.some(button => ['aria-pressed', 'aria-selected', 'aria-checked'].some(attribute => button.hasAttribute(attribute)))) return true;
+    if (buttons.some(button => ['aria-pressed', 'aria-selected', 'aria-checked'].some(attribute => button.hasAttribute(attribute)) || ['active', 'inactive'].includes(button.getAttribute('data-state')))) return true;
     const remembered = legacyModeButtons.get(element);
     return remembered?.length === 2 && buttons[0] === remembered[0] && buttons[1] === remembered[1] && element.querySelectorAll('button').length === 2;
   };
@@ -30,6 +30,8 @@
     const header = (toolbarHost && toolbarHost.id !== 'chatgpt-app-mode-toolbar-fallback' ? toolbarHost : null) ||
       [...document.querySelectorAll('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]')]
         .find(element => visible(element) && !element.closest('aside, nav'));
+    const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
+    if (modal?.getBoundingClientRect().width > 0 && [...marked.keys()].some(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected && element.closest('[aria-hidden="true"]') && element.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility !== 'hidden')) return;
     const next = new Map();
     function mark(element, attribute, value = '') {
       element.setAttribute(attribute, value);
@@ -89,6 +91,13 @@
           while (tabs !== positioned && !tabs.contains(buttons[1])) tabs = tabs.parentElement;
           legacyModeButtons.set(tabs, [...tabs.querySelectorAll('button')]);
         }
+      }
+      if (tabs) {
+        const inner = [...tabs.querySelectorAll('div, span, [role="group"]')].filter(isModeSwitch);
+        tabs = inner.find(element => !inner.some(other => other !== element && element.contains(other))) || tabs;
+      }
+      for (const stale of header.querySelectorAll('[data-app-mode-header-tabs]')) {
+        if (stale !== tabs) stale.removeAttribute('data-app-mode-header-tabs');
       }
       // The site's own top rows (sidebar strip, conversation header) render
       // slightly taller than the 48px header strip, drifting their buttons
@@ -152,6 +161,31 @@
           }
         }
       }
+      // Collapse leftover sizing spacers on every header variant, with or
+      // without a mode switch. When the sidebar opens, the site leaves a
+      // hidden sidebar-width offset in the conversation header — as a row
+      // child or inside the title container — that double-counts the sidebar
+      // and pushes the title off the row's right edge. Spacers are inert:
+      // no text, controls, or imagery; they only reserve space the flex row
+      // already provides. Thin separators (<=8px) keep their width.
+      const inertBlock = element => !element.textContent.trim() &&
+        !element.querySelector('button, a[href], [role="button"], svg, img, video, canvas, input, select, textarea, iframe');
+      for (const child of header.children) {
+        if (child.classList.contains('chatgpt-app-mode-toolbar') || child.hasAttribute('data-app-mode-header-tab-path')) continue;
+        if (child.querySelector('button, a[href], [role="button"]')) continue;
+        if (inertBlock(child)) {
+          const box = child.getBoundingClientRect();
+          if (box.width > 8 || (box.width <= 1 && parseFloat(getComputedStyle(child).marginLeft) > 0) || child.hasAttribute('data-app-mode-header-spacer')) {
+            mark(child, 'data-app-mode-header-spacer');
+          }
+          continue;
+        }
+        for (const node of child.querySelectorAll('*')) {
+          // Keep an existing mark while the node stays inert: collapsed to
+          // display:none it measures zero width and would otherwise flap.
+          if (inertBlock(node) && (node.hasAttribute('data-app-mode-header-spacer') || node.getBoundingClientRect().width > 8)) mark(node, 'data-app-mode-header-spacer');
+        }
+      }
     }
     for (const [element, attributes] of marked) {
       const retained = next.get(element) || new Set();
@@ -160,6 +194,25 @@
       }
     }
     marked = next;
+    if (header && visible(header)) {
+      const tabs = header.querySelector('[data-app-mode-header-tabs]');
+      if (tabs) {
+        const box = tabs.getBoundingClientRect();
+        const left = (innerWidth - box.width) / 2;
+        const right = left + box.width;
+        const controls = [...header.querySelectorAll('button, a[href], [role="button"]')].filter(element => !tabs.contains(element) && visible(element));
+        const fits = innerWidth > 480 && controls.every(element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.right <= left - 6 || bounds.left >= right + 6;
+        });
+        mark(header, 'data-app-mode-header-centering', fits ? 'viewport' : 'remaining');
+        const top = `${header.getBoundingClientRect().top + 6}px`;
+        if (header.style.getPropertyValue('--app-mode-switch-top') !== top) header.style.setProperty('--app-mode-switch-top', top);
+      } else {
+        header.removeAttribute('data-app-mode-header-centering');
+        header.style.removeProperty('--app-mode-switch-top');
+      }
+    }
   }
   function schedule() {
     if (queued) return;
@@ -168,7 +221,7 @@
   }
   new MutationObserver(schedule).observe(document.documentElement, {
     childList: true, subtree: true, attributes: true,
-    attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'inert'],
+    attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'inert', 'role', 'aria-pressed', 'aria-selected', 'aria-checked', 'data-state'],
   });
   window.addEventListener('resize', schedule);
   window.addEventListener('scroll', schedule, { capture: true, passive: true });

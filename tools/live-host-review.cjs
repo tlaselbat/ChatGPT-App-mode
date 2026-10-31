@@ -9,12 +9,13 @@ async function start() {
   fs.writeFileSync(path.join(reviewRoot, 'config.json'), JSON.stringify({
     installRoot: reviewRoot, url: 'https://chatgpt.com/',
     appProfileDir: path.join(reviewRoot, 'UnusedChromiumProfile'),
-    window: { width: 489, height: 1000 }, rememberWindowPlacement: false,
+    window: { width: 680, height: 850 }, rememberWindowPlacement: false,
     privacy: { saveLastSession: false, trackRecentChats: false, showChatTitles: false },
   }));
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   const child=spawn(require('electron'),[path.join(root,'WindowHost/main.cjs'),`--app-mode-root=${reviewRoot}`,
-    `--user-data-dir=${path.join(reviewRoot,'Browser/AppModeHostProfile')}`,'--live-review'],
+    `--user-data-dir=${path.join(reviewRoot,'Browser/AppModeHostProfile')}`,'--live-review',
+    '--remote-debugging-address=127.0.0.1','--remote-debugging-port=9223'],
     {env,detached:true,stdio:'ignore',windowsHide:false});
   child.on('error',()=>console.error('Manual review window could not launch.'));
   child.unref();

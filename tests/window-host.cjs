@@ -499,7 +499,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await page.locator('[data-app-mode-header-tabs]').evaluate(el => getComputedStyle(el.parentElement).position), 'static');
     await page.evaluate(html => { document.querySelector('header').innerHTML = html; }, fs.readFileSync(path.join(__dirname, 'fixtures/fixed-layer-header.html'),'utf8'));
     await page.waitForSelector('.real-mode-grid[data-app-mode-header-tabs]');
-    for (const zoom of [1,1.25,1.5]) for (const width of [390,448,560,690,1024,1280]) {
+    const zoomSamples = [];
+    for (const zoom of [1,1.25,1.5]) for (const width of [390,448,560,680,690,1024,1280]) {
       if(width/zoom<390)continue; // Minimum supported logical viewport; zoom does not expand the window.
       const expectedWidth = await electron.evaluate(({BrowserWindow},{zoom,width}) => {
         const win=BrowserWindow.getAllWindows()[0]; win.setBounds({width,height:700});
@@ -512,11 +513,17 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const layout=await page.evaluate(() => {
         const header=document.querySelector('header').getBoundingClientRect();
         const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')).map(el=>el.getBoundingClientRect());
-        return {groups:document.querySelectorAll('[data-app-mode-header-tabs]').length,
+        const tabs=document.querySelector('.real-mode-grid').getBoundingClientRect();
+        return {viewportCss:innerWidth,devicePixelRatio,switchCss:{x:tabs.x,y:tabs.y,width:tabs.width,height:tabs.height},
+          centerErrorCss:tabs.x+tabs.width/2-innerWidth/2,controlsCss:controls.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),
+          centering:document.querySelector('header').getAttribute('data-app-mode-header-centering'),
+          groups:document.querySelectorAll('[data-app-mode-header-tabs]').length,
           bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth+1 && r.top>=0 && r.bottom<=header.bottom+1),
           overlap:controls.some((a,i)=>controls.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           minimum:Math.min(...controls.map(r=>r.width))};
       });
+      zoomSamples.push({zoom,windowWidthDip:width,...layout});
+      if(layout.centering==='viewport') assert.ok(Math.abs(layout.centerErrorCss)<=2,JSON.stringify({zoom,width,layout}));
       assert.equal(layout.groups,1); assert.equal(layout.bounded,true,JSON.stringify({zoom,width,layout}));
       assert.equal(layout.overlap,false,JSON.stringify({zoom,width,layout})); assert.ok(layout.minimum>=24);
       const surface=await electron.evaluate(({BrowserWindow})=>{
@@ -534,6 +541,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.equal(surface.chatBounds.height,surface.height-surface.bounds.height);
       assert.equal(surface.zoom,zoom,'Controls and header must share a physical centerline at page zoom');
     }
+    fs.writeFileSync(path.join(scratch,'header-zoom-geometry.json'),JSON.stringify(zoomSamples,null,2));
     // Conversation headers expose five page actions plus three host actions.
     // Exercise that denser variant separately from the home mode-switch header.
     await page.evaluate(html=>{document.querySelector('header').innerHTML=html;},fs.readFileSync(path.join(__dirname,'fixtures/full-header.html'),'utf8'));
@@ -565,15 +573,23 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const actions=header.querySelector('[aria-label="More options"]')?.getBoundingClientRect();
         const newChat=header.querySelector('[aria-label="New chat"]')?.getBoundingClientRect();
         const pin=document.getElementById('chatgpt-app-mode-pin-toggle')?.getBoundingClientRect();
+        const leadingBox=header.querySelector('.fixture-leading')?.getBoundingClientRect();
+        const actionsBox=header.querySelector('.fixture-actions')?.getBoundingClientRect();
+        const titleBox=header.querySelector('.fixture-title')?.getBoundingClientRect();
+        const titleText=header.querySelector('.fixture-title .title')?.getBoundingClientRect();
         const siteRects=buttons.filter(button=>button.id!=='chatgpt-app-mode-pin-toggle').map(button=>button.getBoundingClientRect());
         return {count:buttons.length,height:bounds.height,aligned:rects.every(rect=>Math.abs(rect.y+rect.height/2-20)<=1),
           bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth+1&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           order:siteRects.every(rect=>rect.right<=(pin?.left??innerWidth)+6),
-          actionsRight:actions?actions.right>=innerWidth-(pin?.width??40)-30:true,
+          actionsRight:actions?actions.right>=bounds.right-(pin?.width??40)-30:true,
+          spacersGone:![...header.querySelectorAll('.fixture-sidebar-spacer,.fixture-title-offset')].some(element=>element.getClientRects().length),
+          titleBetween:!!titleBox&&!!leadingBox&&!!actionsBox&&titleBox.left>=leadingBox.right-1&&titleBox.right<=actionsBox.left+1,
+          titleReadable:!!titleText&&titleText.width>8&&titleText.right<=innerWidth+1,
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
-      assert.deepEqual(layout,{count:4,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,overflow:false},JSON.stringify({zoom,width,layout}));
+      const diagnostics=layout.actionsRight?null:await page.evaluate(()=>({viewport:innerWidth,headerRight:document.querySelector('header').getBoundingClientRect().right,actionRight:document.querySelector('[aria-label="More options"]').getBoundingClientRect().right,pinWidth:document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect().width}));
+      assert.deepEqual(layout,{count:4,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
