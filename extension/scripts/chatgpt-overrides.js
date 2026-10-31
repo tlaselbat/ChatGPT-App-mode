@@ -331,21 +331,23 @@
   function ensureSidebarPanel() {
     const panel = document.querySelector('.app-shell-left-panel');
     if (!panel) return;
+    // The site defines its shell vars on the Layout ancestor (rail width,
+    // menu height) and consumes --app-shell-left-panel-width both on the
+    // panel and on a sibling layout spacer, so the fallback must live on
+    // that same element — a user resize then replaces it naturally.
+    let host = panel;
+    for (let el = panel.parentElement; el; el = el.parentElement) {
+      if ((el.getAttribute('style') || '').includes('--app-shell-')) { host = el; break; }
+    }
     const open = !!document.querySelector('[aria-controls="app-shell-sidebar"][aria-expanded="true"]');
     const target = open ? `${Math.min(340, Math.round(innerWidth * 0.62))}px` : '52px';
     const current = parseFloat(getComputedStyle(panel).getPropertyValue('--app-shell-left-panel-width')) || 0;
-    const ours = panel.style.getPropertyValue('--app-shell-left-panel-width');
-    if (current > 10) {
-      // A real width is present. If it is not the value we wrote, the site
-      // (or a user resize) owns the var — cede control back to the site.
-      if (ours && ours !== target) {
-        panel.style.removeProperty('--app-shell-left-panel-width');
-        delete panel.dataset.appModePanelWidth;
-      }
-      return;
-    }
-    if (ours !== target) panel.style.setProperty('--app-shell-left-panel-width', target);
-    panel.dataset.appModePanelWidth = '1';
+    // Any real width — ours, the site's, or a user resize — is left alone:
+    // inline writes all land in the same property slot, so once the site or
+    // the user writes a value it simply replaces the fallback.
+    if (current > 10) return;
+    const ours = host.style.getPropertyValue('--app-shell-left-panel-width');
+    if (ours !== target) host.style.setProperty('--app-shell-left-panel-width', target);
   }
 
   function markBody() {
