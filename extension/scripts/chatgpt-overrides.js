@@ -67,6 +67,62 @@
     };
   } catch { /* Keep the native matchMedia if the page blocks the override. */ }
 
+  // Same treatment for the site's own stylesheets: a desktop-only app window
+  // should never evaluate mobile/tablet media rules. Any @media rule whose
+  // condition contains a width feature is evaluated against the fixed
+  // desktop viewport and deleted when it would not match — width-driven
+  // variants then cannot apply at any window size. Non-width media rules
+  // (reduced motion, color scheme, print) are left untouched.
+  const widthFeature = /\((?:min-|max-)?width\b|\((?:min|max)-width\s*:/i;
+  function mediaMatchesDesktop(mediaText) {
+    const featureRe = /\(([^)]+)\)/g;
+    return mediaText.split(',').some(orPart => {
+      let m;
+      let result = true;
+      while ((m = featureRe.exec(orPart)) !== null) {
+        const feature = m[1].trim();
+        if (/^(min|max)?-?width|^(min|max)-(device-)?width/i.test(feature) || /^\bwidth\s*:/i.test(feature)) {
+          const ev = evaluateWidthQuery(`(${feature})`);
+          if (ev === null) return false;
+          result = result && ev;
+        } else {
+          // Defer non-width features to the real matcher (single-feature
+          // queries like "(prefers-reduced-motion: reduce)").
+          result = result && nativeMatchMedia(`(${feature})`).matches;
+        }
+        featureRe.lastIndex = m.index + m[0].length;
+      }
+      if (/\bnot\b/i.test(orPart)) result = !result;
+      return result;
+    });
+  }
+  const mediaRuleCheckpoints = new WeakMap();
+  function sweepMediaRules(parent) {
+    let rules;
+    try { rules = parent.cssRules; } catch { return; }
+    for (let i = rules.length - 1; i >= 0; i -= 1) {
+      const rule = rules[i];
+      if (rule instanceof CSSMediaRule) {
+        if (widthFeature.test(rule.media.mediaText)) {
+          try { if (!mediaMatchesDesktop(rule.media.mediaText)) { parent.deleteRule(i); continue; } } catch { /* keep */ }
+        }
+        sweepMediaRules(rule);
+      } else if (rule.cssRules) {
+        sweepMediaRules(rule);
+      }
+    }
+  }
+  function neutralizeResponsiveMedia() {
+    const sheets = [...document.styleSheets, ...(document.adoptedStyleSheets || [])];
+    for (const sheet of sheets) {
+      let count;
+      try { count = sheet.cssRules.length; } catch { continue; }
+      if (mediaRuleCheckpoints.get(sheet) === count) continue;
+      sweepMediaRules(sheet);
+      try { mediaRuleCheckpoints.set(sheet, sheet.cssRules.length); } catch { /* read-only */ }
+    }
+  }
+
   function actionGroupOf(element, header) {
     // Buttons in the site's action strip may each sit in their own wrapper
     // (tooltip/slot containers). Treat one wrapper level as the same group.
@@ -683,6 +739,7 @@
 
   const observer = new MutationObserver(() => {
     markBody();
+    neutralizeResponsiveMedia();
     ensurePinButton();
     ensureShareMenu();
     ensureSecondaryRow();

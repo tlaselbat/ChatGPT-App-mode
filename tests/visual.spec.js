@@ -397,7 +397,9 @@ test('extension styling, control, navigation and re-render in offline ChatGPT fi
   await page.evaluate(() => document.documentElement.removeAttribute('style'));
   await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('aside')).toBeHidden();
+  // Single desktop presentation at every window width: the mobile media rule
+  // that used to hide the aside is stripped, so the desktop grid stays.
+  await expect(page.locator('aside')).toBeVisible();
   const overlapsMessage = await page.evaluate(() => {
     const pin = document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect();
     return [...document.querySelectorAll('.message,.composer')].some(element => {
