@@ -83,8 +83,8 @@ async function run() {
           hasSvg: Boolean(c.querySelector('svg')),
           textLen: c.textContent.trim().length,
           rect: rectOf(c),
-          marked: c.getAttribute('data-app-mode-secondary-actions') !== null ? 'secondary' :
-            c.getAttribute('data-app-mode-relocated-share') !== null ? 'share' : undefined,
+          marked: c.getAttribute('data-app-mode-relocated-share') !== null ? 'share' :
+            c.getAttribute('data-app-mode-header-icon') !== null ? 'icon' : undefined,
           parentTestid: c.parentElement?.getAttribute('data-testid') || undefined,
         })),
         children: [...el.children].slice(0, 8).map(child => describe(child, depth + 1)).filter(Boolean),
@@ -107,8 +107,7 @@ async function run() {
       }));
     return {
       bodyMarker: document.body.classList.contains('faux-chatgpt-app-mode'),
-      secondaryRow: Boolean(document.getElementById('chatgpt-app-mode-secondary-row')),
-      headerBottomVar: document.body.style.getPropertyValue('--app-mode-header-bottom'),
+      managedHeader: Boolean(document.querySelector('[data-app-mode-header-layout]')),
       headers: headers.map(h => describe(h, 0)),
       strayTopControls: stray,
     };

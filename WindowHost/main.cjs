@@ -1,5 +1,5 @@
 // Remote pages run sandboxed, without Node, preload bridges, or privileged IPC.
-const { app, BrowserWindow, session, shell, screen, dialog } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, shell, screen, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermission,
@@ -101,11 +101,19 @@ function createWindow(args) {
       nodeIntegration: false, webviewTag: false, navigateOnDragDrop: false },
   });
   win.removeMenu();
-  guardNavigation(win.webContents);
-  installWindowControls(win, { isChatGptUrl });
-  win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
-  win.webContents.on('did-finish-load', async () => {
-    if (!isChatGptUrl(win.webContents.getURL())) return;
+  // The remote page runs in its own view below the application-owned title
+  // bar, so the title bar's geometry never depends on ChatGPT markup and the
+  // controls surface never covers page controls. Same sandbox preferences.
+  const chatView = new WebContentsView({ webPreferences: { session: browserSession,
+    sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false,
+    navigateOnDragDrop: false } });
+  win.contentView.addChildView(chatView);
+  const chat = chatView.webContents;
+  guardNavigation(chat);
+  installWindowControls(win, chatView, { isChatGptUrl });
+  chat.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
+  chat.on('did-finish-load', async () => {
+    if (!isChatGptUrl(chat.getURL())) return;
     try {
       // Main-process injection is restricted to exact ChatGPT origins. No API
       // is exposed to the page; these are the same unprivileged site overrides.
@@ -115,18 +123,25 @@ function createWindow(args) {
         script = script.replaceAll('127.0.0.1:17863', `127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}`);
       }
       const hostCss = fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8');
-      await win.webContents.insertCSS(css + '\n' + hostCss);
-      await win.webContents.executeJavaScript(script);
-      await win.webContents.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
+      await chat.insertCSS(css + '\n' + hostCss);
+      await chat.executeJavaScript(script);
+      await chat.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
     } catch { /* The trusted controls remain available if page selectors change. */ }
   });
-  win.once('ready-to-show', () => {
+  let shown = false;
+  const show = () => {
+    if (shown || win.isDestroyed()) return;
+    shown = true;
     if (args.includes('--start-maximized')) win.maximize();
     win.show();
-  });
-  win.loadURL(url).catch(() => {
+  };
+  // The window's own contents stays empty; reveal when the remote view has
+  // painted its first document rather than the blank fallback.
+  chat.once('did-finish-load', show);
+  chat.once('did-fail-load', show);
+  chat.loadURL(url).catch(() => {
     // Never log navigation URLs, titles, or page content.
-    if (!win.isDestroyed()) win.show();
+    show();
   });
   return win;
 }
