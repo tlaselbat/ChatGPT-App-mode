@@ -61,10 +61,13 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :has(button, a, [role
   align-self: center !important;
   align-items: center !important;
 }
+/* Leading and actions groups share equal flexible width on both sides of
+   the centered switch so the switch stays centered on the row's content
+   area whenever space allows. Contents keep their edge alignment. */
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   display: flex !important;
   align-items: center !important;
-  flex: 0 0 auto !important;
+  flex: 1 1 0 !important;
   width: auto !important;
   min-width: 0 !important;
   height: auto !important;
@@ -72,10 +75,11 @@ body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   max-height: 30px;
   padding-block: 0 !important;
 }
-body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { order: 0; }
+body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { order: 0; justify-content: flex-start; }
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="actions"] {
   order: 2;
   margin-inline-start: auto;
+  justify-content: flex-end;
   padding-inline: 0 !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-icon-path] {
@@ -91,10 +95,13 @@ body.faux-chatgpt-app-mode [data-app-mode-header-icon-path] {
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 32px !important; min-width: 32px !important; max-width: 32px; height: 28px; }
 /* The sidebar trigger overlays its hidden sizing placeholder in one grid cell. */
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { display: grid !important; width: 32px !important; min-width: 32px !important; }
+/* Normalize the switch's layout only; the site's own container outline and
+   pill treatment stay intact so exactly one border is ever visible. */
 body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   -webkit-app-region: no-drag;
   display: flex !important;
   align-items: center;
+  justify-content: center;
   flex: 0 1 192px;
   width: clamp(96px, 28vw, 192px) !important;
   min-width: 96px !important;
@@ -102,9 +109,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   height: 28px;
   padding: 2px;
   gap: 2px;
-  border: 1px solid var(--app-mode-control-border);
-  border-radius: 8px;
-  background: var(--app-mode-control-bg);
+  box-sizing: border-box;
 }
 /* The site uses decorative grid spans, including a viewport-wide backdrop.
    They must not become flex items or cover unrelated controls. */
@@ -155,6 +160,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
   margin-inline-start: 0;
 }
 @media (max-width: 480px) {
+  /* Defined narrow fallback: side groups stop sharing equal width so the
+     switch never overlaps them; it centers in whatever space remains. */
+  body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] { flex: 0 0 auto !important; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 28px !important; min-width: 28px !important; max-width: 28px; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
     gap: 4px;

@@ -114,14 +114,24 @@ async function run(win, request, sourceRoot, outputRoot) {
     const describe=element=>{
       const r=element.getBoundingClientRect(),s=getComputedStyle(element);
       return {kind:element.tagName.toLowerCase(),managedPath:element.hasAttribute('data-app-mode-header-icon-path'),widthImportant:element.style.getPropertyPriority('width')==='important',contain:s.contain,box:{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom},
-        style:Object.fromEntries(['display','position','width','minWidth','maxWidth','height','flex','gap','padding','margin','transform','translate','overflow'].map(key=>[key,s[key]]))};
+        style:Object.fromEntries(['display','position','width','minWidth','maxWidth','height','flex','gap','padding','margin','transform','translate','overflow'].map(key=>[key,s[key]])),
+        visual:{border:s.borderTopColor,borderWidth:s.borderTopWidth,radius:s.borderTopLeftRadius,background:s.backgroundColor,shadow:s.boxShadow,zIndex:s.zIndex}};
     };
+    // Structural dump of positioned direct children of the managed header —
+    // identifies which element owns each visible border/background without
+    // reading any text or labels.
+    const header=document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
+    const dump=element=>{
+      const kids=[...element.children].map(dump);
+      const buttons=[...element.querySelectorAll('button,a,[role="tab"],[role="radio"],[role="button"]')].length;
+      return {...describe(element),tag:element.tagName,role:element.getAttribute('role'),ariaHidden:element.getAttribute('aria-hidden'),buttonCount:buttons,markers:['data-app-mode-header-tabs','data-app-mode-header-tab-path','data-app-mode-header-mode-branch','data-app-mode-header-control-branch','data-app-mode-header-strip'].filter(a=>element.hasAttribute(a)),kids};
+    };
+    const layers=header?[...header.children].filter(c=>['fixed','absolute','sticky','relative'].includes(getComputedStyle(c).position)||c.querySelector('button,a,[role="tab"],[role="radio"]')).map(dump):[];
     const controls=[...document.querySelectorAll('button,[role="tab"],[role="radio"],[role="button"],a')].filter(el=>{
       const r=el.getBoundingClientRect(),s=getComputedStyle(el);
       return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=80&&s.visibility!=='hidden'&&!el.closest('[aria-hidden="true"],[inert]');
     });
-    const header=document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
-    return {status:'top-controls-measured',viewport:{width:innerWidth,height:innerHeight,devicePixelRatio},
+    return {status:'top-controls-measured',viewport:{width:innerWidth,height:innerHeight,devicePixelRatio},layers,
       header:header?describe(header):null,
       sidebarStatePresent:Boolean(document.querySelector('[data-app-shell-sidebar-open]')),
       sidebarOpen:document.querySelector('[data-app-shell-sidebar-open]')?.getAttribute('data-app-shell-sidebar-open')==='true',
