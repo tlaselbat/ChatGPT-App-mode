@@ -324,6 +324,30 @@
       document.body.style.setProperty('--app-mode-header-bottom', bottom);
   }
 
+  // The mobile CSS branch sets --app-shell-left-panel-width: 0, which hides
+  // the desktop left panel the matchMedia override renders. Only fill the
+  // var while the site's value is ~0; once a real width exists the site owns
+  // it again (open/close and drag-resize keep working).
+  function ensureSidebarPanel() {
+    const panel = document.querySelector('.app-shell-left-panel');
+    if (!panel) return;
+    const open = !!document.querySelector('[aria-controls="app-shell-sidebar"][aria-expanded="true"]');
+    const target = open ? `${Math.min(340, Math.round(innerWidth * 0.62))}px` : '52px';
+    const current = parseFloat(getComputedStyle(panel).getPropertyValue('--app-shell-left-panel-width')) || 0;
+    const ours = panel.style.getPropertyValue('--app-shell-left-panel-width');
+    if (current > 10) {
+      // A real width is present. If it is not the value we wrote, the site
+      // (or a user resize) owns the var — cede control back to the site.
+      if (ours && ours !== target) {
+        panel.style.removeProperty('--app-shell-left-panel-width');
+        delete panel.dataset.appModePanelWidth;
+      }
+      return;
+    }
+    if (ours !== target) panel.style.setProperty('--app-shell-left-panel-width', target);
+    panel.dataset.appModePanelWidth = '1';
+  }
+
   function markBody() {
     if (document.body && !document.body.classList.contains(markerClass)) {
       document.body.classList.add(markerClass);
@@ -660,6 +684,7 @@
     ensurePinButton();
     ensureShareMenu();
     ensureSecondaryRow();
+    ensureSidebarPanel();
     reportCurrentSession();
     setTitle();
   });
