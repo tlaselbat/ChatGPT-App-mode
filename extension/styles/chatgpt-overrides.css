@@ -204,6 +204,15 @@ body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
   visibility: hidden;
 }
 
+/* Uniform hit area for the compact cluster: the site sizes the options
+   trigger wider than the icon buttons, so normalize every relocated control
+   to the 32px square the rest of the row uses. */
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is(button, [role="button"], a),
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a) {
+  inline-size: 32px;
+  padding-inline: 0;
+}
+
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(button:not(.chatgpt-app-mode-pin-button)) .chatgpt-app-mode-toolbar {
   margin-inline-start: 0;
