@@ -130,6 +130,19 @@
           }
         }
       }
+      // Fallback containment: a fixed/absolute layer mounted directly inside
+      // the managed header (the site mounts its mode switch this way) must
+      // participate in the row even when its controls go unrecognized —
+      // otherwise it renders clipped at the row edge with decorative
+      // backdrops doubling as second outlines.
+      for (const child of header.children) {
+        if (child.hasAttribute('data-app-mode-header-tab-path') || child.classList.contains('chatgpt-app-mode-toolbar')) continue;
+        const style = getComputedStyle(child);
+        if (!['fixed', 'absolute'].includes(style.position)) continue;
+        if (!child.querySelector('button, a, [role="button"], [role="tab"], [role="radio"]')) continue;
+        mark(child, 'data-app-mode-header-tab-path');
+        mark(child, 'data-app-mode-header-mode-branch');
+      }
     }
     for (const [element, attributes] of marked) {
       const retained = next.get(element) || new Set();

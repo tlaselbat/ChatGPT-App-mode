@@ -163,7 +163,7 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   flex: 0 0 1px;
   width: 1px;
   height: 18px;
-  margin-inline-end: 2px;
+  margin-inline-end: 5px;
   background: var(--app-mode-control-border);
 }
 

@@ -6,7 +6,9 @@
   --app-mode-control-hover: color-mix(in srgb, currentColor 12%, transparent);
 }
 * { box-sizing: border-box; }
-html, body { width: 100%; height: 100%; margin: 0; background: transparent; }
+/* Follow the page's sampled control surface so the app-owned bar reads as
+   the same themed surface as the secondary row below it. */
+html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-control-bg); }
 .titlebar {
   display: flex;
   align-items: stretch;
