@@ -24,6 +24,49 @@
   let shareMenuTrigger = null;
   let detectedTrigger = null;
 
+  // Desktop-only presentation: the site switches to tablet/mobile shells
+  // (slideover sidebar, alternate header controls) whenever the narrow app
+  // window makes its width media queries false. Spoof matchMedia so width
+  // queries always evaluate against a fixed desktop width; the site re-reads
+  // it on every render, so components pick the desktop branch without a
+  // reload. Non-width queries fall through to the real implementation.
+  const DESKTOP_WIDTH = 1280;
+  const nativeMatchMedia = window.matchMedia.bind(window);
+  function evaluateWidthQuery(query) {
+    const feature = /^\(\s*(min|max)?-?width\s*:\s*([\d.]+)px\s*\)$/i;
+    const evalPart = part => {
+      const match = feature.exec(part.trim());
+      if (!match) return null;
+      const value = Number(match[2]);
+      const kind = (match[1] || '').toLowerCase();
+      if (kind === 'min') return DESKTOP_WIDTH >= value;
+      if (kind === 'max') return DESKTOP_WIDTH <= value;
+      return DESKTOP_WIDTH === value;
+    };
+    let sawUnknown = false;
+    const matched = query.split(',').some(orPart =>
+      orPart.split(/\band\b/i).every(andPart => {
+        const result = evalPart(andPart);
+        if (result === null) sawUnknown = true;
+        return result === true;
+      }));
+    return sawUnknown ? null : matched;
+  }
+  function fakeMediaQueryList(query, matches) {
+    return {
+      matches, media: query, onchange: null,
+      addEventListener() {}, removeEventListener() {},
+      addListener() {}, removeListener() {},
+      dispatchEvent() { return false; }
+    };
+  }
+  try {
+    window.matchMedia = query => {
+      const result = /\bwidth\b/i.test(query) ? evaluateWidthQuery(query) : null;
+      return result === null ? nativeMatchMedia(query) : fakeMediaQueryList(query, result);
+    };
+  } catch { /* Keep the native matchMedia if the page blocks the override. */ }
+
   function actionGroupOf(element, header) {
     // Buttons in the site's action strip may each sit in their own wrapper
     // (tooltip/slot containers). Treat one wrapper level as the same group.

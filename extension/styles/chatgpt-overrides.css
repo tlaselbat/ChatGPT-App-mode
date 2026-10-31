@@ -8,6 +8,27 @@ body {
 }
 
 body.faux-chatgpt-app-mode [data-app-mode-relocated-share] { display: none !important; }
+
+/* Desktop-only presentation: the injected matchMedia override makes the
+   site take its desktop branches, but CSS-side breakpoint variants still
+   evaluate against the real (narrow) viewport. Pin the display-only variant
+   utilities so mobile-only controls stay hidden and desktop-only ones stay
+   visible regardless of window width. */
+body.faux-chatgpt-app-mode [class~="min-[768px]:hidden"] { display: none !important; }
+body.faux-chatgpt-app-mode [class~="min-[768px]:flex"] { display: flex !important; }
+body.faux-chatgpt-app-mode [class~="min-[768px]:inline-flex"] { display: inline-flex !important; }
+body.faux-chatgpt-app-mode [class~="min-[768px]:grid"] { display: grid !important; }
+body.faux-chatgpt-app-mode [class~="min-[768px]:block"] { display: block !important; }
+body.faux-chatgpt-app-mode [class~="min-[768px]:inline-block"] { display: inline-block !important; }
+
+/* Keep the desktop left panel visible and sized by its content at narrow
+   window widths; the site's responsive module collapses it to width:0 even
+   when the desktop DOM renders. */
+body.faux-chatgpt-app-mode .app-shell-left-panel {
+  display: flex !important;
+  width: auto !important;
+  flex: 0 0 auto !important;
+}
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px;
   padding: 8px 12px; border: 0; border-radius: 8px; background: transparent;
