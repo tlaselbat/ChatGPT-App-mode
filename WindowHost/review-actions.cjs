@@ -17,7 +17,7 @@ function captureMaskHeight(zoomFactor) {
 
 async function run(win, request, sourceRoot, outputRoot) {
   // The remote page runs in its own WebContentsView below the app title bar.
-  const chat = win.contentView.children.find(child => child.webContents?.getURL().startsWith('https://chatgpt.com'))?.webContents || win.webContents;
+  const chat = win.contentView?.children?.find(child => child.webContents?.getURL().startsWith('https://chatgpt.com'))?.webContents || win.webContents;
   if (request.action === 'reload') { chat.reload(); return {status:'review-home-reloading'}; }
   if (request.action === 'sidebar') {
     const clicked=await chat.executeJavaScript(`(() => {

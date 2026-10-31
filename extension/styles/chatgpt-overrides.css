@@ -20,9 +20,6 @@ body.faux-chatgpt-app-mode [data-app-mode-share-menu-item]:is(:hover, :focus-vis
 }
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item][aria-disabled="true"] { opacity: .45; cursor: default; }
 
-body.faux-chatgpt-app-mode {
-}
-
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -156,6 +153,18 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   padding-inline-start: 0;
   flex: 0 0 auto;
   vertical-align: middle;
+}
+
+/* Thin separator between the app's Pin control and the site actions to its
+   left; the caption buttons it used to precede now live in the host's own
+   title bar above the page. */
+.chatgpt-app-mode-toolbar::before {
+  content: "";
+  flex: 0 0 1px;
+  width: 1px;
+  height: 18px;
+  margin-inline-end: 2px;
+  background: var(--app-mode-control-border);
 }
 
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */

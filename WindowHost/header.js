@@ -42,22 +42,35 @@
       // The signed-in site's mode switch is a relative two-button grid inside
       // a fixed, full-window layer, rather than an ARIA tablist or an absolute
       // two-button group. Match its control structure without reading labels.
+      // A two-state switch is exactly two controls with one selected state.
+      // Accept the site's current pressed/selected/data-state vocabulary and
+      // buttons nested inside per-tab wrapper elements.
+      const isSwitchControl = element => element.matches('button, [role="tab"], [role="radio"], [role="button"], a[href]');
+      const switchState = element => ['aria-pressed', 'aria-selected', 'aria-checked']
+        .map(attribute => element.getAttribute(attribute)).find(value => value === 'true' || value === 'false') ||
+        (element.getAttribute('data-state') === 'active' || element.getAttribute('data-state') === 'inactive' ? element.getAttribute('data-state') : null);
+      const switchButtons = element => [...element.querySelectorAll('button, [role="tab"], [role="radio"], a[href]')].filter(visible);
       if (!tabs) {
         const bounds = header.getBoundingClientRect();
-        tabs = [...header.querySelectorAll('div')].find(element => {
+        const candidates = [...header.querySelectorAll('div')].filter(element => {
           if (!visible(element)) return false;
-          const buttons = [...element.children].filter(child => child.matches('button'));
+          const buttons = switchButtons(element);
+          if (buttons.length !== 2 || !buttons.every(isSwitchControl)) return false;
+          const states = buttons.map(switchState);
           const box = element.getBoundingClientRect();
-          const pressed = buttons.map(button => button.getAttribute('aria-pressed'));
           let fixedLayer = false;
           for (let node = element.parentElement; node && node !== header; node = node.parentElement) {
             const layer = node.getBoundingClientRect();
             if (getComputedStyle(node).position === 'fixed' && layer.width >= innerWidth * 0.8 && layer.top >= -2 && layer.bottom <= 64) fixedLayer = true;
           }
-          return buttons.length === 2 && element.querySelectorAll('button').length === 2 &&
-            pressed.includes('true') && pressed.includes('false') && fixedLayer &&
-            getComputedStyle(element).display === 'grid' && box.top >= bounds.top - 2 && box.bottom <= bounds.bottom + 8;
+          // One control selected, one not; stay inside the header's band.
+          return (states.includes('true') || states.includes('active')) &&
+            (states.includes('false') || states.includes('inactive')) && fixedLayer &&
+            box.width <= bounds.width * 0.6 && box.top >= bounds.top - 2 && box.bottom <= bounds.bottom + 8;
         });
+        // The switch is the tightest matching ancestor of both controls —
+        // wrapper elements around it must not claim the marker.
+        tabs = candidates.find(element => !candidates.some(other => other !== element && element.contains(other)));
       }
       if (!tabs) {
         // Older site versions omit roles. Match only an absolute two-button

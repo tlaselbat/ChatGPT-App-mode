@@ -68,6 +68,42 @@ const fixture = `<!doctype html>
 <div class="message">Here is a clean offline fixture for checking layout, narrow-window behavior, and extension controls. No private conversation data is included.</div>
 <div class="composer">Message ChatGPT</div></section></main></div></body></html>`;
 
+test('header layout detects the current fixed-layer mode switch with nested tabs and data-state', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/mode-switch-fixture');
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  // Current site variant: tab controls sit inside per-tab wrappers within a
+  // fixed full-width layer, using data-state instead of aria-pressed.
+  await page.evaluate(() => {
+    const layer = document.createElement('div');
+    layer.id = 'fixed-mode-layer';
+    Object.assign(layer.style, { position: 'fixed', left: '0', top: '0', width: '100vw', height: '40px', display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' });
+    layer.innerHTML = '<div id="mode-grid" style="display:grid;grid-template-columns:repeat(2,1fr);width:192px;height:30px;pointer-events:auto">' +
+      '<span><button id="mode-chat" data-state="active">Chat</button></span>' +
+      '<span><button id="mode-work" data-state="inactive">Work</button></span></div>';
+    document.querySelector('header').append(layer);
+  });
+  const tabs = page.locator('#mode-grid');
+  await expect(tabs).toHaveAttribute('data-app-mode-header-tabs', '');
+  // The switch's ancestor path up to the header is normalized, and re-render
+  // churn does not duplicate or drop the markers.
+  await expect(page.locator('[data-app-mode-header-mode-branch]')).toHaveCount(1);
+  await page.evaluate(() => {
+    const layer = document.getElementById('fixed-mode-layer');
+    layer.replaceWith(layer.cloneNode(true));
+  });
+  await expect(page.locator('#mode-grid')).toHaveAttribute('data-app-mode-header-tabs', '');
+  // Non-switch two-button groups in the fixed layer are never tagged.
+  await page.evaluate(() => {
+    const other = document.createElement('div');
+    other.id = 'other-grid';
+    other.innerHTML = '<button>Alpha</button><button>Beta</button>';
+    document.getElementById('fixed-mode-layer').append(other);
+  });
+  await expect(page.locator('#other-grid')).not.toHaveAttribute('data-app-mode-header-tabs', '');
+});
+
 test('header layout ignores overlays, reconciles changed branches, and follows scrolling strips', async ({ page }) => {
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
