@@ -14,7 +14,9 @@ function install(win, reviewRoot, sourceRoot) {
       const request = JSON.parse(fs.readFileSync(input, 'utf8'));
       if (typeof request.id !== 'number' || request.id === lastId) return;
       lastId = request.id;
-      const url = new URL(win.webContents.getURL());
+      // The remote page runs in its own view below the app title bar.
+      const chat = win.contentView.children.find(child => child.webContents?.getURL().startsWith('https://chatgpt.com'))?.webContents || win.webContents;
+      const url = new URL(chat.getURL());
       let result = { status: 'select-blank-home' };
       // Blank home route or a plain /c/<id> conversation; never query/hash.
       const standardRoute = url.pathname === '/' || /^\/c\/[^/]+$/.test(url.pathname);

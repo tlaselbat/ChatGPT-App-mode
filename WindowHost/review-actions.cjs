@@ -16,20 +16,25 @@ function captureMaskHeight(zoomFactor) {
 }
 
 async function run(win, request, sourceRoot, outputRoot) {
-  if (request.action === 'reload') { win.webContents.reload(); return {status:'review-home-reloading'}; }
+  // The remote page runs in its own WebContentsView below the app title bar.
+  const chat = win.contentView.children.find(child => child.webContents?.getURL().startsWith('https://chatgpt.com'))?.webContents || win.webContents;
+  if (request.action === 'reload') { chat.reload(); return {status:'review-home-reloading'}; }
   if (request.action === 'sidebar') {
-    const clicked=await win.webContents.executeJavaScript(`(() => {
+    const clicked=await chat.executeJavaScript(`(() => {
       const button=[...document.querySelectorAll('[data-app-mode-header-control-branch="leading"] button')].find(el=>
         !el.closest('[aria-hidden="true"],[inert]')&&getComputedStyle(el).visibility!=='hidden'&&el.getBoundingClientRect().width>0);
       if(!button) return false; button.click(); return true;
     })()`);
     return {status:clicked?'review-sidebar-toggled':'sidebar-control-unavailable'};
   }
+  // A click that starts SPA navigation can leave the eval unsettled; cap it
+  // so the review loop never wedges on a single command.
+  const settle=p=>Promise.race([p,new Promise(resolve=>setTimeout(()=>resolve(null),3000))]);
   if (request.action === 'open-conversation') {
-    if (!isTrustedReviewOrigin(win.webContents.getURL())) return {status:'review-navigation-origin-rejected'};
+    if (!isTrustedReviewOrigin(chat.getURL())) return {status:'review-navigation-origin-rejected'};
     // Follow the first plain /c/<id> link already rendered on the page so the
     // reviewer can measure the conversation header. The target is never read.
-    const opened=await win.webContents.executeJavaScript(`(() => {
+    const opened=await settle(chat.executeJavaScript(`(() => {
       const link=[...document.querySelectorAll('a[href]')].find(el=>{
         let url; try { url=new URL(el.href); } catch { return false; }
         const r=el.getBoundingClientRect();
@@ -43,42 +48,42 @@ async function run(win, request, sourceRoot, outputRoot) {
         return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
       });
       if(!toggle) return 'unavailable'; toggle.click(); return 'sidebar-opening';
-    })()`);
+    })()`));
     return {status:{opened:'review-conversation-opening','sidebar-opening':'review-sidebar-opening'}[opened]||'conversation-link-unavailable'};
   }
   if (request.action === 'home') {
-    if (!isTrustedReviewOrigin(win.webContents.getURL())) return {status:'review-navigation-origin-rejected'};
-    const opened=await win.webContents.executeJavaScript(`(() => {
+    if (!isTrustedReviewOrigin(chat.getURL())) return {status:'review-navigation-origin-rejected'};
+    const opened=await settle(chat.executeJavaScript(`(() => {
       const link=[...document.querySelectorAll('a[href]')].find(el=>{
         let url; try { url=new URL(el.href); } catch { return false; }
         const r=el.getBoundingClientRect();
         return url.origin==='https://chatgpt.com'&&/^\/c\//.test(url.pathname)===false&&r.width>0&&r.height>0&&r.top>=0&&r.bottom<=64&&r.left<=96&&!el.closest('[aria-hidden="true"],[inert]');
       });
       if(!link) return false; link.click(); return true;
-    })()`);
+    })()`));
     return {status:opened?'review-home-opening':'home-link-unavailable'};
   }
   if (request.action === 'escape') {
-    win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});
-    win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
+    chat.sendInputEvent({type:'keyDown',keyCode:'Escape'});
+    chat.sendInputEvent({type:'keyUp',keyCode:'Escape'});
     return {status:'review-overlay-dismissed'};
   }
   if (request.action === 'size' && [390,448,489,690,1024,1280].includes(request.width)) {
     win.setBounds({ width:request.width,height:1000 }); return {status:'resized',width:request.width};
   }
   if (request.action === 'zoom' && [0.8,1,1.1,1.25].includes(request.factor)) {
-    win.webContents.setZoomMode('isolated');
-    win.webContents.setZoomFactor(request.factor); return {status:'zoom-set',factor:request.factor};
+    chat.setZoomMode('isolated');
+    chat.setZoomFactor(request.factor); return {status:'zoom-set',factor:request.factor};
   }
   if (request.action === 'styles') {
     // A full ordinary reload removes earlier inserted rules and old observers.
     // This verifies the saved implementation rather than an additive CSS patch.
-    win.webContents.reload();
+    chat.reload();
     return {status:'review-source-reloading'};
   }
   if (request.action === 'capture') {
-    const maskHeight = captureMaskHeight(win.webContents.getZoomFactor());
-    await win.webContents.executeJavaScript(`(() => {
+    const maskHeight = captureMaskHeight(chat.getZoomFactor());
+    await chat.executeJavaScript(`(() => {
       const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
       while(walker.nextNode()) {
         const node=walker.currentNode,parent=node.parentElement;
@@ -89,23 +94,23 @@ async function run(win, request, sourceRoot, outputRoot) {
     })()`);
     // The screenshot is a diagnostic artifact. Hide every image-derived or SVG
     // glyph in its clip because text may be baked into those visuals.
-    const css = await win.webContents.insertCSS('[data-review-mask-text]{color:transparent!important;text-shadow:none!important}svg,svg *{fill:transparent!important;stroke:transparent!important;color:transparent!important}img,video,canvas{visibility:hidden!important}*{background-image:none!important}', { cssOrigin: 'user' });
+    const css = await chat.insertCSS('[data-review-mask-text]{color:transparent!important;text-shadow:none!important}svg,svg *{fill:transparent!important;stroke:transparent!important;color:transparent!important}img,video,canvas{visibility:hidden!important}*{background-image:none!important}', { cssOrigin: 'user' });
     try {
       // Let the renderer commit the masking rule before reading compositor
       // pixels. This also keeps offscreen review capture from sampling a
       // pre-injection frame.
-      await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+      await chat.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
       const bounds = win.getContentBounds();
-      const image = await win.webContents.capturePage({x:0,y:0,width:bounds.width,height:64});
+      const image = await chat.capturePage({x:0,y:0,width:bounds.width,height:64});
       fs.writeFileSync(path.join(outputRoot,'header.png'),image.toPNG());
     } finally {
-      await win.webContents.removeInsertedCSS(css);
-      await win.webContents.executeJavaScript("document.querySelectorAll('[data-review-mask-text]').forEach(el=>el.removeAttribute('data-review-mask-text'))");
+      await chat.removeInsertedCSS(css);
+      await chat.executeJavaScript("document.querySelectorAll('[data-review-mask-text]').forEach(el=>el.removeAttribute('data-review-mask-text'))");
     }
     return {status:'header-captured',scope:'top-64px-only-with-private-text-masked'};
   }
   if (request.action !== 'measure') return {status:'unknown-review-command'};
-  return win.webContents.executeJavaScript(`(() => {
+  return chat.executeJavaScript(`(() => {
     const describe=element=>{
       const r=element.getBoundingClientRect(),s=getComputedStyle(element);
       return {kind:element.tagName.toLowerCase(),managedPath:element.hasAttribute('data-app-mode-header-icon-path'),widthImportant:element.style.getPropertyPriority('width')==='important',contain:s.contain,box:{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom},
