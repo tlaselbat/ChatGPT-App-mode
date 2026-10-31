@@ -3,6 +3,9 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
 body.faux-chatgpt-app-mode #chatgpt-app-mode-toolbar-fallback {
   --app-mode-window-controls-width: 128px;
   -webkit-app-region: drag;
+  /* The site disables pointer events on the header and re-enables them per
+     control; hit-testing must reach the drag region for empty areas. */
+  pointer-events: auto;
   box-sizing: border-box;
   display: flex;
   align-items: center;
