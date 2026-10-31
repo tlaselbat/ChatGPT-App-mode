@@ -17,6 +17,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   top: 0;
   z-index: 30;
   padding: 5px 12px !important;
+  width: calc(100% + var(--app-mode-header-bleed, 0px)) !important;
+  margin-left: calc(-1 * var(--app-mode-header-bleed, 0px)) !important;
+  padding-left: max(12px, var(--app-mode-header-bleed, 0px)) !important;
 }
 
 /* Known sidebar controls sort before sibling new-chat controls. These optional

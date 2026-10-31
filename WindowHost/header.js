@@ -20,6 +20,11 @@
     const remembered = legacyModeButtons.get(element);
     return remembered?.length === 2 && buttons[0] === remembered[0] && buttons[1] === remembered[1] && element.querySelectorAll('button').length === 2;
   };
+  function updateHeaderBleed(header) {
+    const bleed = Math.max(0, header.getBoundingClientRect().left - parseFloat(getComputedStyle(header).marginLeft || '0'));
+    const value = `${bleed}px`;
+    if (header.style.getPropertyValue('--app-mode-header-bleed') !== value) header.style.setProperty('--app-mode-header-bleed', value);
+  }
   function layout() {
     queued = false;
     // The app-owned title bar lives in a separate native view above the page;
@@ -37,6 +42,7 @@
       // beneath its viewport-wide scrim.
       const retainedHeader = [...marked.keys()].find(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected);
       if (retainedHeader && retainedHeader.style.getPropertyValue('--app-mode-switch-offset') !== '0px') retainedHeader.style.setProperty('--app-mode-switch-offset', '0px');
+      if (retainedHeader) updateHeaderBleed(retainedHeader);
       return;
     }
     const next = new Map();
@@ -201,6 +207,11 @@
       }
     }
     marked = next;
+    if (header) {
+      // Extend the managed row over the navigation column without moving site
+      // controls. Subtract our existing margin so repeated passes stay stable.
+      updateHeaderBleed(header);
+    }
     if (header && visible(header)) {
       const tabs = header.querySelector('[data-app-mode-header-tabs]');
       if (tabs) {
@@ -213,7 +224,7 @@
           .map(element => element.getBoundingClientRect())
           .filter(bounds => bounds.left <= 2 && bounds.width >= 160 && bounds.width < innerWidth * 0.55 && bounds.height >= 120)
           .sort((a, b) => b.width - a.width)[0];
-        const regionLeft = sidebar ? Math.min(sidebar.right, innerWidth) : 0;
+        const regionLeft = document.getElementById('app-mode-compact-sidebar') ? 0 : sidebar ? Math.min(sidebar.right, innerWidth) : 0;
         const regionWidth = innerWidth - regionLeft;
         const center = regionLeft + regionWidth / 2;
         const left = center - box.width / 2;

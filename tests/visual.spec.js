@@ -220,6 +220,268 @@ test('expanded-sidebar offsets collapse so the conversation title stays between 
   }
 });
 
+test('compact sidebar rail persists in narrow responsive layout and opens the native drawer', async ({ page }) => {
+  await page.setContent(fixture);
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
+  await page.evaluate(() => {
+    window.__APP_MODE_COMPACT_SIDEBAR__ = true;
+    document.body.classList.add('faux-chatgpt-app-mode');
+    const root = document.querySelector('#app');
+    root.style.display = 'block';
+    root.style.width = '100%';
+    root.setAttribute('data-app-shell-responsive-sidebar', 'true');
+    const desktopRail = document.createElement('nav'); desktopRail.className = 'group/sidebar-rail';
+    desktopRail.style.cssText = 'position:fixed;left:0;top:48px;width:52px;height:calc(100vh - 48px)';
+    desktopRail.innerHTML = '<button aria-label="New chat"></button><button aria-label="Search"></button>';
+    root.append(desktopRail);
+    const native = document.createElement('button'); native.setAttribute('data-testid', 'open-sidebar-button'); native.setAttribute('aria-label', 'Open sidebar'); native.style.cssText = 'position:fixed;left:4px;top:4px;z-index:50';
+    native.addEventListener('click', () => {
+      if (document.querySelector('[role="dialog"]')) {
+        document.querySelector('[role="dialog"]').remove(); root.setAttribute('data-app-shell-sidebar-open', 'false'); return;
+      }
+      if (root.getAttribute('data-app-shell-sidebar-open') === 'true') {
+        root.setAttribute('data-app-shell-sidebar-open', 'false'); return;
+      }
+      root.setAttribute('data-app-shell-sidebar-open', 'true');
+      const drawer = document.createElement('div'); drawer.setAttribute('role', 'dialog'); drawer.setAttribute('aria-modal', 'true'); drawer.style.cssText = 'position:fixed;inset:0;z-index:60;background:#ddd'; document.body.append(drawer);
+      drawer.id = 'browser-sidebar-popover';
+      const close = document.createElement('button'); close.setAttribute('aria-label', 'Hide sidebar');
+      close.addEventListener('click', () => native.click()); drawer.append(close);
+      setTimeout(() => {
+        if (!drawer.isConnected) return;
+        const search = document.createElement('button'); search.setAttribute('aria-label', 'Search');
+        search.addEventListener('click', () => {
+          window.syntheticSearchCalls = (window.syntheticSearchCalls || 0) + 1;
+          const modal = document.createElement('div'); modal.id = 'synthetic-action-search';
+          modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+          modal.style.cssText = 'position:fixed;inset:50px;background:white';modal.innerHTML = '<input aria-label="Synthetic search">';
+          drawer.setAttribute('aria-hidden', 'true');document.body.append(modal);modal.querySelector('input').focus();
+        });
+        drawer.append(search);
+      }, 80);
+    });
+    document.body.append(native);
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (document.getElementById('synthetic-action-search')) {
+        document.getElementById('synthetic-action-search').remove();
+        document.getElementById('browser-sidebar-popover')?.removeAttribute('aria-hidden');return;
+      }
+      root.setAttribute('data-app-shell-sidebar-open', 'false');
+      document.querySelector('[role="dialog"][aria-modal="true"]')?.remove();
+    });
+  });
+  await page.setViewportSize({ width: 1280, height: 780 });
+  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(1);
+  await page.locator('nav[class~="group/sidebar-rail"]').evaluate(element => element.remove());
+  await page.setViewportSize({ width: 390, height: 780 });
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
+  await expect(page.locator('#app-mode-compact-sidebar-actions button')).toHaveCount(4);
+  const rail = page.locator('#app-mode-compact-sidebar');
+  await expect(rail).toBeVisible();
+  await expect(rail).toHaveCSS('width', '36px');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('width', '52px');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  expect(await page.locator('#app').evaluate(element => element.getBoundingClientRect().left)).toBe(52);
+  expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 390, height: 780 });
+  await rail.click();
+  await expect(page.locator('[role="dialog"][aria-modal="true"]')).toBeVisible();
+  await page.locator('[role="dialog"][aria-modal="true"]').evaluate(element => { element.id = 'browser-sidebar-popover'; });
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('top', '40px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('height', '740px');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toHaveCSS('top', '5px');
+  // A native popup may temporarily hide its parent drawer from accessibility.
+  // Its rendered layout and dismissal control must remain owned and stable.
+  await page.locator('#browser-sidebar-popover').evaluate(element => element.setAttribute('aria-hidden', 'true'));
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await page.locator('#browser-sidebar-popover').evaluate(element => element.removeAttribute('aria-hidden'));
+  await expect(rail).toHaveAttribute('aria-expanded', 'true');
+  // Search invoked from an already-open native drawer preserves that intent.
+  await page.locator('#browser-sidebar-popover button[aria-label="Search"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-blocked', '');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await page.locator('[data-app-mode-modal-sidebar-toggle]').click();
+  await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0);
+  await expect(rail).toBeFocused();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  await page.locator('[data-app-mode-sidebar-action][aria-label="Search"]').click();
+  await expect.poll(() => page.evaluate(() => window.syntheticSearchCalls || 0)).toBe(2);
+  await expect(page.locator('#synthetic-action-search')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  // A persisted open flag must not hide the rail without a rendered panel.
+  await page.evaluate(() => document.querySelector('#app').setAttribute('data-app-shell-sidebar-open', 'true'));
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  await rail.click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  await page.evaluate(() => {
+    window.syntheticOldShell = document.querySelector('#app');
+    window.syntheticOldShell.replaceWith(window.syntheticOldShell.cloneNode(true));
+    history.replaceState({}, '', '#synthetic-navigation');
+  });
+  await expect.poll(() => page.evaluate(() => window.syntheticOldShell.hasAttribute('data-app-mode-compact-sidebar-shell'))).toBe(false);
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(1);
+  // The expanded desktop panel owns the column; no extra compact offset.
+  await page.evaluate(() => {
+    const aside = document.createElement('aside'); aside.className = 'app-shell-left-panel';
+    aside.style.cssText = 'display:block;width:280px;height:100vh';
+    aside.innerHTML = '<div id="synthetic-sidebar-scroll" style="height:100px;overflow:auto"><div style="height:1000px"></div></div>';
+    document.querySelector('#app').prepend(aside);
+    aside.querySelector('#synthetic-sidebar-scroll').scrollTop = 80;
+  });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await expect(page.locator('#app')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+  await expect(page.locator('aside.app-shell-left-panel')).toHaveCSS('margin-top', '40px');
+  // A separate global modal blocks background controls without invalidating
+  // the docked navigation layout or its scroll position.
+  await page.evaluate(() => {
+    document.querySelector('#app').setAttribute('aria-hidden', 'true');
+    document.querySelector('[data-testid="open-sidebar-button"]').setAttribute('aria-hidden', 'true');
+    const modal = document.createElement('div'); modal.id = 'synthetic-global-search';
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.style.cssText = 'position:fixed;inset:100px;background:white';modal.innerHTML = '<input aria-label="Synthetic search">';
+    document.body.append(modal);
+  });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await expect(page.locator('aside.app-shell-left-panel')).toHaveCSS('margin-top', '40px');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-blocked', '');
+  await expect(rail).toHaveAttribute('inert', '');
+  expect(await page.locator('#synthetic-sidebar-scroll').evaluate(element => element.scrollTop)).toBe(80);
+  await page.evaluate(() => {
+    document.getElementById('synthetic-global-search').remove();
+    document.querySelector('#app').removeAttribute('aria-hidden');
+    document.querySelector('[data-testid="open-sidebar-button"]').removeAttribute('aria-hidden');
+  });
+  await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-navigation-blocked');
+  await expect(rail).not.toHaveAttribute('inert');
+  for (const width of [680, 1280, 390]) {
+    await page.setViewportSize({ width, height: 780 });
+    expect(await page.locator('#synthetic-sidebar-scroll').evaluate(element => element.scrollTop)).toBe(80);
+  }
+  await page.evaluate(() => document.querySelector('aside.app-shell-left-panel').remove());
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  // Unknown native controls restore the original layout rather than a dead rail.
+  await page.evaluate(() => document.querySelector('[data-testid="open-sidebar-button"]').remove());
+  await expect(rail).toHaveCount(0);
+  await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-navigation-state');
+  await page.evaluate(() => { document.querySelector('#app').removeAttribute('data-app-shell-responsive-sidebar'); });
+  await expect(rail).toHaveCount(0);
+});
+
+test('header stays viewport-wide while a modal blocks sidebar resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setContent(fixture);
+  await page.evaluate(() => document.body.classList.add('faux-chatgpt-app-mode'));
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  await expect(page.locator('header')).toHaveAttribute('data-app-mode-header-layout', '');
+  await page.evaluate(() => {
+    document.querySelector('header').setAttribute('aria-hidden', 'true');
+    const modal = document.createElement('div'); modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.style.cssText = 'position:fixed;inset:100px';document.body.append(modal);
+    document.querySelector('.shell').style.gridTemplateColumns = '340px minmax(0,1fr)';
+  });
+  for (const width of [1280, 680, 1024]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect.poll(() => page.locator('header').evaluate(element => Math.abs(element.getBoundingClientRect().left))).toBeLessThanOrEqual(1);
+    await expect.poll(() => page.locator('header').evaluate(element => Math.abs(element.getBoundingClientRect().right - innerWidth))).toBeLessThanOrEqual(1);
+  }
+});
+
+test('home composition stays stable across the mobile breakpoint and preserves the native draft', async ({ page }) => {
+  const home = `<!doctype html><style>
+    *{box-sizing:border-box}body{margin:0}header{height:40px}main{height:calc(100vh - 40px)}
+    .layout{height:100%;display:flex;flex-direction:column}.contents{display:contents}
+    .hero{flex:1;display:flex;align-items:end;justify-content:center}.composer{flex:1}
+    .group{display:flex;flex-direction:column;width:100%;max-width:816px;margin:auto}
+    .suggestions{order:9999;height:36px}form{margin:0}.card{border-radius:28px}
+    .grid{display:grid;grid-template-columns:36px minmax(0,1fr) 150px;gap:8px;padding:8px}
+    .editor{min-height:26px}.trailing{display:flex}.grid button{height:36px}
+    @media(max-width:639px){.composer{position:sticky;bottom:0;flex:0}.suggestions{order:0}.grid{grid-template-columns:36px 1fr;grid-template-rows:auto auto}.cell{grid-column:1/-1;grid-row:1}.leading{grid-column:1;grid-row:2}.trailing{grid-column:2;grid-row:2}}
+    </style><header></header><main><div class="layout"><div class="contents">
+    <section class="hero"><h1>Synthetic welcome</h1></section>
+    <section class="composer"><div class="group"><div class="suggestions"><button>Suggestion</button></div>
+    <form><div class="card"><div class="grid"><div class="leading"><button type="button">Add</button></div>
+    <div class="cell"><div class="editor" contenteditable="true" role="textbox" aria-label="Synthetic editor"></div></div>
+    <div class="trailing"><button type="button">Model</button><button type="button">Voice</button></div></div></div></form>
+    </div></section></div></div></main>`;
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: home }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":false,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/');
+  const editor = page.getByRole('textbox', { name: 'Synthetic editor' });
+  await editor.fill('Synthetic unsent draft');
+  let boundaryTop;
+  for (const width of [900, 640, 639, 620, 390, 640]) {
+    await page.setViewportSize({ width, height: 850 });
+    await expect(page.locator('[data-app-mode-home-composer]')).toHaveCSS('position', 'relative');
+    await expect(editor).toHaveText('Synthetic unsent draft');
+    await expect(page.locator('[data-app-mode-home-suggestions]')).toHaveCSS('order', '1');
+    const bounds = await page.locator('form').boundingBox();
+    expect(bounds.y).toBeGreaterThan(100);expect(bounds.y).toBeLessThan(550);
+    if (width === 640) boundaryTop = bounds.y;
+    if (width === 639) expect(Math.abs(bounds.y - boundaryTop)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-home-exit'); document.querySelector('h1').remove(); });
+  await expect(page.locator('[data-app-mode-home-layout], [data-app-mode-home-form], [data-app-mode-home-composer]')).toHaveCount(0);
+  await expect(editor).toHaveText('Synthetic unsent draft');
+  await page.setViewportSize({ width: 390, height: 850 });
+  await expect(page.locator('.composer')).toHaveCSS('position', 'sticky');
+});
+
+test('sidebar boundary stays below the subheader throughout opening and closing', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}.shell{display:flex;height:100vh}aside.app-shell-left-panel{width:52px;flex-shrink:0;height:100vh;transition:width 180ms linear}main{flex:1}header{height:40px}</style>
+    <div class="shell" data-app-shell-responsive-sidebar="false"><aside class="app-shell-left-panel"><div>Native sidebar title</div></aside><main><header><button aria-label="Show sidebar">Sidebar</button></header></main></div>`);
+  await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
+  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
+  await expect(page.locator('.shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  for (const scheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.evaluate(scheme => { document.documentElement.style.colorScheme = scheme; }, scheme);
+    const corner = await page.evaluate(() => {
+      const plate = getComputedStyle(document.body, '::before');
+      const header = getComputedStyle(document.querySelector('header'));
+      return { background: plate.backgroundColor, rowBackground: header.backgroundColor, width: plate.width, height: plate.height, pointerEvents: plate.pointerEvents };
+    });
+    expect(corner.background).toBe(corner.rowBackground);
+    expect(corner.width).toBe('52px');expect(corner.height).toBe('40px');expect(corner.pointerEvents).toBe('none');
+  }
+  const samples = await page.evaluate(() => new Promise(resolve => {
+    const panel = document.querySelector('aside');const samples = [];
+    panel.style.width = '280px';
+    function frame() {
+      const rect = panel.getBoundingClientRect();samples.push({ width: rect.width, top: rect.top });
+      if (samples.length === 25) panel.style.width = '52px';
+      if (samples.length < 50) requestAnimationFrame(frame);else resolve(samples);
+    }
+    requestAnimationFrame(frame);
+  }));
+  expect(samples.some(sample => sample.width > 52 && sample.width < 100)).toBe(true);
+  for (const sample of samples) expect(sample.top, JSON.stringify(sample)).toBeGreaterThanOrEqual(40);
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  await expect(page.locator('.shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+});
+
+test('disabled compact navigation preserves native controls and layout', async ({ page }) => {
+  await page.setContent('<main data-app-shell-responsive-sidebar="true"><button aria-label="Show sidebar">Sidebar</button></main>');
+  await page.evaluate(() => { window.__APP_MODE_COMPACT_SIDEBAR__ = false; });
+  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-sidebar-original], [data-app-mode-compact-sidebar-shell], [data-app-mode-navigation-state]')).toHaveCount(0);
+});
+
 test('header layout detects the current fixed-layer mode switch with nested tabs and data-state', async ({ page }) => {
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));

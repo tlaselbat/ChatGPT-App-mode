@@ -16,6 +16,9 @@
     "showChatTitles": true,
     "retentionDays": 30
   },
+  "layout": {
+    "compactSidebar": true
+  },
   "window": {
     "width": 1280,
     "height": 900,

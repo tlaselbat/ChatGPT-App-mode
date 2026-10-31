@@ -70,6 +70,7 @@ function Refresh-JumpList {
     if (Test-Path -LiteralPath $launcher) { Start-Process $launcher -ArgumentList '--register-only' -WindowStyle Hidden }
 }
 Add-Heading 'Launch and window'
+$compactSidebar = Add-Check 'Keep a compact sidebar rail visible in narrow windows' ($config.layout.compactSidebar -ne $false)
 $restore = Add-Check 'Restore the last conversation' ($config.restoreLastUrl -ne $false -and $privacy.saveLastSession)
 $placement = Add-Check 'Remember window size and monitor position' ($config.rememberWindowPlacement -ne $false)
 $startup = Add-Check 'Start the tray launcher when I sign in to Windows' ($config.runAtStartup -eq $true)
@@ -129,6 +130,8 @@ $save.Add_Click({
     try {
         # Re-read to preserve unrelated edits made while this window was open.
         $current = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        if (-not $current.layout) { $current | Add-Member -NotePropertyName layout -NotePropertyValue ([pscustomobject]@{}) -Force }
+        $current.layout | Add-Member -NotePropertyName compactSidebar -NotePropertyValue $compactSidebar.Checked -Force
         foreach ($entry in @{ restoreLastUrl=$restore.Checked; rememberWindowPlacement=$placement.Checked; runAtStartup=$startup.Checked }.GetEnumerator()) {
             $current | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value -Force
         }

@@ -7,7 +7,123 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+body.faux-chatgpt-app-mode {
+  --app-mode-subheader-height: 40px;
+  --app-mode-rail-width: 52px;
+}
+
 body.faux-chatgpt-app-mode [data-app-mode-relocated-share] { display: none !important; }
+
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar,
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions {
+  position: fixed; left: 0; width: 52px; box-sizing: border-box; z-index: 40;
+  color: inherit; background: var(--sidebar-surface-primary, var(--bg-elevated-secondary, light-dark(#f7f8fa, #10141b)));
+  border: 0; border-right: 1px solid var(--app-mode-control-border);
+  -webkit-app-region: no-drag;
+}
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar {
+  top: 5px; left: 8px; width: 36px; height: 30px; padding: 0; display: grid; place-items: center; cursor: pointer;
+  z-index: 60; background: transparent; border: 0; border-radius: 8px;
+}
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions {
+  top: var(--app-mode-subheader-height); bottom: 0; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions button {
+  flex: 0 0 40px; width: 40px; height: 40px; padding: 0; display: grid; place-items: center;
+  color: inherit; background: transparent; border: 0; border-radius: 8px; cursor: pointer; -webkit-app-region: no-drag;
+}
+body.faux-chatgpt-app-mode :is(#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button):hover { background: var(--app-mode-control-hover); }
+body.faux-chatgpt-app-mode :is(#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button):focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] { box-sizing: border-box !important; min-width: 0 !important; width: calc(100% - var(--app-mode-rail-width)) !important; margin-left: var(--app-mode-rail-width) !important; }
+body.faux-chatgpt-app-mode [data-app-mode-sidebar-original] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-native-sidebar] { visibility: hidden !important; }
+
+/* A single centered home composition across the site's 640px breakpoint.
+   Native editor controls still wrap; no React nodes or handlers are moved. */
+body.faux-chatgpt-app-mode [data-app-mode-home-layout] {
+  display: flex !important; flex-direction: column !important; justify-content: flex-start !important;
+  padding: 16px 0 !important; min-height: 0 !important; overflow-y: auto;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-hero] {
+  flex: 0 0 auto !important; height: auto !important; min-height: 0 !important;
+  padding: 0 20px 24px !important; margin: clamp(16px, calc(40dvh - 100px), 300px) 0 0 !important; align-items: center !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-scroll] { scrollbar-gutter: stable both-edges !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-title] {
+  font-size: clamp(22px, 3vw, 28px) !important; line-height: 1.4 !important;
+  text-align: center; margin: 0 auto !important; max-width: 768px;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-composer] {
+  position: relative !important; inset: auto !important; flex: 0 0 auto !important;
+  height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-group] {
+  width: 100% !important; max-width: 816px !important; box-sizing: border-box;
+  margin-inline: auto !important; padding: 0 24px !important; gap: 16px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-composer-path] { padding-block: 0 !important; margin-block: 0 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-form] { order: 0 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-suggestions] { order: 1 !important; margin-top: 0 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-card] {
+  border-radius: 24px !important; container: app-mode-home-composer / inline-size;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-editor-grid]:has([data-app-mode-home-leading]) {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  grid-template-rows: minmax(36px, auto) !important; gap: 8px !important; padding: 8px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-home-editor-cell] { grid-column: 2 !important; grid-row: 1 !important; min-width: 0; margin: 0 !important; padding: 0 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-leading] { grid-column: 1 !important; grid-row: 1 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-trailing] { grid-column: 3 !important; grid-row: 1 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-editor-flow] { padding: 0 !important; min-height: 36px; }
+body.faux-chatgpt-app-mode [data-app-mode-home-editor-line] { margin-block: 5px !important; }
+@container app-mode-home-composer (max-width: 399px) {
+  body.faux-chatgpt-app-mode [data-app-mode-home-editor-grid]:has([data-app-mode-home-leading]) { grid-template-columns: auto minmax(0, 1fr) !important; grid-template-rows: auto auto !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-home-editor-cell] { grid-column: 1 / -1 !important; grid-row: 1 !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-home-leading] { grid-column: 1 !important; grid-row: 2 !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-home-trailing] { grid-column: 2 !important; grid-row: 2 !important; justify-self: end; }
+}
+body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar-parent] { background: var(--app-mode-control-bg); }
+/* The native row is inside the content column; its paint can be clipped at
+   the sidebar's edge even when its measured box spans the viewport. Complete
+   only that 52px corner, below both toggle variants and above native panels. */
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar)::before {
+  content: ''; position: fixed; top: 0; left: 0;
+  width: var(--app-mode-rail-width); height: var(--app-mode-subheader-height);
+  background: var(--app-mode-control-bg); border-bottom: 1px solid var(--app-mode-control-border);
+  box-sizing: border-box; z-index: 39; pointer-events: none;
+}
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout] { z-index: 50; background: var(--app-mode-control-bg); }
+body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions { display: none; }
+/* Use the native close control in the same slot while its modal focus trap is
+   active. The custom opener must not compete with it visually or by keyboard. */
+body.faux-chatgpt-app-mode:has([data-app-mode-modal-sidebar-toggle]) #app-mode-compact-sidebar { visibility: hidden; }
+body.faux-chatgpt-app-mode [data-app-mode-modal-sidebar-toggle] {
+  position: fixed !important; top: 5px !important; left: 8px !important;
+  width: 36px !important; height: 30px !important; margin: 0 !important;
+  z-index: 70; border-radius: 8px;
+}
+/* Apply the boundary before an opening/closing panel reaches the expanded
+   state. Its native title must never paint into the shared header row. */
+body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar],
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) aside.app-shell-left-panel {
+  margin-top: var(--app-mode-subheader-height) !important;
+  height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+  max-height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+  min-height: 0 !important;
+  box-sizing: border-box;
+  border-top: 1px solid var(--app-mode-control-border);
+}
+
+/* The site's modal sidebar normally starts at the top of the page view.
+   Reserve the shared subheader so its title cannot overlap our toggle. */
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) #browser-sidebar-popover[role="dialog"] {
+  transform: none !important;
+  translate: none !important;
+  top: var(--app-mode-subheader-height) !important;
+  bottom: 0 !important;
+  height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+  max-height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+}
 
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px;

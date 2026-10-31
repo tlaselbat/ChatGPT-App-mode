@@ -4,7 +4,7 @@ The app-owned title bar is a 48px strip rendered by the host above the page, wit
 
 - Use consistent spacing steps and align related controls to shared edges.
 - Match the reference's charcoal fills and visible neutral borders in dark mode, with lighter equivalents in light mode. Known sidebar buttons sort before sibling new-chat controls; unmatched site markup keeps its original order.
-- Center the mode switch within the live content rectangle when a docked sidebar is visible; keep it viewport-centered with a modal sidebar overlay, and fall back to remaining-space flow when neighboring controls would collide.
+- With compact navigation enabled, center the mode switch on the viewport across sidebar states. With native navigation, use the live content rectangle for a docked sidebar. At 480 CSS pixels or less, or when neighboring controls would collide, use remaining-space flow.
 - Keep typography readable at normal zoom. Establish a clear hierarchy through size and weight rather than excessive decoration.
 - Prefer compact layouts that retain comfortable hit targets, visible focus, and enough room for long conversation content.
 - Let the app resize down to narrow windows without clipping essential controls or causing horizontal scrolling.

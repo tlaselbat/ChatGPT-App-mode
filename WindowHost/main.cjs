@@ -119,6 +119,8 @@ function createWindow(args) {
       // is exposed to the page; these are the same unprivileged site overrides.
       const css = fs.readFileSync(path.join(sourceRoot, 'extension/styles/chatgpt-overrides.css'), 'utf8');
       let script = fs.readFileSync(path.join(sourceRoot, 'extension/scripts/chatgpt-overrides.js'), 'utf8');
+      const compactSidebar = config.layout?.compactSidebar !== false;
+      script = `window.__APP_MODE_COMPACT_SIDEBAR__=${JSON.stringify(compactSidebar)};\n${script}`;
       if (fixturePath && /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')) {
         script = script.replaceAll('127.0.0.1:17863', `127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}`);
       }
