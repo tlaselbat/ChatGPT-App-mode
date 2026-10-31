@@ -127,6 +127,16 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-ce
   max-height: 28px;
   pointer-events: auto;
 }
+body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="region"] [data-app-mode-header-tabs] {
+  position: fixed !important;
+  left: calc(50vw + var(--app-mode-switch-offset, 0px)) !important;
+  right: auto !important;
+  top: var(--app-mode-switch-top, 6px) !important;
+  transform: translateX(-50%) !important;
+  height: 28px !important;
+  max-height: 28px;
+  pointer-events: auto;
+}
 /* Wide layouts add hidden sidebar-width spacers to the fixed centering layer.
    They are obsolete once that layer participates in the actual header row. */
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) > [aria-hidden="true"] { display: none !important; }

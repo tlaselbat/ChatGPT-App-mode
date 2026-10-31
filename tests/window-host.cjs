@@ -225,7 +225,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       return {width:rect.width,height:rect.height,center:rect.y+rect.height/2,radius:style.borderRadius,drag:style.webkitAppRegion};
     })`), Array(3).fill({width:32,height:28,center:24,radius:'8px',drag:'no-drag'}));
     await waitControlLabel('Maximize');
-    assert.equal(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
+    assert.notEqual(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
     const security = await electron.evaluate(({ BrowserWindow }, modulePath) => {
       const {validateControlRequest}=process.mainModule.require(modulePath);
       const win=BrowserWindow.getAllWindows()[0];

@@ -68,7 +68,7 @@ const fixture = `<!doctype html>
 <div class="message">Here is a clean offline fixture for checking layout, narrow-window behavior, and extension controls. No private conversation data is included.</div>
 <div class="composer">Message ChatGPT</div></section></main></div></body></html>`;
 
-test('visible fixed-layer switch stays viewport-centered with unequal sides through reconciliation', async ({ page }, testInfo) => {
+test('visible fixed-layer switch centers in docked content and keeps viewport centering for modal drawers', async ({ page }, testInfo) => {
   const structure = fs.readFileSync(path.join(root, 'tests/fixtures/fixed-layer-header.html'), 'utf8');
   await page.setViewportSize({ width: 680, height: 800 });
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
@@ -89,7 +89,10 @@ test('visible fixed-layer switch stays viewport-centered with unequal sides thro
   for (let sample = 0; sample < 20; sample++) {
     await page.setViewportSize({ width: sample < 12 ? 680 : [560, 390, 448, 680][sample % 4], height: 800 });
     await page.evaluate(sample => {
-      document.querySelector('main').style.marginLeft = sample % 2 === 0 && innerWidth > 480 ? '120px' : '0px';
+      const sidebar = document.querySelector('aside');
+      sidebar.style.display = sample % 2 === 0 && innerWidth > 480 ? 'block' : 'none';
+      sidebar.style.width = 'clamp(180px, 28vw, 280px)';
+      document.querySelector('.shell').style.gridTemplateColumns = sidebar.style.display === 'none' ? '1fr' : `${sidebar.style.width} minmax(0, 1fr)`;
       const header = document.querySelector('header');
       if (sample === 12) {
         const action = header.querySelector('button[aria-label="Refresh"]');
@@ -126,10 +129,14 @@ test('visible fixed-layer switch stays viewport-centered with unequal sides thro
       };
       const tabs = document.querySelector('.real-mode-grid');
       const box = rect(tabs);
+      const aside = document.querySelector('aside');
+      const asideBox = aside.getBoundingClientRect();
+      const docked = getComputedStyle(aside).display !== 'none' && asideBox.width >= 160 && asideBox.left <= 2 && !document.querySelector('#synthetic-sidebar-modal');
       return { viewport: innerWidth, dpr: devicePixelRatio, switch: box,
         centering: tabs.closest('header').getAttribute('data-app-mode-header-centering'),
         outline: getComputedStyle(tabs).borderWidth,
-        error: box.x + box.width / 2 - innerWidth / 2,
+        error: box.x + box.width / 2 - (docked ? (asideBox.right + innerWidth) / 2 : innerWidth / 2),
+        docked,
         controls: [...document.querySelectorAll('header button')].filter(el => !el.closest('[aria-hidden="true"]')).map(rect),
         ancestry: [...document.querySelector('header').children].map(el => {
           const style = getComputedStyle(el);
@@ -140,7 +147,9 @@ test('visible fixed-layer switch stays viewport-centered with unequal sides thro
   await testInfo.attach('header-css-pixel-samples', { body: JSON.stringify(samples, null, 2), contentType: 'application/json' });
   for (const [index, sample] of samples.entries()) {
     if (index === 12) expect(sample.centering).toBe('remaining');
-    if (sample.viewport === 680 || sample.centering === 'viewport') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
+    if (sample.centering === 'region') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
+    if (sample.centering === 'viewport') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
+    if (sample.centering === 'region') expect(sample.switch.x).toBeGreaterThanOrEqual(150);
     if (sample.viewport <= 480) expect(sample.centering).toBe('remaining');
     expect(sample.outline).toBe('1px');
     expect(Math.abs(sample.switch.y - (40 - sample.switch.bottom))).toBeLessThanOrEqual(2);

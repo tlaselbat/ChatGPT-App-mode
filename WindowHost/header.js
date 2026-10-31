@@ -31,7 +31,14 @@
       [...document.querySelectorAll('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]')]
         .find(element => visible(element) && !element.closest('aside, nav'));
     const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
-    if (modal?.getBoundingClientRect().width > 0 && [...marked.keys()].some(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected && element.closest('[aria-hidden="true"]') && element.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility !== 'hidden')) return;
+    if (modal?.getBoundingClientRect().width > 0 && [...marked.keys()].some(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected && element.closest('[aria-hidden="true"]') && element.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility !== 'hidden')) {
+      // Keep the retained header normalization while a native modal drawer
+      // makes the background aria-hidden, but do not retain a docked offset
+      // beneath its viewport-wide scrim.
+      const retainedHeader = [...marked.keys()].find(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected);
+      if (retainedHeader && retainedHeader.style.getPropertyValue('--app-mode-switch-offset') !== '0px') retainedHeader.style.setProperty('--app-mode-switch-offset', '0px');
+      return;
+    }
     const next = new Map();
     function mark(element, attribute, value = '') {
       element.setAttribute(attribute, value);
@@ -198,18 +205,32 @@
       const tabs = header.querySelector('[data-app-mode-header-tabs]');
       if (tabs) {
         const box = tabs.getBoundingClientRect();
-        const left = (innerWidth - box.width) / 2;
+        // A docked sidebar consumes part of the page viewport. Use its live
+        // right edge as the content-region start; modal drawers are overlays
+        // and must keep the page's normal viewport centering.
+        const sidebar = [...document.querySelectorAll('aside, [role="complementary"], nav')]
+          .filter(element => !element.closest(excluded) && visible(element))
+          .map(element => element.getBoundingClientRect())
+          .filter(bounds => bounds.left <= 2 && bounds.width >= 160 && bounds.width < innerWidth * 0.55 && bounds.height >= 120)
+          .sort((a, b) => b.width - a.width)[0];
+        const regionLeft = sidebar ? Math.min(sidebar.right, innerWidth) : 0;
+        const regionWidth = innerWidth - regionLeft;
+        const center = regionLeft + regionWidth / 2;
+        const left = center - box.width / 2;
         const right = left + box.width;
         const controls = [...header.querySelectorAll('button, a[href], [role="button"]')].filter(element => !tabs.contains(element) && visible(element));
-        const fits = innerWidth > 480 && controls.every(element => {
+        const fits = innerWidth > 480 && left >= regionLeft && right <= innerWidth && controls.every(element => {
           const bounds = element.getBoundingClientRect();
           return bounds.right <= left - 6 || bounds.left >= right + 6;
         });
-        mark(header, 'data-app-mode-header-centering', fits ? 'viewport' : 'remaining');
+        mark(header, 'data-app-mode-header-centering', fits ? 'region' : 'remaining');
+        const offset = fits ? `${center - innerWidth / 2}px` : '0px';
+        if (header.style.getPropertyValue('--app-mode-switch-offset') !== offset) header.style.setProperty('--app-mode-switch-offset', offset);
         const top = `${header.getBoundingClientRect().top + 6}px`;
         if (header.style.getPropertyValue('--app-mode-switch-top') !== top) header.style.setProperty('--app-mode-switch-top', top);
       } else {
         header.removeAttribute('data-app-mode-header-centering');
+        header.style.removeProperty('--app-mode-switch-offset');
         header.style.removeProperty('--app-mode-switch-top');
       }
     }
