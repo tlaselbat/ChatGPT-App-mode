@@ -146,6 +146,9 @@
       node.style.removeProperty('contain');
       node.style.removeProperty('overflow');
     }
+    for (const node of document.querySelectorAll('[data-app-mode-secondary-slot]')) {
+      node.removeAttribute('data-app-mode-secondary-slot');
+    }
   }
 
   function ensureSecondaryRow() {
@@ -250,6 +253,28 @@
       if (element.style.getPropertyValue('--app-mode-secondary-dy') !== dyValue)
         element.style.setProperty('--app-mode-secondary-dy', dyValue);
       nextRight -= rect.width + 6;
+    }
+    // Transforms keep the original boxes in layout, so vacated wrapper shells
+    // still paint empty pills where the buttons used to sit. Hide each shell
+    // whose visible interactive descendants all relocated (or are hidden);
+    // the moved controls keep visibility:visible through the row CSS.
+    const isMoved = element => element.closest('[data-app-mode-secondary-actions]') ||
+      element.hasAttribute('data-app-mode-relocated-share') ||
+      element.getBoundingClientRect().width === 0;
+    const slots = new Set();
+    for (const element of items) {
+      for (let node = element.parentElement; node && node !== header; node = node.parentElement) {
+        const stranded = [...node.querySelectorAll('button, [role="button"], a[href]')]
+          .some(control => !control.closest('[aria-hidden="true"], [inert]') && !isMoved(control));
+        if (stranded) break;
+        slots.add(node);
+      }
+    }
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-slot]')) {
+      if (!slots.has(element)) element.removeAttribute('data-app-mode-secondary-slot');
+    }
+    for (const element of slots) {
+      if (!element.hasAttribute('data-app-mode-secondary-slot')) element.setAttribute('data-app-mode-secondary-slot', '');
     }
     const bottom = `${Math.round(header.getBoundingClientRect().bottom)}px`;
     if (document.body.style.getPropertyValue('--app-mode-header-bottom') !== bottom)

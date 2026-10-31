@@ -193,7 +193,15 @@ body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
   transform: translate3d(var(--app-mode-secondary-dx, 0px), var(--app-mode-secondary-dy, 0px), 0) !important;
   position: relative;
   z-index: 30;
+  visibility: visible;
   -webkit-app-region: no-drag;
+}
+
+/* Relocated controls leave their wrapper shells behind; hide any shell whose
+   interactive descendants all moved or are hidden. visibility (not display)
+   preserves layout, and the relocated control overrides it to stay visible. */
+body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
+  visibility: hidden;
 }
 
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
