@@ -7,11 +7,22 @@
 }
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; background: transparent; }
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 48px;
+  -webkit-app-region: drag;
+}
+/* Application-owned drag surface; it never overlaps page content because the
+   remote view starts below this title bar. */
+.titlebar-drag { flex: 1 1 auto; }
 .controls {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 48px;
+  padding-inline-end: 10px;
   -webkit-app-region: no-drag;
 }
 button {

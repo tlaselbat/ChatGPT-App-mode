@@ -6,8 +6,8 @@
 |---|---|---|
 | Content script | `extension/scripts/chatgpt-overrides.js` | Body marker, title normalization, pin button, session URL reporting, mutation observation |
 | Override styles | `extension/styles/chatgpt-overrides.css` | Scrollbar treatment, header pin/status states, and flow-toolbar fallback |
-| Host header layer | `WindowHost/header.css`, `WindowHost/header.js` | Custom-control spacing, drag region, header layout normalization |
-| Window controls | `WindowHost/controls.html`, `controls.css`, `controls.js` and trusted control host | Theme-aware outlined minimize, maximize/restore, and close buttons in an isolated application-owned surface; native state synchronization, responsive sizing, red close accent and blue maximize interaction |
+| Host header layer | `WindowHost/header.css`, `WindowHost/header.js` | Secondary action-row layout: tags recognized site header structures and normalizes them in place without moving nodes |
+| Window controls | `WindowHost/controls.html`, `controls.css`, `controls.js` and trusted control host | Application-owned 48px title bar above the page view: drag region plus theme-aware outlined minimize, maximize/restore, and close buttons in an isolated surface; native state synchronization, responsive sizing, red close accent and blue maximize interaction |
 | Share menu entry | `extension/scripts/chatgpt-overrides.js`, `extension/styles/chatgpt-overrides.css` | Hides the recognized header Share button when conversation options are available; adds Share to that menu and invokes the original site action after dismissal. Supports keyboard navigation and re-renders; unknown header markup retains the original button. No sharing or publishing is performed automatically. |
 | Extension manifest | `extension/manifest.json` | MV3 matching for Playwright/live-audit browser contexts |
 | Control endpoint | `Start-ChatGPT-TopMostServer.ps1` | Loopback JSON responses for topmost and session operations |

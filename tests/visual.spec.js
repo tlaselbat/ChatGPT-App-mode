@@ -8,6 +8,7 @@ const http = require('node:http');
 const root = path.resolve(__dirname, '..');
 const extensionPath = path.join(root, 'extension');
 const headerLayoutScript = fs.readFileSync(path.join(root, 'WindowHost', 'header.js'), 'utf8');
+const headerLayoutCss = fs.readFileSync(path.join(root, 'WindowHost', 'header.css'), 'utf8');
 const profilePath = path.join(root, 'test-results', 'runs', 'browser-profile');
 const fixtureProfile = testId => `${profilePath}-${testId.replace(/[^a-z0-9]/gi, '').slice(-24)}`;
 const configuredChrome = process.env.APP_MODE_CHROMIUM_EXE;
@@ -286,62 +287,75 @@ for (const popup of Object.keys(shareTriggerVariants)) test(`Share moves into it
   await expect(entry).toHaveCount(0);
 });
 
-test('two-row header keeps only sidebar left and parks conversation actions right-aligned below', async ({ page }) => {
+test('standardized action row normalizes the site header in place without moving nodes', async ({ page }) => {
   const html = fixture.replace('<span class="header-title">',
-    '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button>' +
-    '<button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
+    '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button>' +
+    '<button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
-  await page.goto('https://chatgpt.com/c/two-row-fixture');
+  await page.goto('https://chatgpt.com/c/action-row-fixture');
+  // The Electron host injects the shared layout module alongside the content
+  // script; reproduce that pairing in the fixture context.
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
   const header = page.locator('header');
-  const sidebar = header.locator('[aria-label="Sidebar"]');
-  const newChat = header.locator('[aria-label="New chat"]');
-  const options = header.locator('[aria-label="Conversation options"]');
-  const row = page.locator('#chatgpt-app-mode-secondary-row');
-  await expect(row).toHaveCount(1);
+  await expect(header).toHaveAttribute('data-app-mode-header-layout', '');
   const geometry = await page.evaluate(() => {
     const headerBox = document.querySelector('header').getBoundingClientRect();
     const box = element => element.getBoundingClientRect();
+    const visible = element => {
+      const rect = box(element);
+      return rect.width > 0 && rect.height > 0;
+    };
+    const controls = [...document.querySelectorAll('header button')].filter(visible);
     return {
-      headerBottom: headerBox.bottom,
+      header: headerBox,
       sidebar: box(document.querySelector('[aria-label="Sidebar"]')),
       newChat: box(document.querySelector('[aria-label="New chat"]')),
       options: box(document.querySelector('[aria-label="Conversation options"]')),
       pin: box(document.getElementById('chatgpt-app-mode-pin-toggle')),
-      row: box(document.getElementById('chatgpt-app-mode-secondary-row')),
+      controls: controls.map(box),
+      overflow: document.documentElement.scrollWidth > innerWidth,
       innerWidth,
     };
   });
-  // Top row: sidebar stays inside the header band, centered on its midline;
-  // pin is the last top-right control.
-  const headerMid = geometry.headerBottom - (await header.evaluate(el => el.getBoundingClientRect().height)) / 2;
-  expect(Math.abs(geometry.sidebar.y + geometry.sidebar.height / 2 - headerMid)).toBeLessThanOrEqual(2);
-  expect(geometry.pin.bottom).toBeLessThanOrEqual(geometry.headerBottom + 1);
-  // Second row: right-aligned cluster below the header; New Chat rightmost
-  // with its right edge on the 10px native-controls inset line.
-  expect(geometry.options.top).toBeGreaterThanOrEqual(geometry.headerBottom);
-  expect(Math.abs(geometry.newChat.right - (geometry.innerWidth - 10))).toBeLessThanOrEqual(2);
-  expect(geometry.options.right).toBeLessThanOrEqual(geometry.newChat.left + 6);
-  expect(geometry.row.top).toBeGreaterThanOrEqual(geometry.headerBottom - 0.5);
-  // Original handlers still fire exactly once after relocation.
+  // One normalized 40px row: every control stays inside it, centered on the
+  // same midline, without overlap or page-level horizontal scrolling.
+  expect(Math.abs(geometry.header.height - 40)).toBeLessThanOrEqual(1);
+  for (const rect of geometry.controls) {
+    expect(rect.top).toBeGreaterThanOrEqual(geometry.header.top - 0.5);
+    expect(rect.bottom).toBeLessThanOrEqual(geometry.header.bottom + 0.5);
+    expect(rect.right).toBeLessThanOrEqual(geometry.innerWidth + 1);
+  }
+  expect(geometry.overlap ?? false).toBe(false);
+  expect(geometry.overflow).toBe(false);
+  // Sidebar is the leading control even though the site renders it second;
+  // the action group is right-aligned and the app pin stays rightmost.
+  expect(geometry.sidebar.left).toBeLessThanOrEqual(geometry.newChat.left);
+  expect(geometry.options.right).toBeLessThanOrEqual(geometry.pin.left + 6);
+  // The layout contract never moves nodes out of the site's own containers:
+  // original handlers still fire exactly once on their native elements.
   await page.evaluate(() => {
     window.actionLog = [];
     for (const button of document.querySelectorAll('header button')) {
       button.addEventListener('click', () => window.actionLog.push(button.getAttribute('aria-label') || button.id));
     }
   });
-  await newChat.click();
-  await options.click();
+  await header.locator('[aria-label="New chat"]').click();
+  await header.locator('[aria-label="Conversation options"]').click();
   await expect.poll(() => page.evaluate(() => window.actionLog)).toEqual(['New chat', 'Conversation options']);
-  // Re-render: the cluster must re-locate onto the replaced nodes once.
+  // React-style replacement: the reconciler re-marks the new header once,
+  // without duplicating markers or reparenting its controls.
   await page.evaluate(() => {
     const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true));
   });
-  await expect(page.locator('header [data-app-mode-secondary-actions]')).toHaveCount(2);
-  // Removing the header releases every fixed marker and the spacer row.
+  await expect(header).toHaveAttribute('data-app-mode-header-layout', '');
+  await expect(page.locator('[data-app-mode-header-layout]')).toHaveCount(1);
+  // Removing the header releases every layout marker; the page falls back to
+  // its own structure with no leftover app-managed artifacts.
   await page.evaluate(() => document.querySelector('header').remove());
-  await expect(row).toHaveCount(0);
-  await expect(page.locator('[data-app-mode-secondary-actions]')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-header-layout]')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-header-tabs],[data-app-mode-header-strip],[data-app-mode-header-control-branch]')).toHaveCount(0);
 });
 
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {
@@ -397,9 +411,9 @@ test('extension styling, control, navigation and re-render in offline ChatGPT fi
   await page.evaluate(() => document.documentElement.removeAttribute('style'));
   await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
   await page.setViewportSize({ width: 390, height: 844 });
-  // Single desktop presentation at every window width: the mobile media rule
-  // that used to hide the aside is stripped, so the desktop grid stays.
-  await expect(page.locator('aside')).toBeVisible();
+  // The site's genuine responsive layout applies: at narrow widths its own
+  // media rule collapses the aside instead of a spoofed desktop viewport.
+  await expect(page.locator('aside')).toBeHidden();
   const overlapsMessage = await page.evaluate(() => {
     const pin = document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect();
     return [...document.querySelectorAll('.message,.composer')].some(element => {

@@ -36,8 +36,8 @@ const OUTPUT = path.join(__dirname, '..', 'test-results', 'live-audits');
           hasSvg: Boolean(c.querySelector('svg')),
           textLen: c.textContent.trim().length,
           rect: rectOf(c),
-          marked: c.hasAttribute('data-app-mode-secondary-actions') ? 'secondary'
-            : c.hasAttribute('data-app-mode-relocated-share') ? 'share' : undefined,
+          marked: c.hasAttribute('data-app-mode-relocated-share') ? 'share'
+            : c.hasAttribute('data-app-mode-header-icon') ? 'icon' : undefined,
           parentTestid: c.parentElement?.getAttribute('data-testid') || undefined,
           parentClassCount: c.parentElement?.classList?.length,
         })),
@@ -62,8 +62,7 @@ const OUTPUT = path.join(__dirname, '..', 'test-results', 'live-audits');
     return {
       url: location.pathname === '/' ? '/' : '/c/…',
       bodyMarker: document.body.classList.contains('faux-chatgpt-app-mode'),
-      secondaryRow: Boolean(document.getElementById('chatgpt-app-mode-secondary-row')),
-      headerBottomVar: document.body.style.getPropertyValue('--app-mode-header-bottom'),
+      managedHeader: Boolean(document.querySelector('[data-app-mode-header-layout]')),
       toolbar: Boolean(document.querySelector('.chatgpt-app-mode-toolbar')),
       headers: headers.map(h => describe(h, 0)),
       strayTopControls: stray,

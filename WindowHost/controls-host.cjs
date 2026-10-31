@@ -6,11 +6,8 @@ const { randomUUID } = require('node:crypto');
 const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close']);
-const CONTROLS_WIDTH = 108;
-const COMPACT_CONTROLS_WIDTH = 96;
 const COMPACT_BREAKPOINT = 480;
 const HEADER_HEIGHT = 48;
-const EDGE_INSET = 10;
 const DEFAULT_THEME = Object.freeze({ color: 'rgb(221, 221, 221)', border: 'rgba(221, 221, 221, 0.24)',
   background: '#1c1f26', hover: '#2a2f3a', hoverBorder: '#4f5d7a', pressed: '#3a4050' });
 
@@ -95,7 +92,7 @@ function observeVisualTheme(previous) {
   });
 }
 
-function installWindowControls(win, { isChatGptUrl }) {
+function installWindowControls(win, chatView, { isChatGptUrl }) {
   const controlsUrl = pathToFileURL(path.join(__dirname, 'controls.html')).href;
   const controlSession = session.fromPartition(`app-mode-controls-${randomUUID()}`);
   const allowedResources = new Set(['controls.html', 'controls.css', 'controls.js'].map(name => pathToFileURL(path.join(__dirname, name)).href));
@@ -114,22 +111,24 @@ function installWindowControls(win, { isChatGptUrl }) {
   let theme = DEFAULT_THEME;
   let generation = 0;
   const context = { win, view, controlsUrl };
-  // Match the remote header's CSS breakpoint rather than the controls view's
-  // own (always narrow) viewport. Both surfaces share the page's zoom factor.
-  const compact = () => win.getContentBounds().width / win.webContents.getZoomFactor() <= COMPACT_BREAKPOINT;
+  // Match the remote page's CSS breakpoint rather than the title bar view's
+  // own viewport. Both surfaces share the page's zoom factor.
+  const chat = chatView.webContents;
+  const compact = () => win.getContentBounds().width / chat.getZoomFactor() <= COMPACT_BREAKPOINT;
   const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), theme });
   function publish() {
     if (!disposed && loaded && !win.isDestroyed() && !contents.isDestroyed()) contents.send(STATE_CHANNEL, state());
   }
   function layout() {
     if (disposed || win.isDestroyed() || contents.isDestroyed()) return;
-    const zoom = win.webContents.getZoomFactor();
-    const { width } = win.getContentBounds();
+    const zoom = chat.getZoomFactor();
+    const { width, height } = win.getContentBounds();
     contents.setZoomFactor(zoom);
-    const controlsWidth = Math.round((compact() ? COMPACT_CONTROLS_WIDTH : CONTROLS_WIDTH) * zoom);
-    view.setBounds({ x: Math.max(0, width - controlsWidth - Math.round(EDGE_INSET * zoom)), y: 0,
-      width: controlsWidth, height: Math.round(HEADER_HEIGHT * zoom) });
-    view.setVisible(!win.isFullScreen());
+    const fullscreen = win.isFullScreen();
+    const bar = fullscreen ? 0 : Math.round(HEADER_HEIGHT * zoom);
+    view.setBounds({ x: 0, y: 0, width, height: bar });
+    chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
+    view.setVisible(!fullscreen);
     publish();
   }
   contents.ipc.handle(ACTION_CHANNEL, (event, ...args) => {
@@ -137,7 +136,7 @@ function installWindowControls(win, { isChatGptUrl }) {
     // Native caption buttons do not leave browser accelerators or the page's
     // pin shortcut focused in a separate UI. Focus before minimize, so this
     // never restores a window that has just been minimized.
-    if (args[0] !== 'close') win.webContents.focus();
+    if (args[0] !== 'close') chat.focus();
     switch (args[0]) {
       case 'minimize': win.minimize(); break;
       case 'maximize': if (!win.isFullScreen()) win.maximize(); break;
@@ -171,16 +170,16 @@ function installWindowControls(win, { isChatGptUrl }) {
     if (input.type === 'keyDown' && input.control &&
       ['+', '=', '-', '0', 'Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].some(key => key === input.key || key === input.code)) afterZoom();
   };
-  win.webContents.on('before-input-event', afterInput);
-  win.webContents.on('zoom-changed', afterZoom);
+  chat.on('before-input-event', afterInput);
+  chat.on('zoom-changed', afterZoom);
   const navigating = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) generation++; };
-  win.webContents.on('did-start-navigation', navigating);
+  chat.on('did-start-navigation', navigating);
   async function observeTheme() {
     const current = ++generation;
     let previous = '';
-    while (!disposed && !win.isDestroyed() && current === generation && isChatGptUrl(win.webContents.getURL())) {
+    while (!disposed && !win.isDestroyed() && current === generation && isChatGptUrl(chat.getURL())) {
       try {
-        const value = await win.webContents.executeJavaScriptInIsolatedWorld(998, [{ code: `(${observeVisualTheme.toString()})(${JSON.stringify(previous)})` }]);
+        const value = await chat.executeJavaScriptInIsolatedWorld(998, [{ code: `(${observeVisualTheme.toString()})(${JSON.stringify(previous)})` }]);
         if (!value || disposed || win.isDestroyed() || current !== generation) return;
         // Only browser-resolved numeric colors cross into the trusted UI.
         // CSS functions, URLs, selectors and arbitrary strings are rejected.
@@ -194,7 +193,7 @@ function installWindowControls(win, { isChatGptUrl }) {
       } catch { return; }
     }
   }
-  win.webContents.on('did-finish-load', observeTheme);
+  chat.on('did-finish-load', observeTheme);
   win.once('closed', () => {
     disposed = true;
     generation++;

@@ -22,22 +22,21 @@
   };
   function layout() {
     queued = false;
-    const header = document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
+    // The app-owned title bar lives in a separate native view above the page;
+    // this pass only normalizes the site's own header into the standard
+    // secondary action row. The toolbar fallback mounts outside any header;
+    // never treat its fallback host as the row.
+    const toolbarHost = document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
+    const header = (toolbarHost && toolbarHost.id !== 'chatgpt-app-mode-toolbar-fallback' ? toolbarHost : null) ||
+      [...document.querySelectorAll('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]')]
+        .find(element => visible(element) && !element.closest('aside, nav'));
     const next = new Map();
     function mark(element, attribute, value = '') {
       element.setAttribute(attribute, value);
       if (!next.has(element)) next.set(element, new Set());
       next.get(element).add(attribute);
     }
-    if (header) {
-      // A native hit-test exclusion keeps the separate controls view clickable
-      // even though the surrounding page header is a draggable region.
-      if (!header.querySelector(':scope > [data-app-mode-controls-hit-area]')) {
-        const hitArea = document.createElement('span');
-        hitArea.setAttribute('data-app-mode-controls-hit-area', '');
-        hitArea.setAttribute('aria-hidden', 'true');
-        header.append(hitArea);
-      }
+    if (header && visible(header)) {
       mark(header, 'data-app-mode-header-layout');
       let tabs = [...header.querySelectorAll('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs]')].find(isModeSwitch);
       // The signed-in site's mode switch is a relative two-button grid inside

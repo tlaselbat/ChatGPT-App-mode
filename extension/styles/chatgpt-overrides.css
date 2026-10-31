@@ -9,28 +9,6 @@ body {
 
 body.faux-chatgpt-app-mode [data-app-mode-relocated-share] { display: none !important; }
 
-/* Desktop-only presentation: the injected matchMedia override makes the
-   site take its desktop branches, but CSS-side breakpoint variants still
-   evaluate against the real (narrow) viewport. Pin the display-only variant
-   utilities so mobile-only controls stay hidden and desktop-only ones stay
-   visible regardless of window width. */
-body.faux-chatgpt-app-mode [class~="min-[768px]:hidden"] { display: none !important; }
-body.faux-chatgpt-app-mode [class~="min-[768px]:flex"] { display: flex !important; }
-body.faux-chatgpt-app-mode [class~="min-[768px]:inline-flex"] { display: inline-flex !important; }
-body.faux-chatgpt-app-mode [class~="min-[768px]:grid"] { display: grid !important; }
-body.faux-chatgpt-app-mode [class~="min-[768px]:block"] { display: block !important; }
-body.faux-chatgpt-app-mode [class~="min-[768px]:inline-block"] { display: inline-block !important; }
-
-/* Keep the desktop left panel mounted at narrow window widths; the site's
-   responsive module sets display:none even when the desktop DOM renders.
-   Its own --app-shell-left-panel-width drives open/closed sizing, so only
-   restore display and leave width to the site. */
-body.faux-chatgpt-app-mode .app-shell-left-panel { display: flex !important; }
-
-/* The site's mobile branch writes --app-shell-left-panel-width: 0, which
-   would collapse the desktop panel that the matchMedia override renders.
-   The injected script fills the var only while the site's value is ~0, so
-   the site's own open/close and resize handling keeps working. */
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px;
   padding: 8px 12px; border: 0; border-radius: 8px; background: transparent;
@@ -96,7 +74,7 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   position: relative;
   align-items: center;
   column-gap: 6px;
-  min-height: 48px;
+  min-height: 40px;
   padding-inline: 12px;
   /* Follow the rendered theme even when custom surface tokens are stale. */
   background: var(--app-mode-control-bg);
@@ -178,92 +156,6 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   padding-inline-start: 0;
   flex: 0 0 auto;
   vertical-align: middle;
-}
-
-/* Thin separator between the pin and the native Minimize caption button. */
-.chatgpt-app-mode-toolbar::after {
-  content: "";
-  flex: 0 0 1px;
-  width: 1px;
-  height: 18px;
-  margin-inline-start: 4px;
-  margin-inline-end: 2px;
-  background: var(--app-mode-control-border);
-}
-
-/* Second row: a slim transparent spacer keeps conversation content clear of
-   the right-aligned action cluster. The cluster nodes stay in the site's
-   header tree and are only visually moved, so menus anchor correctly. */
-#chatgpt-app-mode-secondary-row {
-  position: sticky;
-  top: var(--app-mode-header-bottom, 48px);
-  z-index: 29;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  height: 40px;
-  padding: 4px 10px 8px;
-  box-sizing: border-box;
-  pointer-events: none;
-  -webkit-app-region: no-drag;
-}
-
-/* Relocate with a transform rather than fixed positioning: site wrappers
-   create containing blocks and stacking contexts that trap fixed elements
-   below page content, while a transform keeps the element in its natural
-   header layer. */
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions][data-app-mode-secondary-actions] {
-  transform: translate3d(var(--app-mode-secondary-dx, 0px), var(--app-mode-secondary-dy, 0px), 0) !important;
-  position: relative;
-  z-index: 30;
-  visibility: visible;
-  -webkit-app-region: no-drag;
-}
-
-/* Relocated controls leave their wrapper shells behind; hide any shell whose
-   interactive descendants all moved or are hidden. visibility (not display)
-   preserves layout, and the relocated control overrides it to stay visible. */
-body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
-  visibility: hidden;
-}
-
-/* Uniform hit area for the compact cluster: the site sizes the options
-   trigger wider than the icon buttons, so normalize every relocated control
-   to the 32px square the rest of the row uses. Grouped controls (the
-   Chat/Work mode strip) keep their own sizing. */
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is(button, [role="button"], a),
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a):not([role="tab"], [role="radio"]) {
-  inline-size: 32px;
-  padding-inline: 0;
-}
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"], [role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs]) :is(button, [role="button"], a) {
-  inline-size: auto;
-  padding-inline: revert;
-}
-body.faux-chatgpt-app-mode [data-app-mode-secondary-personalization] {
-  inline-size: auto !important;
-  padding-inline: 8px !important;
-}
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) {
-  height: 28px !important;
-  min-height: 28px !important;
-  max-height: 28px !important;
-  box-sizing: border-box;
-  padding-block: 0 !important;
-  column-gap: 6px !important;
-  overflow: hidden;
-  border-radius: 8px;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) > * {
-  min-height: 0 !important;
-  max-height: 100% !important;
-  box-sizing: border-box;
-}
-body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"][aria-label="Composer mode"], [data-app-mode-header-tabs]) > .pointer-events-none {
-  visibility: hidden !important;
 }
 
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */

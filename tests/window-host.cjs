@@ -186,6 +186,10 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     });
     const page = await remoteWindow(electron);
     await page.waitForSelector('#chatgpt-app-mode-pin-toggle');
+    // The remote page runs in its own WebContentsView below the app-owned
+    // title bar; win.webContents is the unused placeholder. Select the child
+    // view whose document is the synthetic ChatGPT fixture.
+    const chatScript = 'win.contentView.children.find(child=>child.webContents?.getURL().startsWith("https://chatgpt.com")).webContents';
     const controlsEval = script => electron.evaluate(async ({ BrowserWindow }, script) => {
       const view = BrowserWindow.getAllWindows()[0].contentView.children.find(child => child.webContents?.getURL().endsWith('/controls.html'));
       if (!view) throw new Error('Trusted controls view missing');
@@ -199,15 +203,15 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.fail(`Window controls did not synchronize ${label}`);
     };
     await page.bringToFront();
-    const settings = await electron.evaluate(({ BrowserWindow, app }) => {
+    const settings = await electron.evaluate(({ BrowserWindow, app }, chatScript) => {
       const win = BrowserWindow.getAllWindows()[0];
-      const prefs = win.webContents.getLastWebPreferences();
+      const prefs = eval(chatScript).getLastWebPreferences();
       return { profile: app.getPath('userData'), sandbox: prefs.sandbox,
         contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration,
         preload: prefs.preload,
         resizable: win.isResizable(), bounds: win.getBounds(), pid: process.pid,
         handle: win.getNativeWindowHandle().readUInt32LE(0) };
-    });
+    }, chatScript);
     assert.equal(settings.profile, hostProfile(scratch));
     assert.equal(settings.sandbox, true); assert.equal(settings.contextIsolation, true);
     assert.equal(settings.nodeIntegration, false); assert.equal(settings.resizable, true);
@@ -254,13 +258,14 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('location.href'),originalControlsUrl,'Trusted controls must block remote navigation');
     assert.equal(await controlsEval("window.appModeControls.action('restore')"),true,'Blocked navigation must leave trusted controls functional');
     assert.equal(await page.evaluate(() => navigator.windowControlsOverlay?.visible || false), false);
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
+    // The drag region lives in the app-owned title bar view above the page;
+    // the site header itself is an ordinary no-drag action row.
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     assert.equal(await page.locator('[aria-label="Share"]').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
     const geometry = await page.evaluate(() => {
-      const header = document.querySelector('header');
-      const width = parseFloat(getComputedStyle(header).getPropertyValue('--app-mode-window-controls-width'));
       const pin = document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect();
-      return { right: pin.right, safeRight: innerWidth - width, y: pin.y };
+      return { right: pin.right, safeRight: innerWidth, y: pin.y };
     });
     assert.ok(geometry.right <= geometry.safeRight, JSON.stringify(geometry));
     const native = async (mode, focusRemote=true) => {
@@ -268,7 +273,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const win = BrowserWindow.getAllWindows()[0]; const pinned = win.isAlwaysOnTop();
         // Injection may finish before ready-to-show; explicitly display only
         // this isolated fixture before sending any guarded desktop input.
-        win.show();win.setAlwaysOnTop(true); win.moveTop(); win.focus(); if(focusRemote)win.webContents.focus(); return pinned;
+        const chat=win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'))?.webContents;
+        win.show();win.setAlwaysOnTop(true); win.moveTop(); win.focus(); if(focusRemote)chat?.focus(); return pinned;
       }, focusRemote);
       await page.waitForTimeout(150);
       const coordinates = ['Maximize','Restore','Minimize','Close','HoverMaximize'].includes(mode) ? await electron.evaluate(async ({BrowserWindow,screen},mode)=>{
@@ -296,11 +302,16 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.waitForFunction(() => document.getElementById('chatgpt-app-mode-pin-toggle')?.getAttribute('aria-pressed') === 'false');
     // Keyboard and wheel events must reach the native host after removing its
     // application menu, without requiring a renderer-to-main IPC bridge.
-    const getZoom = () => electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomFactor());
+    const getZoom = () => electron.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      return win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents.getZoomFactor();
+    });
     const basePixelRatio = await page.evaluate(() => devicePixelRatio);
     await electron.evaluate(({ BrowserWindow }) => {
       globalThis.syntheticHostInputs = [];
-      BrowserWindow.getAllWindows()[0].webContents.on('before-input-event', (_event, input) => {
+      const chat = BrowserWindow.getAllWindows()[0].contentView.children
+        .find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents;
+      chat.on('before-input-event', (_event, input) => {
         globalThis.syntheticHostInputs.push({ key: input.key, code: input.code, control: input.control, type: input.type });
       });
     });
@@ -317,7 +328,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await native('ZoomReset');
     assert.equal(await getZoom(), 1);
     await electron.evaluate(({ BrowserWindow }) => {
-      const contents = BrowserWindow.getAllWindows()[0].webContents;
+      const contents = BrowserWindow.getAllWindows()[0].contentView.children
+        .find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents;
       globalThis.syntheticReloadCounts = { normal: 0, force: 0 };
       const reload = contents.reload.bind(contents), force = contents.reloadIgnoringCache.bind(contents);
       contents.reload = () => { globalThis.syntheticReloadCounts.normal++; reload(); };
@@ -330,14 +342,19 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.equal(await page.evaluate(() => window.syntheticReloadMarker), undefined, shortcut);
     }
     assert.deepEqual(await electron.evaluate(() => globalThis.syntheticReloadCounts), { normal: 2, force: 2 });
+    const chatEval = script => electron.evaluate(({ BrowserWindow }, script) => {
+      const chat = BrowserWindow.getAllWindows()[0].contentView.children
+        .find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents;
+      return eval(script);
+    }, script);
     await native('DevTools');
     for (let attempt = 0; attempt < 30; ++attempt) {
-      if (await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isDevToolsOpened())) break;
+      if (await chatEval('chat.isDevToolsOpened()')) break;
       await page.waitForTimeout(100);
     }
-    assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isDevToolsOpened()), true,
+    assert.equal(await chatEval('chat.isDevToolsOpened()'), true,
       JSON.stringify(await electron.evaluate(() => globalThis.syntheticHostInputs)));
-    await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.closeDevTools());
+    await chatEval('chat.closeDevTools()');
     await native('Capture');
     await native('Maximize');
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized()), true);
@@ -346,7 +363,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     fs.copyFileSync(path.join(scratch, 'native-header-desktop.png'), path.join(scratch, 'header-maximized.png'));
     await native('Restore');
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMaximized()), false);
-    assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isFocused()),true);
+    assert.equal(await chatEval('chat.isFocused()'),true);
     await waitControlLabel('Maximize');
     await native('DoubleClickTitlebar');
     assert.equal(await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isMaximized()),true);
@@ -419,8 +436,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await native('CaptureNarrow');
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').evaluate(el => {
       const pin = el.getBoundingClientRect(); const header = el.closest('header').getBoundingClientRect();
-      const width = parseFloat(getComputedStyle(el.closest('header')).getPropertyValue('--app-mode-window-controls-width'));
-      return pin.bottom <= header.bottom && pin.right <= innerWidth - width;
+      return pin.bottom <= header.bottom + 1 && pin.right <= innerWidth;
     }), true);
     // Reproduce the home header's centered, fixed-width mode switch. The site
     // may replace this group during navigation; keep its controls functional.
@@ -439,7 +455,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const expectedWidth = await electron.evaluate(({ BrowserWindow }, width) => {
         const win = BrowserWindow.getAllWindows()[0];
         win.setBounds({ width, height: 700 });
-        return win.getContentBounds().width / win.webContents.getZoomFactor();
+        const chat = win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents;
+        return win.getContentBounds().width / chat.getZoomFactor();
       }, width);
       await page.waitForFunction(expected => {
         return Math.abs(innerWidth - expected) <= 1;
@@ -447,15 +464,14 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const layout = await page.evaluate(() => {
         const header = document.querySelector('header').getBoundingClientRect();
         const rects = [...document.querySelectorAll('header button')].map(el => el.getBoundingClientRect());
-        const safeRight = innerWidth - parseFloat(getComputedStyle(document.querySelector('header')).getPropertyValue('--app-mode-window-controls-width'));
         return {
           height: header.height,
-          bounded: rects.every(r => r.left >= header.left && r.right <= safeRight && r.top >= header.top && r.bottom <= header.bottom),
+          bounded: rects.every(r => r.left >= header.left && r.right <= innerWidth + 1 && r.top >= header.top - 1 && r.bottom <= header.bottom + 1),
           overlaps: rects.some((a, i) => rects.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
           overflow: document.documentElement.scrollWidth > innerWidth,
         };
       });
-      assert.deepEqual(layout, { height: 48, bounded: true, overlaps: false, overflow: false }, `header width ${width}: ${JSON.stringify(layout)}`);
+      assert.deepEqual(layout, { height: 40, bounded: true, overlaps: false, overflow: false }, `header width ${width}: ${JSON.stringify(layout)}`);
       await page.locator('[role="tab"]').nth(1).click();
       assert.equal(await page.locator('[role="tab"]').nth(1).getAttribute('aria-selected'), 'true');
       await page.mouse.move(20, 100);
@@ -486,18 +502,18 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     for (const zoom of [1,1.25,1.5]) for (const width of [390,448,560,690,1024,1280]) {
       if(width/zoom<390)continue; // Minimum supported logical viewport; zoom does not expand the window.
       const expectedWidth = await electron.evaluate(({BrowserWindow},{zoom,width}) => {
-        const win=BrowserWindow.getAllWindows()[0]; win.setBounds({width,height:700}); win.webContents.setZoomFactor(zoom);
+        const win=BrowserWindow.getAllWindows()[0]; win.setBounds({width,height:700});
+        win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents.setZoomFactor(zoom);
         return win.getContentBounds().width / zoom;
       },{zoom,width});
       await page.waitForFunction(expected => {
-        return Math.abs(innerWidth - expected) <= 1 && Math.abs(document.querySelector('header').getBoundingClientRect().height - 48) <= 1;
+        return Math.abs(innerWidth - expected) <= 1 && Math.abs(document.querySelector('header').getBoundingClientRect().height - 40) <= 1;
       }, expectedWidth, { timeout: 5000 });
       const layout=await page.evaluate(() => {
         const header=document.querySelector('header').getBoundingClientRect();
-        const safeRight=innerWidth-parseFloat(getComputedStyle(document.querySelector('header')).getPropertyValue('--app-mode-window-controls-width'));
         const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')).map(el=>el.getBoundingClientRect());
         return {groups:document.querySelectorAll('[data-app-mode-header-tabs]').length,
-          bounded:controls.every(r=>r.left>=0 && r.right<=safeRight+1 && r.top>=0 && r.bottom<=header.bottom+1),
+          bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth+1 && r.top>=0 && r.bottom<=header.bottom+1),
           overlap:controls.some((a,i)=>controls.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           minimum:Math.min(...controls.map(r=>r.width))};
       });
@@ -506,9 +522,16 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const surface=await electron.evaluate(({BrowserWindow})=>{
         const win=BrowserWindow.getAllWindows()[0];
         const view=win.contentView.children.find(child=>child.webContents?.getURL().endsWith('/controls.html'));
-        return {bounds:view.getBounds(),zoom:view.webContents.getZoomFactor(),width:win.getContentBounds().width};
+        const chat=win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'));
+        return {bounds:view.getBounds(),chatBounds:chat.getBounds(),zoom:view.webContents.getZoomFactor(),width:win.getContentBounds().width,height:win.getContentBounds().height};
       });
-      assert.ok(Math.abs(surface.bounds.x+surface.bounds.width-(surface.width-10*zoom))<=1);
+      // The app-owned title bar spans the full window width; the remote page
+      // view starts exactly beneath it, so the two surfaces never overlap.
+      assert.equal(surface.bounds.x,0);
+      assert.equal(surface.bounds.width,surface.width);
+      assert.ok(Math.abs(surface.bounds.height-48*zoom)<=1);
+      assert.equal(surface.chatBounds.y,surface.bounds.height);
+      assert.equal(surface.chatBounds.height,surface.height-surface.bounds.height);
       assert.equal(surface.zoom,zoom,'Controls and header must share a physical centerline at page zoom');
     }
     // Conversation headers expose five page actions plus three host actions.
@@ -530,33 +553,27 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     for(const zoom of [1,1.25,1.5])for(const width of [390,448,560,690,1024,1280]) {
       if(width/zoom<390)continue;
       await electron.evaluate(({BrowserWindow},{zoom,width})=>{
-        const win=BrowserWindow.getAllWindows()[0];win.setBounds({width,height:700});win.webContents.setZoomFactor(zoom);
+        const win=BrowserWindow.getAllWindows()[0];win.setBounds({width,height:700});
+        win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents.setZoomFactor(zoom);
       },{zoom,width});
       await page.waitForFunction(expected=>Math.abs(innerWidth-expected)<1,width/zoom);
       const layout=await page.evaluate(()=>{
         const header=document.querySelector('header'),bounds=header.getBoundingClientRect();
-        const safeRight=innerWidth-parseFloat(getComputedStyle(header).getPropertyValue('--app-mode-window-controls-width'));
-        const secondary='[data-app-mode-secondary-actions]';
-        const topRow=button=>!button.closest('[aria-hidden="true"],[data-app-mode-relocated-share],'+secondary);
-        const buttons=[...header.querySelectorAll('button')].filter(topRow);
+        const visible=button=>!button.closest('[aria-hidden="true"],[data-app-mode-relocated-share]')&&button.getClientRects().length;
+        const buttons=[...header.querySelectorAll('button')].filter(visible);
         const rects=buttons.map(button=>button.getBoundingClientRect());
-        const actions=header.querySelector('[aria-label="More options"]');
-        const newChat=header.querySelector('[aria-label="New chat"]');
-        const secondaryRects={actions:actions?.getBoundingClientRect(),newChat:newChat?.getBoundingClientRect()};
-        return {count:buttons.length,height:bounds.height,aligned:rects.every((rect,i)=>buttons[i].hasAttribute('data-app-mode-relocated-share')||Math.abs(rect.y+rect.height/2-24)<=0.5),
-          bounded:rects.every(rect=>rect.left>=0&&rect.right<=safeRight+1&&rect.top>=bounds.top&&rect.bottom<=bounds.bottom+1),
+        const actions=header.querySelector('[aria-label="More options"]')?.getBoundingClientRect();
+        const newChat=header.querySelector('[aria-label="New chat"]')?.getBoundingClientRect();
+        const pin=document.getElementById('chatgpt-app-mode-pin-toggle')?.getBoundingClientRect();
+        const siteRects=buttons.filter(button=>button.id!=='chatgpt-app-mode-pin-toggle').map(button=>button.getBoundingClientRect());
+        return {count:buttons.length,height:bounds.height,aligned:rects.every(rect=>Math.abs(rect.y+rect.height/2-20)<=1),
+          bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth+1&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
-          secondary:secondaryRects.actions&&secondaryRects.newChat?{
-            // Cluster sits below the 48px header; New Chat is rightmost and its
-            // right edge aligns with the native Close button's 10px inset.
-            row:Math.abs(secondaryRects.actions.top-bounds.bottom-6)<=2&&Math.abs(secondaryRects.newChat.top-bounds.bottom-6)<=2,
-            order:secondaryRects.actions.right<=secondaryRects.newChat.left+6,
-            rightEdge:Math.abs(secondaryRects.newChat.right-(innerWidth-10))<=2,
-            belowHeader:secondaryRects.newChat.top>=bounds.bottom,
-          }:null,
+          order:siteRects.every(rect=>rect.right<=(pin?.left??innerWidth)+6),
+          actionsRight:actions?actions.right>=innerWidth-(pin?.width??40)-30:true,
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
-      assert.deepEqual(layout,{count:2,height:48,aligned:true,bounded:true,overlap:false,secondary:{row:true,order:true,rightEdge:true,belowHeader:true},overflow:false},JSON.stringify({zoom,width,layout}));
+      assert.deepEqual(layout,{count:4,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,overflow:false},JSON.stringify({zoom,width,layout}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
@@ -566,11 +583,12 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       }
     }
     assert.equal(await page.evaluate(()=>window.syntheticHeaderActions.length),52);
-    await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
+    await chatEval('chat.setZoomFactor(1)');
     await page.evaluate(() => { const h = document.querySelector('header'); h.replaceWith(h.cloneNode(true)); history.pushState({}, '', '/c/synthetic-rerender'); });
     await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     // Initial maximized state and separate control ownership use a second
     // fixture window in the same process, with no production profile access.
     const originalId=await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].id);
@@ -619,14 +637,20 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       return {rejected,alive};
     },secondId);
     assert.deepEqual(navigationSecurity,{rejected:false,alive:true},'Navigation must not retain the ability to control windows');
-    const secondClosed=secondPage.waitForEvent('close');
     await secondControls('document.querySelector("[data-action=close]").click()').catch(()=>{});
-    await secondClosed;
+    // A WebContentsView page may not emit Playwright's close event when its
+    // owner window is destroyed; poll the window identity instead.
+    for(let attempt=0;attempt<50;attempt++) {
+      if(!await electron.evaluate(({BrowserWindow},id)=>Boolean(BrowserWindow.fromId(id)),secondId))break;
+      await secondPage.waitForTimeout(100);
+    }
+    assert.equal(await electron.evaluate(({BrowserWindow},id)=>Boolean(BrowserWindow.fromId(id)),secondId),false);
     assert.equal(await electron.evaluate(({BrowserWindow},id)=>Boolean(BrowserWindow.fromId(id)),originalId),true);
     await page.bringToFront();
     await electron.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
-      win.webContents.executeJavaScript("location.href='file:///C:/synthetic-blocked'");
+      win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'))
+        .webContents.executeJavaScript("location.href='file:///C:/synthetic-blocked'");
     });
     await page.waitForTimeout(250);
     assert.ok(isChatGptUrl(page.url()));

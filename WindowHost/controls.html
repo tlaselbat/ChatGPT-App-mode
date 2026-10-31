@@ -8,17 +8,21 @@
   <title>Window controls</title>
 </head>
 <body>
-  <div class="controls" role="group" aria-label="Window controls">
-    <button type="button" data-action="minimize" aria-label="Minimize" title="Minimize">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg>
-    </button>
-    <button type="button" data-action="maximize" aria-label="Maximize" title="Maximize">
-      <svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>
-      <svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4V2.5h8v8H12M2.5 5.5h8v8h-8z"/></svg>
-    </button>
-    <button type="button" data-action="close" aria-label="Close" title="Close">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>
-    </button>
+  <div class="titlebar">
+    <!-- The app-owned drag region fills every pixel not taken by a button. -->
+    <div class="titlebar-drag" aria-hidden="true"></div>
+    <div class="controls" role="group" aria-label="Window controls">
+      <button type="button" data-action="minimize" aria-label="Minimize" title="Minimize">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg>
+      </button>
+      <button type="button" data-action="maximize" aria-label="Maximize" title="Maximize">
+        <svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>
+        <svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4V2.5h8v8H12M2.5 5.5h8v8h-8z"/></svg>
+      </button>
+      <button type="button" data-action="close" aria-label="Close" title="Close">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
   </div>
   <script src="controls.js"></script>
 </body>
