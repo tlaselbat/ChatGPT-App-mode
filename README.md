@@ -59,7 +59,7 @@ npm run test:report
 npm run test:headed
 ```
 
-Run `npm run test:host` to exercise a disposable native window against an offline synthetic ChatGPT page and an isolated control server. It verifies native caption-button clicks, dragging, border resizing, narrow layout, pinning, profile separation, navigation restrictions, and renderer sandbox settings. Screenshots stay under `test-results/runs/`. It never opens the configured host profile.
+Run `npm run test:host` to exercise a disposable native window against an offline synthetic ChatGPT page and an isolated control server. It verifies custom window-control clicks, dragging, border resizing, narrow layout, pinning, profile separation, navigation restrictions, and renderer sandbox settings. Screenshots stay under `test-results/runs/`. It never opens the configured host profile.
 
 ## Live UI audit
 

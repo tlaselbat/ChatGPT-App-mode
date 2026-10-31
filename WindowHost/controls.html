@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+  <link rel="stylesheet" href="controls.css">
+  <title>Window controls</title>
+</head>
+<body>
+  <div class="controls" role="group" aria-label="Window controls">
+    <button type="button" data-action="minimize" aria-label="Minimize" title="Minimize">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg>
+    </button>
+    <button type="button" data-action="maximize" aria-label="Maximize" title="Maximize">
+      <svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>
+      <svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4V2.5h8v8H12M2.5 5.5h8v8h-8z"/></svg>
+    </button>
+    <button type="button" data-action="close" aria-label="Close" title="Close">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+    </button>
+  </div>
+  <script src="controls.js"></script>
+</body>
+</html>

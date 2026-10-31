@@ -30,6 +30,14 @@
       next.get(element).add(attribute);
     }
     if (header) {
+      // A native hit-test exclusion keeps the separate controls view clickable
+      // even though the surrounding page header is a draggable region.
+      if (!header.querySelector(':scope > [data-app-mode-controls-hit-area]')) {
+        const hitArea = document.createElement('span');
+        hitArea.setAttribute('data-app-mode-controls-hit-area', '');
+        hitArea.setAttribute('aria-hidden', 'true');
+        header.append(hitArea);
+      }
       mark(header, 'data-app-mode-header-layout');
       let tabs = [...header.querySelectorAll('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs]')].find(isModeSwitch);
       // The signed-in site's mode switch is a relative two-button grid inside
@@ -71,7 +79,7 @@
         }
       }
       // The site's own top rows (sidebar strip, conversation header) render
-      // slightly taller than the 48px caption overlay, drifting their buttons
+      // slightly taller than the 48px header strip, drifting their buttons
       // off the shared centerline. Cap every control-bearing row in the band.
       const probes = new Set();
       for (let x = 24; x < innerWidth; x += 96) for (const element of document.elementsFromPoint(x, 2)) probes.add(element);
@@ -130,6 +138,5 @@
   });
   window.addEventListener('resize', schedule);
   window.addEventListener('scroll', schedule, { capture: true, passive: true });
-  navigator.windowControlsOverlay?.addEventListener('geometrychange', schedule);
   layout();
 })();

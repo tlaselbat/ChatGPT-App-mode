@@ -1,0 +1,46 @@
+/* Mirrors the shared header control tokens; the host supplies theme values. */
+:root {
+  --app-mode-control-color: #ddd;
+  --app-mode-control-border: color-mix(in srgb, currentColor 24%, transparent);
+  --app-mode-control-bg: color-mix(in srgb, currentColor 6%, transparent);
+  --app-mode-control-hover: color-mix(in srgb, currentColor 12%, transparent);
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; background: transparent; }
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 48px;
+  -webkit-app-region: no-drag;
+}
+button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--app-mode-control-border);
+  border-radius: 8px;
+  color: var(--app-mode-control-color);
+  background: var(--app-mode-control-bg);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  -webkit-app-region: no-drag;
+}
+body[data-compact="true"] button { width: 28px; flex-basis: 28px; }
+button:hover:not(:disabled) { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, #4f5d7a); }
+button:active:not(:disabled) { background: var(--app-mode-control-pressed, #3a4050); }
+button[data-action="maximize"]:hover:not(:disabled) { border-color: color-mix(in srgb, #3b82f6 50%, currentColor); }
+button[data-action="close"] { border-color: #ef4444; background: color-mix(in srgb, #ef4444 5%, var(--app-mode-control-bg)); }
+button[data-action="close"] svg { color: #f87171; }
+button[data-action="close"]:hover:not(:disabled) { border-color: #ef4444; background: color-mix(in srgb, #ef4444 16%, transparent); }
+button[data-action="close"]:active:not(:disabled) { background: color-mix(in srgb, #ef4444 26%, transparent); }
+button:focus-visible { outline: 2px solid var(--app-mode-control-color); outline-offset: -3px; }
+button:disabled { opacity: .4; cursor: default; }
+svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.restore-icon, button[data-restored="true"] .maximize-icon { display: none; }
+button[data-restored="true"] .restore-icon { display: block; }
+
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }

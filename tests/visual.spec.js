@@ -184,6 +184,166 @@ test('a stale pin refresh cannot replace the accepted window binding', async ({ 
   expect(Object.fromEntries(new URLSearchParams(activityBodies[0]))).toMatchObject({ action: 'activity', handle: 'fresh-handle', processId: '222' });
 });
 
+const shareSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V3m-4 4 4-4 4 4M5 13v7h14v-7"/></svg>';
+const shareButton = (attrs = 'aria-label="Share conversation"') => `<button id="share-action" ${attrs}>${shareSvg}Share</button>`;
+const shareTriggerVariants = {
+  // Labeled popup/menu/dialog triggers, aria hints omitted or idiosyncratic.
+  menu: `${shareButton()}<button id="conversation-options" aria-label="Conversation options" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  dialog: `${shareButton('aria-label="Share chat"')}<button id="conversation-options" aria-label="Conversation options" aria-haspopup="dialog" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  'no-hint': `${shareButton()}<button id="conversation-options" aria-label="Conversation options" aria-expanded="false">···</button>`,
+  unlabeled: `${shareButton()}<button id="conversation-options" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-menu">···</button>`,
+  // Test IDs on wrapper elements around unlabeled controls, each in its own
+  // wrapper, matching sites that mount tooltip/slot containers per action.
+  'wrapped-testid': `<div class="hdr-slot" data-testid="share-chat-button">${shareButton('')}</div><div class="hdr-slot" data-testid="conversation-options-button"><button id="conversation-options">${shareSvg.replace('fill="none" stroke="currentColor"', 'fill="currentColor"').replace('stroke-width="1.5"', '')}</button></div>`,
+  // Non-button controls (Radix-style div[role=button]) beside a real Share.
+  'role-button': `${shareButton()}<div id="conversation-options" role="button" tabindex="0" aria-label="Conversation options" aria-haspopup="menu">···</div>`,
+  // An unlabeled ellipsis trailing Share inside a separate wrapper element.
+  'unlabeled-after': `<div class="hdr-slot">${shareButton()}</div><div class="hdr-slot"><button id="conversation-options" aria-expanded="false">${shareSvg.replace('fill="none" stroke="currentColor"', 'fill="currentColor"').replace('stroke-width="1.5"', '')}</button></div>`,
+};
+
+for (const popup of Object.keys(shareTriggerVariants)) test(`Share moves into its conversation menu and survives keyboard use and navigation (${popup} trigger)`, async ({ page }) => {
+  const html = fixture.replace(/<div class="header-actions">[\s\S]*?<\/div><\/header>/, `<div class="header-actions">${shareTriggerVariants[popup]}</div></header>`);
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/share-fixture');
+  await page.evaluate(() => {
+    window.syntheticShareCalls = 0;
+    document.addEventListener('click', event => {
+      const button = event.target.closest('button, [role="button"], a[href]');
+      if (button?.id === 'conversation-options') {
+        const old = document.getElementById('conversation-menu');
+        button.setAttribute('aria-expanded', String(!old));
+        if (old) { old.remove(); button.focus(); return; }
+        const menu = document.createElement('div');
+        menu.id = 'conversation-menu'; menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-labelledby', button.id);
+        menu.style.cssText = 'position:fixed;right:20px;top:60px;width:220px;padding:6px;color:#ddd;background:#202329;border-radius:12px;z-index:100';
+        menu.innerHTML = '<button role="menuitem">Rename</button><button role="menuitem">Archive</button>';
+        document.body.append(menu);
+        menu.querySelector('button').focus();
+      } else if (button?.id === 'share-action') {
+        window.syntheticShareCalls++;
+        const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog');
+        dialog.textContent = 'Synthetic share dialog'; document.body.append(dialog);
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.getElementById('conversation-menu')) document.getElementById('conversation-options').click();
+    });
+  });
+  const share = page.locator('header button').filter({ hasText: /^Share$/ });
+  const trigger = page.locator('#conversation-options');
+  const entry = page.locator('[data-app-mode-share-menu-item]');
+  await expect(share).toBeHidden();
+  await trigger.click();
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toHaveText('Share');
+  fs.mkdirSync(path.join(root, 'test-results', 'header-review'), { recursive: true });
+  await page.getByRole('menu').screenshot({ path: path.join(root, 'test-results', 'header-review', 'share-menu.png') });
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(entry).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  expect(await page.evaluate(() => window.syntheticShareCalls)).toBe(1);
+  await page.getByRole('dialog').evaluate(node => node.remove());
+  await trigger.click();
+  await expect(entry).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  // React-style replacement plus client navigation must use the new native action.
+  await page.evaluate(() => {
+    history.pushState({}, '', '/c/share-fixture-second');
+    const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true));
+  });
+  await expect(share).toBeHidden();
+  await trigger.click();
+  await expect(entry).toHaveCount(1);
+  await entry.click();
+  await expect.poll(() => page.evaluate(() => window.syntheticShareCalls)).toBe(2);
+  await page.getByRole('dialog').evaluate(node => node.remove());
+  // Disabled native actions and menus unrelated to this conversation stay safe.
+  await share.evaluate(node => { node.disabled = true; });
+  await trigger.click();
+  await expect(entry).toHaveAttribute('aria-disabled', 'true');
+  await entry.dispatchEvent('click');
+  expect(await page.evaluate(() => window.syntheticShareCalls)).toBe(2);
+  await page.keyboard.press('Escape');
+  await share.evaluate(node => { node.disabled = false; });
+  await trigger.click();
+  await page.locator('#conversation-menu').evaluate(menu => {
+    const native = document.createElement('button'); native.setAttribute('role', 'menuitem'); native.textContent = 'Share'; menu.append(native);
+  });
+  await expect(entry).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await trigger.evaluate(node => node.remove());
+  await expect(share).toBeVisible();
+  await page.evaluate(() => {
+    const unrelated = document.createElement('div'); unrelated.setAttribute('role', 'menu'); unrelated.innerHTML = '<button role="menuitem">Unrelated action</button>'; document.body.append(unrelated);
+  });
+  await expect(entry).toHaveCount(0);
+});
+
+test('two-row header keeps only sidebar left and parks conversation actions right-aligned below', async ({ page }) => {
+  const html = fixture.replace('<span class="header-title">',
+    '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button>' +
+    '<button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/c/two-row-fixture');
+  const header = page.locator('header');
+  const sidebar = header.locator('[aria-label="Sidebar"]');
+  const newChat = header.locator('[aria-label="New chat"]');
+  const options = header.locator('[aria-label="Conversation options"]');
+  const row = page.locator('#chatgpt-app-mode-secondary-row');
+  await expect(row).toHaveCount(1);
+  const geometry = await page.evaluate(() => {
+    const headerBox = document.querySelector('header').getBoundingClientRect();
+    const box = element => element.getBoundingClientRect();
+    return {
+      headerBottom: headerBox.bottom,
+      sidebar: box(document.querySelector('[aria-label="Sidebar"]')),
+      newChat: box(document.querySelector('[aria-label="New chat"]')),
+      options: box(document.querySelector('[aria-label="Conversation options"]')),
+      pin: box(document.getElementById('chatgpt-app-mode-pin-toggle')),
+      row: box(document.getElementById('chatgpt-app-mode-secondary-row')),
+      innerWidth,
+    };
+  });
+  // Top row: sidebar stays inside the header band, centered on its midline;
+  // pin is the last top-right control.
+  const headerMid = geometry.headerBottom - (await header.evaluate(el => el.getBoundingClientRect().height)) / 2;
+  expect(Math.abs(geometry.sidebar.y + geometry.sidebar.height / 2 - headerMid)).toBeLessThanOrEqual(2);
+  expect(geometry.pin.bottom).toBeLessThanOrEqual(geometry.headerBottom + 1);
+  // Second row: right-aligned cluster below the header; New Chat rightmost
+  // with its right edge on the 10px native-controls inset line.
+  expect(geometry.options.top).toBeGreaterThanOrEqual(geometry.headerBottom);
+  expect(Math.abs(geometry.newChat.right - (geometry.innerWidth - 10))).toBeLessThanOrEqual(2);
+  expect(geometry.options.right).toBeLessThanOrEqual(geometry.newChat.left + 6);
+  expect(geometry.row.top).toBeGreaterThanOrEqual(geometry.headerBottom - 0.5);
+  // Original handlers still fire exactly once after relocation.
+  await page.evaluate(() => {
+    window.actionLog = [];
+    for (const button of document.querySelectorAll('header button')) {
+      button.addEventListener('click', () => window.actionLog.push(button.getAttribute('aria-label') || button.id));
+    }
+  });
+  await newChat.click();
+  await options.click();
+  await expect.poll(() => page.evaluate(() => window.actionLog)).toEqual(['New chat', 'Conversation options']);
+  // Re-render: the cluster must re-locate onto the replaced nodes once.
+  await page.evaluate(() => {
+    const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true));
+  });
+  await expect(page.locator('header [data-app-mode-secondary-actions]')).toHaveCount(2);
+  // Removing the header releases every fixed marker and the spacer row.
+  await page.evaluate(() => document.querySelector('header').remove());
+  await expect(row).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-secondary-actions]')).toHaveCount(0);
+});
+
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {
   const sessionPosts = [];
   let pinEnabled = false;
@@ -217,25 +377,25 @@ test('extension styling, control, navigation and re-render in offline ChatGPT fi
   await expect(page.locator('#chatgpt-app-mode-pin-toggle')).toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+P');
   await expect(page).toHaveTitle('ChatGPT');
   await expect(page.locator('body')).toHaveClass(/faux-chatgpt-app-mode/);
-  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'blur(16px)');
-  await expect(page.locator('header')).toHaveCSS('background-color', /0\.08/);
-  await expect(page).toHaveScreenshot('fixture-desktop.png');
+  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
+  await expect(page.locator('header')).toHaveCSS('background-color', 'rgb(244, 245, 247)');
+  await expect.soft(page).toHaveScreenshot('fixture-desktop.png');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page).toHaveScreenshot('fixture-narrow.png');
+  await expect.soft(page).toHaveScreenshot('fixture-narrow.png');
   await page.setViewportSize({ width: 590, height: 400 });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'blur(16px)');
+  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
   // Custom site themes can supply tokens and color-scheme without a .dark class.
   await page.evaluate(() => {
     document.documentElement.classList.remove('dark');
     document.documentElement.style.cssText = 'color-scheme: dark; --main-surface-primary: #1e1e2e; --main-surface-secondary: #363648; --main-surface-tertiary: #45455a; --text-primary: #cdd6f4; --border-light: #58586e;';
   });
-  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'blur(16px)');
+  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
   await expect(page.locator('#chatgpt-app-mode-pin-toggle')).toHaveCSS('color', 'rgb(205, 214, 244)');
-  await expect(page.locator('header')).toHaveScreenshot('fixture-dark-header.png');
+  await expect.soft(page.locator('header')).toHaveScreenshot('fixture-dark-header.png');
   await page.evaluate(() => document.documentElement.removeAttribute('style'));
-  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'blur(16px)');
+  await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('aside')).toBeHidden();
   const overlapsMessage = await page.evaluate(() => {
@@ -279,12 +439,12 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
   const pin = page.locator('#chatgpt-app-mode-pin-toggle');
   await expect(page.locator('#page-header #chatgpt-app-mode-pin-toggle')).toBeVisible();
   await expect(pin).toHaveCSS('color', 'rgb(205, 214, 244)');
-  await expect(page.locator('#page-header')).toHaveCSS('backdrop-filter', 'blur(16px)');
-  await expect(page.locator('#page-header')).toHaveScreenshot('fixture-home-header.png');
+  await expect(page.locator('#page-header')).toHaveCSS('backdrop-filter', 'none');
+  await expect.soft(page.locator('#page-header')).toHaveScreenshot('fixture-home-header.png');
   await page.evaluate(() => document.getElementById('page-header').remove());
   await expect(page.locator('main > #chatgpt-app-mode-toolbar-fallback')).toBeVisible();
   await expect(pin).toBeInViewport();
-  await expect(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveScreenshot('fixture-home-fallback.png');
+  await expect.soft(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveScreenshot('fixture-home-fallback.png');
   await page.evaluate(() => {
     history.pushState({}, '', '/c/synthetic-from-home');
     const header = document.createElement('header');
