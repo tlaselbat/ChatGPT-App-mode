@@ -157,6 +157,62 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   vertical-align: middle;
 }
 
+/* Thin separator between the pin and the native Minimize caption button. */
+.chatgpt-app-mode-toolbar::after {
+  content: "";
+  flex: 0 0 1px;
+  width: 1px;
+  height: 18px;
+  margin-inline-start: 4px;
+  margin-inline-end: 2px;
+  background: var(--app-mode-control-border);
+}
+
+/* Second row: a slim transparent spacer keeps conversation content clear of
+   the right-aligned action cluster. The cluster nodes stay in the site's
+   header tree and are only visually moved, so menus anchor correctly. */
+#chatgpt-app-mode-secondary-row {
+  position: sticky;
+  top: var(--app-mode-header-bottom, 48px);
+  z-index: 29;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 40px;
+  padding: 4px 10px 8px;
+  box-sizing: border-box;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+/* Relocate with a transform rather than fixed positioning: site wrappers
+   create containing blocks and stacking contexts that trap fixed elements
+   below page content, while a transform keeps the element in its natural
+   header layer. */
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] {
+  transform: translate3d(var(--app-mode-secondary-dx, 0px), var(--app-mode-secondary-dy, 0px), 0) !important;
+  position: relative;
+  z-index: 30;
+  visibility: visible;
+  -webkit-app-region: no-drag;
+}
+
+/* Relocated controls leave their wrapper shells behind; hide any shell whose
+   interactive descendants all moved or are hidden. visibility (not display)
+   preserves layout, and the relocated control overrides it to stay visible. */
+body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
+  visibility: hidden;
+}
+
+/* Uniform hit area for the compact cluster: the site sizes the options
+   trigger wider than the icon buttons, so normalize every relocated control
+   to the 32px square the rest of the row uses. */
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is(button, [role="button"], a),
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a) {
+  inline-size: 32px;
+  padding-inline: 0;
+}
+
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(button:not(.chatgpt-app-mode-pin-button)) .chatgpt-app-mode-toolbar {
   margin-inline-start: 0;

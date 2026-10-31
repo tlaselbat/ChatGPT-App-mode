@@ -22,6 +22,7 @@
   let activityRetryAt = 0;
   let relocatedShare = null;
   let shareMenuTrigger = null;
+  let detectedTrigger = null;
 
   function actionGroupOf(element, header) {
     // Buttons in the site's action strip may each sit in their own wrapper
@@ -87,6 +88,7 @@
           candidate.getAttribute('aria-expanded') !== null || candidate.id && document.querySelector(`[aria-labelledby~="${candidate.id}"]`)));
     }
     if (relocatedShare && (relocatedShare !== share || !trigger)) relocatedShare.removeAttribute('data-app-mode-relocated-share');
+    detectedTrigger = trigger || null;
     relocatedShare = trigger && share ? share : null;
     shareMenuTrigger = relocatedShare ? trigger : null;
     if (relocatedShare && !relocatedShare.hasAttribute('data-app-mode-relocated-share')) relocatedShare.setAttribute('data-app-mode-relocated-share', '');
@@ -128,6 +130,157 @@
     if (item.getAttribute('aria-disabled') !== String(disabled)) item.setAttribute('aria-disabled', String(disabled));
   }
 
+  // Two-row header: conversation actions and New Chat render in a compact
+  // right-aligned band below the header. The original nodes stay in the site
+  // tree and are only visually moved with fixed positioning, so React-owned
+  // handlers and menu anchoring keep working. The transparent spacer row only
+  // reserves clearance; controls themselves never get reparented.
+  function clearSecondaryMarks() {
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
+      element.removeAttribute('data-app-mode-secondary-actions');
+      element.style.removeProperty('--app-mode-secondary-dx');
+      element.style.removeProperty('--app-mode-secondary-dy');
+    }
+    for (const node of document.querySelectorAll('[data-app-mode-secondary-clip]')) {
+      node.removeAttribute('data-app-mode-secondary-clip');
+      node.style.removeProperty('contain');
+      node.style.removeProperty('overflow');
+    }
+    for (const node of document.querySelectorAll('[data-app-mode-secondary-slot]')) {
+      node.removeAttribute('data-app-mode-secondary-slot');
+    }
+  }
+
+  function ensureSecondaryRow() {
+    const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+    let row = document.getElementById('chatgpt-app-mode-secondary-row');
+    if (!header) {
+      row?.remove();
+      clearSecondaryMarks();
+      return;
+    }
+    const controls = [...header.querySelectorAll('button, [role="button"], a[href]')]
+      .filter(element => !element.closest('[role="menu"], [role="dialog"], [aria-hidden="true"], [inert]'));
+    const ourToolbar = header.querySelector('.chatgpt-app-mode-toolbar');
+    const sidebar = controls.find(element => element !== shareMenuTrigger &&
+      (hasTestId(element, ['open-sidebar-button', 'close-sidebar-button']) || /sidebar/i.test(accessibleName(element))));
+    // The second row holds the header's right-side action cluster: the options
+    // trigger, any sibling controls (list view, etc.) and New Chat. Find the
+    // deepest shared ancestor seeded from New Chat (or the detected options
+    // trigger) that wraps the cluster without swallowing the sidebar control
+    // or our injected toolbar. Seeding does not depend on a Share button being
+    // present, so the cluster also moves on pages without sharing.
+    const isNewChat = element => element !== shareMenuTrigger && element !== sidebar &&
+      (hasTestId(element, ['create-new-chat-button', 'new-chat-button']) || /^new (chat|conversation)$/i.test(accessibleName(element)) ||
+        /^new (chat|conversation)$/i.test(element.textContent.trim()));
+    const newChats = controls.filter(isNewChat);
+    const newChat = newChats[0] || null;
+    // Right-half controls make up the actions cluster; every New Chat button
+    // joins it wherever the site places it. A centered mode-switch strip
+    // spans the midpoint and stays put for header.js.
+    const headerBox = header.getBoundingClientRect();
+    const headerMid = headerBox.left + headerBox.width / 2;
+    const secondary = controls.filter(element => element !== sidebar &&
+      (isNewChat(element) || element.getBoundingClientRect().left > headerMid) &&
+      !element.hasAttribute('data-app-mode-relocated-share') &&
+      !element.closest('[role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs], [data-app-mode-header-mode-branch]') &&
+      !(ourToolbar && ourToolbar.contains(element)));
+    let group = null;
+    const seed = (newChat?.isConnected && newChat) || (detectedTrigger?.isConnected && detectedTrigger) || null;
+    // Without a conversation-actions anchor (options trigger or New Chat),
+    // other headers keep their native single-row layout.
+    if (!seed) {
+      row?.remove();
+      clearSecondaryMarks();
+      return;
+    }
+    for (let node = seed.parentElement; node && node !== header && header.contains(node); node = node.parentElement) {
+      if (sidebar && node.contains(sidebar)) break;
+      if (ourToolbar && node.contains(ourToolbar)) break;
+      if (secondary.filter(element => node.contains(element)).length >= Math.min(2, secondary.length)) group = node;
+    }
+    const marked = new Set(group ? [group] : secondary);
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-actions]')) {
+      if (!marked.has(element)) element.removeAttribute('data-app-mode-secondary-actions');
+    }
+    if (!marked.size) { row?.remove(); return; }
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'chatgpt-app-mode-secondary-row';
+    }
+    if (row.parentElement !== header.parentElement || row.previousElementSibling !== header) header.after(row);
+    // Right-align the cluster under the caption-controls inset. New Chat
+    // controls stay rightmost; other controls keep their visual left-to-right
+    // order. Some site ancestors create a fixed-position containing block
+    // (transform/filter), so each element's containing-block origin is
+    // measured from its rendered rect and left/top are written as deltas.
+    const byLeft = (a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left;
+    const items = [...marked].filter(element => !isNewChat(element)).sort(byLeft)
+      .concat([...marked].filter(isNewChat).sort(byLeft));
+    if (!items.length) items.push(...marked);
+    const rowTop = Math.round(headerBox.bottom) + 6;
+    let nextRight = innerWidth - 10;
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const element = items[index];
+      if (!element.hasAttribute('data-app-mode-secondary-actions')) element.setAttribute('data-app-mode-secondary-actions', '');
+      // Site wrappers may paint-clip their subtree (contain: paint or
+      // overflow: hidden); a translated element would be cut off below the
+      // header. Downgrade only those ancestors, keeping layout containment.
+      for (let node = element.parentElement; node && node !== header; node = node.parentElement) {
+        const nodeStyle = getComputedStyle(node);
+        let clipped = false;
+        if (/(^| )paint( |$)|^strict$|^content$/.test(nodeStyle.contain) && node.style.contain !== 'layout') {
+          node.style.setProperty('contain', 'layout', 'important');
+          clipped = true;
+        }
+        if (nodeStyle.overflow === 'hidden' && node.style.overflow !== 'visible') {
+          node.style.setProperty('overflow', 'visible', 'important');
+          clipped = true;
+        }
+        if (clipped && !node.hasAttribute('data-app-mode-secondary-clip')) node.setAttribute('data-app-mode-secondary-clip', '');
+      }
+      const rect = element.getBoundingClientRect();
+      // Measure the untransformed position so the delta converges instead of
+      // snapping back to the origin on every observer pass.
+      const matrix = /matrix\(([^)]+)\)/.exec(getComputedStyle(element).transform);
+      const parts = matrix ? matrix[1].split(',').map(Number) : [];
+      const naturalLeft = rect.left - (parts[4] || 0);
+      const naturalTop = rect.top - (parts[5] || 0);
+      const dxValue = `${Math.round(nextRight - naturalLeft - rect.width)}px`;
+      const dyValue = `${Math.round(rowTop - naturalTop)}px`;
+      if (element.style.getPropertyValue('--app-mode-secondary-dx') !== dxValue)
+        element.style.setProperty('--app-mode-secondary-dx', dxValue);
+      if (element.style.getPropertyValue('--app-mode-secondary-dy') !== dyValue)
+        element.style.setProperty('--app-mode-secondary-dy', dyValue);
+      nextRight -= rect.width + 6;
+    }
+    // Transforms keep the original boxes in layout, so vacated wrapper shells
+    // still paint empty pills where the buttons used to sit. Hide each shell
+    // whose visible interactive descendants all relocated (or are hidden);
+    // the moved controls keep visibility:visible through the row CSS.
+    const isMoved = element => element.closest('[data-app-mode-secondary-actions]') ||
+      element.hasAttribute('data-app-mode-relocated-share') ||
+      element.getBoundingClientRect().width === 0;
+    const slots = new Set();
+    for (const element of items) {
+      for (let node = element.parentElement; node && node !== header; node = node.parentElement) {
+        const stranded = [...node.querySelectorAll('button, [role="button"], a[href]')]
+          .some(control => !control.closest('[aria-hidden="true"], [inert]') && !isMoved(control));
+        if (stranded) break;
+        slots.add(node);
+      }
+    }
+    for (const element of document.querySelectorAll('[data-app-mode-secondary-slot]')) {
+      if (!slots.has(element)) element.removeAttribute('data-app-mode-secondary-slot');
+    }
+    for (const element of slots) {
+      if (!element.hasAttribute('data-app-mode-secondary-slot')) element.setAttribute('data-app-mode-secondary-slot', '');
+    }
+    const bottom = `${Math.round(header.getBoundingClientRect().bottom)}px`;
+    if (document.body.style.getPropertyValue('--app-mode-header-bottom') !== bottom)
+      document.body.style.setProperty('--app-mode-header-bottom', bottom);
+  }
+
   function markBody() {
     if (document.body && !document.body.classList.contains(markerClass)) {
       document.body.classList.add(markerClass);
@@ -163,6 +316,7 @@
     setTitle();
     ensurePinButton();
     ensureShareMenu();
+    ensureSecondaryRow();
   }
 
   function getCurrentChatId() {
@@ -462,6 +616,7 @@
     markBody();
     ensurePinButton();
     ensureShareMenu();
+    ensureSecondaryRow();
     reportCurrentSession();
     setTitle();
   });
