@@ -229,11 +229,16 @@ body.faux-chatgpt-app-mode [data-app-mode-secondary-slot] {
 
 /* Uniform hit area for the compact cluster: the site sizes the options
    trigger wider than the icon buttons, so normalize every relocated control
-   to the 32px square the rest of the row uses. */
+   to the 32px square the rest of the row uses. Grouped controls (the
+   Chat/Work mode strip) keep their own sizing. */
 body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is(button, [role="button"], a),
 body.faux-chatgpt-app-mode [data-app-mode-secondary-actions] :is(button, [role="button"], a):not([role="tab"], [role="radio"]) {
   inline-size: 32px;
   padding-inline: 0;
+}
+body.faux-chatgpt-app-mode [data-app-mode-secondary-actions]:is([role="group"], [role="tablist"], [role="radiogroup"], [data-app-mode-header-tabs]) :is(button, [role="button"], a) {
+  inline-size: auto;
+  padding-inline: revert;
 }
 
 /* Keep the pin beside existing actions; use auto spacing only for a bare header. */
