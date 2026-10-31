@@ -21,13 +21,22 @@ body.faux-chatgpt-app-mode [class~="min-[768px]:grid"] { display: grid !importan
 body.faux-chatgpt-app-mode [class~="min-[768px]:block"] { display: block !important; }
 body.faux-chatgpt-app-mode [class~="min-[768px]:inline-block"] { display: inline-block !important; }
 
-/* Keep the desktop left panel visible and sized by its content at narrow
-   window widths; the site's responsive module collapses it to width:0 even
-   when the desktop DOM renders. */
+/* Keep the desktop left panel mounted at narrow window widths; the site's
+   responsive module sets display:none even when the desktop DOM renders.
+   Its own --app-shell-left-panel-width drives open/closed sizing, so only
+   restore display and leave width to the site. */
+body.faux-chatgpt-app-mode .app-shell-left-panel { display: flex !important; }
+
+/* The site's mobile branch writes --app-shell-left-panel-width: 0 regardless
+   of open/closed state, which collapses the desktop panel that the
+   matchMedia override renders. Drive the var from the sidebar toggle's own
+   expanded state instead: rail width when closed, panel width (capped to
+   the window) when open. */
 body.faux-chatgpt-app-mode .app-shell-left-panel {
-  display: flex !important;
-  width: auto !important;
-  flex: 0 0 auto !important;
+  --app-shell-left-panel-width: 52px !important;
+}
+body.faux-chatgpt-app-mode:has([aria-controls="app-shell-sidebar"][aria-expanded="true"]) .app-shell-left-panel {
+  --app-shell-left-panel-width: min(340px, 62vw) !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {
   display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px;
