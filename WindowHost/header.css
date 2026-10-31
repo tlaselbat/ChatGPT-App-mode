@@ -132,12 +132,18 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-t
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not([data-app-mode-header-tab-path]) {
   flex-shrink: 0;
 }
+/* Non-control children of the row (the conversation title, labels) keep
+   compact title typography, truncate instead of crowding controls, and
+   never inherit icon-button or mode-tab sizing. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not(:has(button)):not(button):not(.chatgpt-app-mode-toolbar):not([data-app-mode-header-tabs]) {
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolbar {
   margin-inline-start: auto;

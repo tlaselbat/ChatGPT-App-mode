@@ -131,17 +131,26 @@
         }
       }
       // Fallback containment: a fixed/absolute layer mounted directly inside
-      // the managed header (the site mounts its mode switch this way) must
-      // participate in the row even when its controls go unrecognized —
-      // otherwise it renders clipped at the row edge with decorative
-      // backdrops doubling as second outlines.
+      // the managed header participates in the row — but only when its
+      // interactive descendants are exactly the recognized two-state switch.
+      // A layer that also carries other header actions must stay fully
+      // native: marking it centered would displace them, and alternating
+      // between marking the layer and an inner grid is what made the layout
+      // unstable across reconciler passes.
       for (const child of header.children) {
         if (child.hasAttribute('data-app-mode-header-tab-path') || child.classList.contains('chatgpt-app-mode-toolbar')) continue;
         const style = getComputedStyle(child);
         if (!['fixed', 'absolute'].includes(style.position)) continue;
-        if (!child.querySelector('button, a, [role="button"], [role="tab"], [role="radio"]')) continue;
-        mark(child, 'data-app-mode-header-tab-path');
-        mark(child, 'data-app-mode-header-mode-branch');
+        const candidates = switchButtons(child).filter(isSwitchControl);
+        const interactive = [...child.querySelectorAll('button, a[href], [role="button"], [role="tab"], [role="radio"]')].filter(visible);
+        if (!tabs && interactive.length === 2 && candidates.length === 2) {
+          const states = candidates.map(switchState);
+          if ((states.includes('true') || states.includes('active')) && (states.includes('false') || states.includes('inactive'))) {
+            mark(child, 'data-app-mode-header-tabs');
+            mark(child, 'data-app-mode-header-tab-path');
+            mark(child, 'data-app-mode-header-mode-branch');
+          }
+        }
       }
     }
     for (const [element, attributes] of marked) {
