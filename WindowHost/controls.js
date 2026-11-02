@@ -13,6 +13,7 @@
   bridge.onState((state) => {
     if (!state || typeof state !== 'object') return;
     document.body.dataset.compact = String(Boolean(state.compact));
+    document.querySelector('[data-action="pin"]')?.setAttribute('aria-pressed', String(Boolean(state.pinned)));
     maximized = Boolean(state.maximized);
     maximizeButton.dataset.restored = String(maximized);
     const label = maximized ? 'Restore' : 'Maximize';

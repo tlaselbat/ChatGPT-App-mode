@@ -13,6 +13,12 @@
         "styles/chatgpt-overrides.css"
       ],
       "js": [
+        "scripts/00-runtime.js",
+        "scripts/10-sidebar.js",
+        "scripts/20-home.js",
+        "scripts/30-share.js",
+        "scripts/40-lifecycle.js",
+        "scripts/50-pin.js",
         "scripts/chatgpt-overrides.js"
       ],
       "run_at": "document_idle"

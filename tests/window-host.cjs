@@ -185,7 +185,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       timeout: 25000,
     });
     const page = await remoteWindow(electron);
-    await page.waitForSelector('#chatgpt-app-mode-pin-toggle');
+    await page.waitForSelector('#chatgpt-app-mode-pin-toggle', { state: 'attached' });
     // The remote page runs in its own WebContentsView below the app-owned
     // title bar; win.webContents is the unused placeholder. Select the child
     // view whose document is the synthetic ChatGPT fixture.
@@ -223,7 +223,18 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => {
       const rect=button.getBoundingClientRect(), style=getComputedStyle(button);
       return {width:rect.width,height:rect.height,center:rect.y+rect.height/2,radius:style.borderRadius,drag:style.webkitAppRegion};
-    })`), Array(3).fill({width:32,height:28,center:24,radius:'8px',drag:'no-drag'}));
+    })`), Array(4).fill({width:32,height:28,center:20,radius:'8px',drag:'no-drag'}));
+    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => ({
+      label:button.getAttribute('aria-label'),tabIndex:button.tabIndex,
+    }))`), [
+      {label:'Always on top',tabIndex:0},{label:'Minimize',tabIndex:0},{label:'Maximize',tabIndex:0},{label:'Close',tabIndex:0},
+    ]);
+    assert.deepEqual(await controlsEval(`(() => {
+      const button=document.querySelector('[data-action=minimize]');
+      button.focus({focusVisible:true});
+      const style=getComputedStyle(button);
+      return {focused:document.activeElement===button,outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth};
+    })()`), {focused:true,outlineStyle:'solid',outlineWidth:'2px'});
     await waitControlLabel('Maximize');
     assert.notEqual(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
     const security = await electron.evaluate(({ BrowserWindow }, modulePath) => {
@@ -258,9 +269,9 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('location.href'),originalControlsUrl,'Trusted controls must block remote navigation');
     assert.equal(await controlsEval("window.appModeControls.action('restore')"),true,'Blocked navigation must leave trusted controls functional');
     assert.equal(await page.evaluate(() => navigator.windowControlsOverlay?.visible || false), false);
-    // The drag region lives in the app-owned title bar view above the page;
-    // the site header itself is an ordinary no-drag action row.
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    // The unified bar: the site's subheader is the drag surface; interactive
+    // descendants opt out, and the host strip still drags on its left edge.
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     assert.equal(await page.locator('[aria-label="Share"]').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
     const geometry = await page.evaluate(() => {
@@ -294,12 +305,20 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.equal(result.status, 0, result.stdout + result.stderr);
     };
     await native('Activate');
-    await page.locator('#chatgpt-app-mode-pin-toggle').click();
-    await page.waitForFunction(() => document.getElementById('chatgpt-app-mode-pin-toggle')?.getAttribute('aria-pressed') === 'true', null, { timeout: 7000 }).catch(async error => {
-      throw new Error(`${error.message}; pin status: ${await page.locator('#chatgpt-app-mode-pin-toggle').getAttribute('title')}`);
-    });
-    await page.locator('#chatgpt-app-mode-pin-toggle').click();
-    await page.waitForFunction(() => document.getElementById('chatgpt-app-mode-pin-toggle')?.getAttribute('aria-pressed') === 'false');
+    assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
+    assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').isVisible(), false);
+    assert.equal(await controlsEval(`Array.from(document.querySelectorAll('[data-action="pin"]')).filter(button => {
+      const box = button.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && getComputedStyle(button).visibility === 'visible';
+    }).length`), 1);
+    // Always-on-Top is owned by the host caption strip; exercise the real
+    // validated bridge rather than the hidden site-injected twin.
+    await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
+    assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), true);
+    assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'true');
+    await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
+    assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), false);
+    assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'false');
     // Keyboard and wheel events must reach the native host after removing its
     // application menu, without requiring a renderer-to-main IPC bridge.
     const getZoom = () => electron.evaluate(({ BrowserWindow }) => {
@@ -338,7 +357,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     for (const shortcut of ['Reload', 'ForceReload', 'ReloadR', 'ForceReloadR']) {
       await page.evaluate(() => { window.syntheticReloadMarker = true; });
       await Promise.all([page.waitForEvent('load'), native(shortcut)]);
-      await page.waitForSelector('#chatgpt-app-mode-pin-toggle');
+      await page.waitForSelector('#chatgpt-app-mode-pin-toggle', { state: 'attached' });
       assert.equal(await page.evaluate(() => window.syntheticReloadMarker), undefined, shortcut);
     }
     assert.deepEqual(await electron.evaluate(() => globalThis.syntheticReloadCounts), { normal: 2, force: 2 });
@@ -512,7 +531,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       }, expectedWidth, { timeout: 5000 });
       const layout=await page.evaluate(() => {
         const header=document.querySelector('header').getBoundingClientRect();
-        const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')).map(el=>el.getBoundingClientRect());
+        const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')&&getComputedStyle(el).display!=='none'&&el.getClientRects().length).map(el=>el.getBoundingClientRect());
         const tabs=document.querySelector('.real-mode-grid').getBoundingClientRect();
         return {viewportCss:innerWidth,devicePixelRatio,switchCss:{x:tabs.x,y:tabs.y,width:tabs.width,height:tabs.height},
           centerErrorCss:tabs.x+tabs.width/2-innerWidth/2,controlsCss:controls.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),
@@ -532,20 +551,20 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const chat=win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'));
         return {bounds:view.getBounds(),chatBounds:chat.getBounds(),zoom:view.webContents.getZoomFactor(),width:win.getContentBounds().width,height:win.getContentBounds().height};
       });
-      // The app-owned title bar spans the full window width; the remote page
-      // view starts exactly beneath it, so the two surfaces never overlap.
-      assert.equal(surface.bounds.x,0);
-      assert.equal(surface.bounds.width,surface.width);
-      assert.ok(Math.abs(surface.bounds.height-48*zoom)<=1);
-      assert.equal(surface.chatBounds.y,surface.bounds.height);
-      assert.equal(surface.chatBounds.height,surface.height-surface.bounds.height);
+      // The app-owned caption strip is right-anchored over the page's own
+      // 40px subheader; the remote page view fills the whole window beneath it.
+      assert.ok(Math.abs(surface.bounds.width-Math.round(184*zoom))<=2, `strip width: ${JSON.stringify(surface)}`);
+      assert.equal(surface.bounds.x,surface.width-surface.bounds.width);
+      assert.ok(Math.abs(surface.bounds.height-40*zoom)<=1);
+      assert.equal(surface.chatBounds.y,0);
+      assert.equal(surface.chatBounds.height,surface.height);
       assert.equal(surface.zoom,zoom,'Controls and header must share a physical centerline at page zoom');
     }
     fs.writeFileSync(path.join(scratch,'header-zoom-geometry.json'),JSON.stringify(zoomSamples,null,2));
     // Conversation headers expose five page actions plus three host actions.
     // Exercise that denser variant separately from the home mode-switch header.
     await page.evaluate(html=>{document.querySelector('header').innerHTML=html;},fs.readFileSync(path.join(__dirname,'fixtures/full-header.html'),'utf8'));
-    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
+    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     await page.evaluate(() => {
       const leading = document.querySelector('.fixture-leading');
       leading.prepend(leading.querySelector('[aria-label="New chat"]'));
@@ -572,7 +591,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const rects=buttons.map(button=>button.getBoundingClientRect());
         const actions=header.querySelector('[aria-label="More options"]')?.getBoundingClientRect();
         const newChat=header.querySelector('[aria-label="New chat"]')?.getBoundingClientRect();
-        const pin=document.getElementById('chatgpt-app-mode-pin-toggle')?.getBoundingClientRect();
+        const pinEl=document.getElementById('chatgpt-app-mode-pin-toggle');
+        const pin=pinEl&&getComputedStyle(pinEl).display!=='none'?pinEl.getBoundingClientRect():null;
         const leadingBox=header.querySelector('.fixture-leading')?.getBoundingClientRect();
         const actionsBox=header.querySelector('.fixture-actions')?.getBoundingClientRect();
         const titleBox=header.querySelector('.fixture-title')?.getBoundingClientRect();
@@ -589,7 +609,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
       const diagnostics=layout.actionsRight?null:await page.evaluate(()=>({viewport:innerWidth,headerRight:document.querySelector('header').getBoundingClientRect().right,actionRight:document.querySelector('[aria-label="More options"]').getBoundingClientRect().right,pinWidth:document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect().width}));
-      assert.deepEqual(layout,{count:4,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
+      assert.deepEqual(layout,{count:3,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
@@ -601,16 +621,16 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await page.evaluate(()=>window.syntheticHeaderActions.length),52);
     await chatEval('chat.setZoomFactor(1)');
     await page.evaluate(() => { const h = document.querySelector('header'); h.replaceWith(h.cloneNode(true)); history.pushState({}, '', '/c/synthetic-rerender'); });
-    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
+    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     // Initial maximized state and separate control ownership use a second
     // fixture window in the same process, with no production profile access.
     const originalId=await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].id);
     await electron.evaluate(({app})=>app.emit('second-instance',{},['--start-maximized','--url=https://chatgpt.com/c/synthetic-second']));
     const secondPage=await remoteWindow(electron,page);
-    await secondPage.waitForSelector('#chatgpt-app-mode-pin-toggle');
+    await secondPage.waitForSelector('#chatgpt-app-mode-pin-toggle', { state: 'attached' });
     const secondId=await electron.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows().find(win=>win.id!==id).id,originalId);
     assert.equal(await electron.evaluate(({BrowserWindow},{originalId,secondId,modulePath})=>{
       const {validateControlRequest}=process.mainModule.require(modulePath);

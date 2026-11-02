@@ -224,13 +224,13 @@
           .map(element => element.getBoundingClientRect())
           .filter(bounds => bounds.left <= 2 && bounds.width >= 160 && bounds.width < innerWidth * 0.55 && bounds.height >= 120)
           .sort((a, b) => b.width - a.width)[0];
-        const regionLeft = document.getElementById('app-mode-compact-sidebar') ? 0 : sidebar ? Math.min(sidebar.right, innerWidth) : 0;
+        const regionLeft = sidebar ? Math.min(sidebar.right, innerWidth) : 0;
         const regionWidth = innerWidth - regionLeft;
         const center = regionLeft + regionWidth / 2;
         const left = center - box.width / 2;
         const right = left + box.width;
         const controls = [...header.querySelectorAll('button, a[href], [role="button"]')].filter(element => !tabs.contains(element) && visible(element));
-        const fits = innerWidth > 480 && left >= regionLeft && right <= innerWidth && controls.every(element => {
+        const fits = left >= regionLeft && right <= innerWidth && controls.every(element => {
           const bounds = element.getBoundingClientRect();
           return bounds.right <= left - 6 || bounds.left >= right + 6;
         });

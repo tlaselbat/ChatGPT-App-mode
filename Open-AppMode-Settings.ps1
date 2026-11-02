@@ -33,13 +33,16 @@ if (-not $PreviewPath) {
         $form.Activate()
     })
 }
+$scrollHost = New-Object Windows.Forms.Panel
+$scrollHost.Dock = 'Fill'
+$form.Controls.Add($scrollHost)
 $panel = New-Object Windows.Forms.FlowLayoutPanel
 $panel.Dock = 'Fill'
 $panel.FlowDirection = 'TopDown'
 $panel.WrapContents = $false
 $panel.AutoScroll = $true
 $panel.Padding = [Windows.Forms.Padding]::new(22, 14, 22, 14)
-$form.Controls.Add($panel)
+$scrollHost.Controls.Add($panel)
 function Add-Heading([string]$Text) {
     $label = New-Object Windows.Forms.Label
     $label.Text = $Text; $label.AutoSize = $true
@@ -62,6 +65,7 @@ function Add-Number([string]$Text, [int]$Value, [int]$Minimum, [int]$Maximum) {
     $number = New-Object Windows.Forms.NumericUpDown
     $number.Minimum = $Minimum; $number.Maximum = $Maximum
     $number.Value = [Math]::Max($Minimum, [Math]::Min($Maximum, $Value)); $number.Width = 110
+    $number.AccessibleName = $Text
     $row.Controls.Add($label); $row.Controls.Add($number); $panel.Controls.Add($row)
     return $number
 }
@@ -69,13 +73,15 @@ function Refresh-JumpList {
     $launcher = Join-Path $AppRoot 'TaskbarLauncher\ChatGPTTaskbarLauncher.exe'
     if (Test-Path -LiteralPath $launcher) { Start-Process $launcher -ArgumentList '--register-only' -WindowStyle Hidden }
 }
-Add-Heading 'Launch and window'
+Add-Heading 'Layout and appearance'
 $compactSidebar = Add-Check 'Keep a compact sidebar rail visible in narrow windows' ($config.layout.compactSidebar -ne $false)
+Add-Heading 'Startup and window'
 $restore = Add-Check 'Restore the last conversation' ($config.restoreLastUrl -ne $false -and $privacy.saveLastSession)
 $placement = Add-Check 'Remember window size and monitor position' ($config.rememberWindowPlacement -ne $false)
 $startup = Add-Check 'Start the tray launcher when I sign in to Windows' ($config.runAtStartup -eq $true)
 $width = Add-Number 'Default window width (pixels)' $config.window.width 320 7680
 $height = Add-Number 'Default window height (pixels)' $config.window.height 300 4320
+Add-Heading 'Pinned window behavior'
 $opacity = Get-AppModeOpacitySettings $config
 $fade = Add-Check 'Fade pinned windows when inactive or mouse is elsewhere' $opacity.enabled
 $opacityPercent = Add-Number 'Inactive pinned opacity (%)' $opacity.percent 10 100
@@ -90,7 +96,7 @@ $notice = New-Object Windows.Forms.Label
 $notice.Text = 'History is stored on this PC. Clearing it does not delete chats on ChatGPT. Open pages can save history again when you navigate.'
 $notice.Size = [Drawing.Size]::new(470, 48)
 $panel.Controls.Add($notice)
-Add-Heading 'Control connection'
+Add-Heading 'Recovery'
 $connectionRow = New-Object Windows.Forms.FlowLayoutPanel
 $connectionRow.Size = [Drawing.Size]::new(470, 38)
 $restart = New-Object Windows.Forms.Button
@@ -101,8 +107,11 @@ $connection.Text = 'Pin shortcut: Alt+Shift+P'; $connection.AutoSize = $true
 $connection.Padding = [Windows.Forms.Padding]::new(6, 7, 0, 0)
 $connectionRow.Controls.Add($connection); $panel.Controls.Add($connectionRow)
 $status = New-Object Windows.Forms.Label
-$status.Text = 'Launch changes apply after closing and reopening App Mode.'
-$status.Size = [Drawing.Size]::new(470, 40)
+$status.Text = 'Save to apply. Pinned opacity and startup preference apply after saving; privacy choices update local history. Layout, conversation restore, and default window size need App Mode reopened.'
+$status.AutoSize = $true
+$status.MaximumSize = [Drawing.Size]::new(470, 0)
+$status.Margin = [Windows.Forms.Padding]::new(0, 3, 0, 14)
+$status.AccessibleRole = [Windows.Forms.AccessibleRole]::StatusBar
 $panel.Controls.Add($status)
 $buttons = New-Object Windows.Forms.FlowLayoutPanel
 $buttons.Dock = 'Bottom'; $buttons.Height = 50; $buttons.FlowDirection = 'RightToLeft'
@@ -112,6 +121,8 @@ $cancel.Text = 'Close'; $cancel.DialogResult = 'Cancel'
 $save = New-Object Windows.Forms.Button
 $save.Text = 'Save settings'; $save.Width = 130
 $buttons.Controls.Add($cancel); $buttons.Controls.Add($save); $form.Controls.Add($buttons)
+$form.Controls.SetChildIndex($buttons, $form.Controls.Count - 1)
+$form.AcceptButton = $save
 $form.CancelButton = $cancel
 $clear.Add_Click({
     try {
@@ -158,7 +169,7 @@ $save.Add_Click({
         $last = Join-Path $AppRoot 'logs\last-session.json'
         if (-not $restore.Checked -and (Test-Path -LiteralPath $last)) { Remove-Item -LiteralPath $last -Force }
         Refresh-JumpList
-        $status.Text = 'Settings saved. Relaunch App Mode for default-size changes.'
+        $status.Text = 'Settings saved. Pinned opacity and startup preference were updated; privacy choices were applied to local history. Reopen App Mode for layout, conversation restore, or default window changes.'
     } catch { $status.Text = 'Could not save all settings. Check folder permissions and try again.' }
 })
 try {

@@ -1,6 +1,6 @@
 # ChatGPT App Mode
 
-Windows launcher for ChatGPT built on a pinned Electron window host. Minimize, maximize/restore, and close sit at the right of the translucent page header, with native window dragging, resizing, and Windows Snap support.
+Windows launcher for ChatGPT built on a pinned Electron window host. A unified 40px header combines ChatGPT's native Chat/Work and contextual controls with the host-owned Pin and caption strip, preserving native window dragging and resizing. See [header ownership and hit testing](docs/ARCHITECTURE.md#native-header-host) for the isolated-view layout and [known limitations](docs/KNOWN_LIMITATIONS.md) for Windows Snap coverage.
 
 ## Install and configure
 
@@ -8,7 +8,7 @@ Windows launcher for ChatGPT built on a pinned Electron window host. Minimize, m
 2. Run `Install-ChatGPT-AppMode.ps1` to create the local `config.json` and shortcuts and install the Electron runtime. Review `config.example.json` to understand the supported settings.
 3. Launch with `Launch-ChatGPT-AppMode.ps1` or the installed shortcut.
 
-`config.json`, browser profile, runtime logs, shortcuts, and installer ZIPs are local data and are excluded from Git. The shared page overrides are `extension/styles/chatgpt-overrides.css` and `extension/scripts/chatgpt-overrides.js`; the host injects them into ChatGPT pages directly.
+`config.json`, browser profile, runtime logs, shortcuts, and installer ZIPs are local data and are excluded from Git. The host injects `extension/styles/chatgpt-overrides.css` and the ordered scripts in `extension/manifest.json` into trusted ChatGPT pages. See the [page behavior inventory](docs/CONTENT_SCRIPT_BEHAVIOR.md) for module responsibilities.
 
 The installer installs the pinned Electron runtime into `node_modules/electron`. To add it to an existing checkout, run `Install-WindowHost.ps1`. `windowHost` is `electron` — the only supported runtime; missing runtimes or immediate startup failures warn and abort the launch.
 
@@ -24,9 +24,9 @@ The tray menu keeps **Open ChatGPT**, **New chat**, and **Open pinned mini windo
 
 Privacy settings independently control last-page restore, the three-entry recent list, conversation titles, and retention (30 days by default). **Clear saved history** removes local session metadata and legacy URL-bearing logs; it does not delete ChatGPT conversations or the host profile. Open pages may save history again after navigation. Changes to recording/title preferences apply to the local metadata immediately; default dimensions require relaunching App Mode.
 
-The header pin affects one verified foreground host window. Use **Alt+Shift+P** in that window to toggle it. Its state refreshes from Windows when focused. If the control is offline, click it to retry or use **Restart control server** in the tray/settings window. Requests time out rather than leaving the button disabled indefinitely.
+See [Pin ownership and fallback](docs/ARCHITECTURE.md#pin-ownership-and-fallback) for the host and standalone presentations and their verification. **Alt+Shift+P** remains the page shortcut in the focused App Mode window. If the page fallback or shortcut cannot reach the loopback control service, use **Restart control server** in the tray/settings window; that recovery path is distinct from the caption strip's validated host action channel.
 
-Each pin click refreshes the native window binding and completes the requested on/off action in the same click, including after connection recovery. The click handler survives cloned/replaced headers. After updating override source, fully close and reopen App Mode so the host re-injects it; restarting the control server alone does not reload injected content.
+After updating override source, fully close and reopen App Mode so the host re-injects it; restarting the control server alone does not reload injected content.
 
 Pinned windows fade to **30% opacity** when the mouse leaves. This affects the entire native window, including its title bar. Hovering reveals the window without taking focus, with a 140 ms eased transition. An 8 px edge tolerance (scaled for the window DPI) retains an existing hover just outside the border. Dragging, resizing, mouse selection, and open native menus keep the window solid until the interaction ends. Wheel/trackpad scrolling extends a short hold for 500 ms after the most recent activity pulse, including when the pointer leaves. After leaving, a 180 ms grace period prevents dimming on brief pointer exits, followed by a 300 ms eased fade. Interrupted transitions continue from their current opacity. Unpinning or disabling fading restores full opacity immediately. Settings provides a fade toggle and an opacity percentage (10-100%); changes apply within about a second. Faded windows stay clickable. Windows already given layered-window effects by other tools are left alone. The implementation uses [Windows layered-window alpha](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setlayeredwindowattributes) and [native mouse capture/move state](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-guithreadinfo). Scroll pulses contain only the existing window binding and an activity flag; no page content or mouse coordinates are sent or saved.
 
@@ -34,22 +34,21 @@ Reinstalling preserves preferences, adds missing settings, and backs up the prev
 
 ## Offline visual development
 
-Install Node.js 22.12+ and use the project lockfile:
+Install Node.js 22.12+ and use the project lockfile. Run setup when dependencies or the fixture browser are missing or need updating:
 
 ```powershell
 npm ci
 npx playwright install chromium
-npm test
-npm run test:runtime
-npm run test:host
 ```
+
+Choose checks for the change: `npm test -- --grep "<test title>"` for affected extension fixtures (or `npm test` for the suite), `npm run test:runtime` for runtime behavior, and `npm run test:host` for native Electron behavior. Combine them when multiple areas are affected. Documentation changes need diff and reference inspection. See [the visual testing workflow](docs/VISUAL_TESTING.md) for check selection and evidence requirements.
 
 The browser tests open Playwright's Chromium with disposable profiles under ignored `test-results/runs/` (set `APP_MODE_CHROMIUM_EXE` to pin a different browser). They route `https://chatgpt.com` to a synthetic fixture. Control-server calls are mocked; a separate integration check uses an isolated server on a temporary port to verify allowed/rejected origins. No production host profile, authenticated page, private conversation, or live ChatGPT request is used.
 
-The test captures desktop and narrow screenshots and compares them with committed fixture baselines. Update baselines intentionally after reviewing the new images:
+The tests compare desktop and narrow screenshots with committed fixture baselines. Inspect rendered images for the affected visual behavior; responsive changes need desktop and narrow review, including the affected breakpoint. Update baselines only for intended changes, inspect the new images and Git diff, then rerun affected tests without snapshot updates. A focused update uses:
 
 ```powershell
-npm run test:update
+npm run test:update -- --grep "<test title>"
 ```
 
 Playwright writes HTML reports to `playwright-report/` and disposable output under `test-results/runs/`:
@@ -63,13 +62,13 @@ Run `npm run test:host` to exercise a disposable native window against an offlin
 
 ## Live UI audit
 
-Run the privacy-safe live audit when you are ready to authenticate in the isolated development profile:
+Use actual-site review for claims about current ChatGPT compatibility and fixes depending on its real DOM. Prefer the isolated Electron workflow below for app appearance and native behavior. Use the privacy-safe live audit when repeatable measurements or broader viewport, theme, sidebar, or stock/override comparisons are needed:
 
 ```powershell
 npm run live:audit
 ```
 
-The browser pauses until you sign in there if needed, choose the blank home page or a test conversation with no private content, and click **Begin privacy-safe capture**. The runner does not infer authentication; confirm it in the screenshots. It captures the requested desktop sizes and 390px diagnostic width, requests light/dark modes, attempts expanded/collapsed sidebar states, and compares override-enabled with stock rendering in the same profile. Navigation content and message text/media are redacted in screenshots; reports contain geometry and computed styles, not page text or labels. Calls to the local control server are mocked. Output remains local under `test-results/live-audits/`. See [the current audit status](docs/LIVE_UI_AUDIT.md).
+The browser pauses until you sign in there if needed, choose the blank home page or a test conversation with no private content, and click **Begin privacy-safe capture**. The runner does not infer authentication; confirm it in the screenshots. It captures the requested desktop sizes and 390px diagnostic width, requests light/dark modes, attempts expanded/collapsed sidebar states, and compares override-enabled with stock rendering in the same profile. Navigation content and message text/media are redacted in screenshots; reports contain geometry and computed styles, not page text or labels. Calls to the local control server are mocked. Output remains local under `test-results/live-audits/`. See [historical audit evidence and current coverage limits](docs/LIVE_UI_AUDIT.md).
 
 For native-host review against the real site, run `node tools/live-host-review.cjs` and sign in inside its dedicated development root under `test-results/live-review-profile/native-host`; production control-server calls are blocked there. Automated fixture results do not validate authenticated live behavior; see [the visual testing workflow](docs/VISUAL_TESTING.md).
 
@@ -81,7 +80,7 @@ Build the taskbar launcher with `Build-TaskbarLauncher.ps1` using the .NET Frame
 
 ## Project notes
 
-Use `npm run test:all` as the aggregate offline verification gate. `npm test` alone covers Chromium fixtures only. See [source release packaging](docs/RELEASING.md) for the committed-source ZIP workflow.
+Use `npm run test:all` as the aggregate offline gate for releases or changes spanning extension, runtime, and host. For focused changes, run the relevant checks; repeat or broaden passing checks only for further changes, failures, or unresolved risks. `npm test` alone covers Chromium fixtures only. See [source release packaging](docs/RELEASING.md) for the committed-source ZIP workflow.
 
 - [Fresh install instructions](docs/FRESH-INSTALL-INSTRUCTIONS.txt)
 - [Architecture](docs/ARCHITECTURE.md)

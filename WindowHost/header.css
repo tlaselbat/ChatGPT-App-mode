@@ -2,8 +2,34 @@
    nothing here provides window chrome. The site's own header is normalized
    in place into the standard 40px secondary action row: original ChatGPT
    nodes keep their handlers; only container layout is shared. */
+/* The unified Codex bar: this row IS the window chrome, so it supplies the
+   drag surface; interactive descendants opt out. The right padding reserves
+   the host caption strip so actions/Pin never slide under it. */
+body.faux-chatgpt-app-mode { --app-mode-page-pin-display: none; }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
+  -webkit-app-region: drag;
+  padding-right: 188px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="radio"], [contenteditable="true"]),
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolbar,
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] {
   -webkit-app-region: no-drag;
+}
+/* The host caption strip overlays the right side of this row. Electron's
+   native hit test can resolve HTCAPTION from this view's drag region even
+   beneath the strip's own no-drag buttons, so carve the reserved band out
+   of the page's drag surface explicitly. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 188px;
+  height: 100%;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   pointer-events: auto;
   box-sizing: border-box;
   display: flex;
@@ -106,14 +132,14 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   display: flex !important;
   align-items: center;
   justify-content: center;
-  flex: 0 1 192px;
-  width: clamp(96px, 28vw, 192px) !important;
+  flex: 0 1 clamp(96px, calc(28vw - 22px), 192px);
+  width: clamp(96px, calc(28vw - 22px), 192px) !important;
   min-width: 96px !important;
   max-width: 192px;
   height: 28px !important;
   border: 1px solid var(--app-mode-control-border);
   border-radius: 8px;
-  padding: 2px;
+  padding: 1px 2px;
   gap: 2px;
   box-sizing: border-box;
 }
@@ -148,9 +174,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-t
   width: auto !important;
   min-width: 0 !important;
   max-width: 100%;
-  height: 22px;
+  height: 24px;
   padding: 0 6px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   font-size: 12px;
@@ -159,6 +185,12 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-t
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"], [data-state="active"]) {
   background: var(--app-mode-control-hover);
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  font-weight: 600;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where(button, [role="tab"], [role="radio"]):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not([data-app-mode-header-tab-path]) {
   flex-shrink: 0;
@@ -192,10 +224,6 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
      switch never overlaps them; it centers in whatever space remains. */
   body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] { flex: 0 0 auto !important; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 28px !important; min-width: 28px !important; max-width: 28px; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
-    gap: 4px;
-    padding-inline: 8px !important;
-  }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] button {
     min-width: 28px;
     height: 28px;
@@ -210,13 +238,12 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
     width: 112px !important;
   }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where(button, [role="tab"], [role="radio"]) {
-    height: 22px;
+    height: 24px;
     min-width: 0;
     padding-inline: 4px;
   }
 }
 @media (max-width: 420px) {
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] { gap: 3px; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] { min-width: 80px !important; width: 96px !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] { min-width: 80px !important; flex-basis: 96px; width: 96px !important; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-pin-button { width: 28px; flex-basis: 28px; }
 }

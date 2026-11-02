@@ -5,9 +5,12 @@ const { randomUUID } = require('node:crypto');
 
 const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
-const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close']);
+const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close', 'pin']);
 const COMPACT_BREAKPOINT = 480;
-const HEADER_HEIGHT = 48;
+// Unified Codex-style bar: the page's own subheader supplies the 40px row;
+// this view is only the right-anchored caption strip overlaying it.
+const HEADER_HEIGHT = 40;
+const CAPTION_STRIP_WIDTH = 184;
 const DEFAULT_THEME = Object.freeze({ color: 'rgb(221, 221, 221)', border: 'rgba(221, 221, 221, 0.24)',
   background: '#1c1f26', hover: '#2a2f3a', hoverBorder: '#4f5d7a', pressed: '#3a4050' });
 
@@ -115,7 +118,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   // own viewport. Both surfaces share the page's zoom factor.
   const chat = chatView.webContents;
   const compact = () => win.getContentBounds().width / chat.getZoomFactor() <= COMPACT_BREAKPOINT;
-  const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), theme });
+  const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), pinned: win.isAlwaysOnTop(), theme });
   function publish() {
     if (!disposed && loaded && !win.isDestroyed() && !contents.isDestroyed()) contents.send(STATE_CHANNEL, state());
   }
@@ -126,8 +129,9 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
     contents.setZoomFactor(zoom);
     const fullscreen = win.isFullScreen();
     const bar = fullscreen ? 0 : Math.round(HEADER_HEIGHT * zoom);
-    view.setBounds({ x: 0, y: 0, width, height: bar });
-    chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
+    const strip = Math.round(CAPTION_STRIP_WIDTH * zoom);
+    view.setBounds({ x: Math.max(0, width - strip), y: 0, width: Math.min(strip, width), height: bar });
+    chatView.setBounds({ x: 0, y: 0, width, height });
     view.setVisible(!fullscreen);
     publish();
   }
@@ -142,6 +146,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
       case 'maximize': if (!win.isFullScreen()) win.maximize(); break;
       case 'restore': if (!win.isFullScreen()) win.unmaximize(); break;
       case 'close': win.close(); break;
+      case 'pin': win.setAlwaysOnTop(!win.isAlwaysOnTop()); break;
     }
     publish();
     return true;
@@ -161,7 +166,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   // did-finish-load. Exact current URL/main-frame checks reject any committed
   // replacement, and loaded only gates initial controls initialization.
   contents.on('did-finish-load', () => { loaded = contents.getURL() === controlsUrl; layout(); });
-  const nativeEvents = ['maximize', 'unmaximize', 'restore', 'resize', 'enter-full-screen', 'leave-full-screen'];
+  const nativeEvents = ['maximize', 'unmaximize', 'restore', 'resize', 'enter-full-screen', 'leave-full-screen', 'always-on-top-changed'];
   for (const name of nativeEvents) win.on(name, layout);
   // Keyboard zoom handling occurs in another host listener; defer until it
   // has applied the new factor. Renderer viewport events cover programmatic zoom.
