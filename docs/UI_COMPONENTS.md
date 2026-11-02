@@ -4,11 +4,12 @@
 
 | Component | Current implementation | Behavior |
 |---|---|---|
-| Content script | `extension/scripts/chatgpt-overrides.js` | Body marker, title normalization, pin button, session URL reporting, mutation observation |
+| Shared page modules | Ordered classic scripts in `extension/manifest.json` | Runtime, sidebar, home, Share, lifecycle, and Pin/session modules; `chatgpt-overrides.js` coordinates events. See the [module inventory](CONTENT_SCRIPT_BEHAVIOR.md). |
 | Override styles | `extension/styles/chatgpt-overrides.css` | Codex surface tokens, permanent activity rail, docked sidebar offset, rounded workspace panel, home hero/composer layout, scrollbar treatment, and header pin/status states |
-| Host header layer | `WindowHost/header.css`, `WindowHost/header.js` | Secondary action-row layout: tags recognized site header structures and normalizes them in place without moving nodes |
-| Window controls | `WindowHost/controls.html`, `controls.css`, `controls.js` and trusted control host | Application-owned 48px title bar above the page view: drag region plus theme-aware outlined minimize, maximize/restore, and close buttons in an isolated surface; native state synchronization, responsive sizing, red close accent and blue maximize interaction |
-| Share menu entry | `extension/scripts/chatgpt-overrides.js`, `extension/styles/chatgpt-overrides.css` | Hides the recognized header Share button when conversation options are available; adds Share to that menu and invokes the original site action after dismissal. Supports keyboard navigation and re-renders; unknown header markup retains the original button. No sharing or publishing is performed automatically. |
+| Page header layer | `WindowHost/header.css`, `WindowHost/header.js` | Normalizes recognized native controls in place within the unified row; supplies the page drag surface and caption-band exclusion. See [header architecture](ARCHITECTURE.md#native-header-host). |
+| Window controls | `WindowHost/controls.html`, `controls.css`, `controls.js` and trusted control host | Isolated caption strip over the right side of the page header; native window actions and state synchronization through a validated local channel. See [Pin ownership and fallback](ARCHITECTURE.md#pin-ownership-and-fallback). |
+| Navigation | `extension/scripts/10-sidebar.js`, shared override styles | Permanent activity rail plus native docked/drawer navigation, section disclosures, account forwarding, and focus recovery. See [navigation behavior](NAVIGATION_LAYOUT.md). |
+| Share menu entry | `extension/scripts/30-share.js`, shared override styles | Hides the recognized header Share button when conversation options are available; adds Share to that menu and invokes the original site action after dismissal. Supports keyboard navigation and re-renders; unknown header markup retains the original button. No sharing or publishing is performed automatically. |
 | Extension manifest | `extension/manifest.json` | MV3 matching for Playwright/live-audit browser contexts |
 | Control endpoint | `Start-ChatGPT-TopMostServer.ps1` | Loopback JSON responses for topmost and session operations |
 | Settings | `Open-AppMode-Settings.ps1` | Launch preferences, window sizing, startup, privacy/retention, and recovery |

@@ -1,6 +1,12 @@
-# Navigation layout implementation plan
+# Navigation layout and implementation history
 
-## Codex-inspired surface update (2026-11)
+The sections through Acceptance criteria describe the accepted implementation.
+Later milestone sections preserve earlier measurements and test results, not
+current layout specifications. See [verification evidence and coverage limits](LIVE_UI_AUDIT.md)
+for the last reported accepted baseline; this documentation reconciliation does
+not rerun or extend that verification.
+
+## Codex-inspired surface
 
 The navigation controller now implements a Codex-style persistent activity
 rail: the custom 52px rail (`#app-mode-compact-sidebar-actions`) stays mounted
@@ -12,22 +18,21 @@ a rendered native rail beside a docked panel does too. A docked panel inside
 the shell shifts right with the offset, so the layout reads rail | sidebar |
 workspace in the expanded state.
 
-The docked sidebar renders at the ~239px Codex width, but the override is
-keyed to the site's own `data-app-shell-sidebar-open="true"` attribute, not
-our state mark — so the moment the site signals collapse intent the override
-releases and the width-based docked detection can still see the panel shrink.
-If the site stops exposing that flag, the rule simply stops applying and the
-native width returns. The modal drawer opens at `left: 52px` beside the
-permanent rail. A bottom-pinned account action joins the rail only after a
-native account/profile control has been seen; it hides while the expanded
-sidebar already exposes the native account row, so one primary entry point
-remains. Rail buttons gain a `data-app-mode-rail-active` selected state when
-the site's `aria-current` link matches their label. The single rendered
-content `main` inside the shell is marked `data-app-mode-workspace` and
-painted as the rounded Codex workspace panel, inset one gap below the
-subheader; ambiguous structure leaves the layout unmarked and native. Codex
-surface, radius, and spacing values live as `light-dark()` tokens on the
-marker body.
+The responsive docked width is keyed to the site's own
+`data-app-shell-sidebar-open="true"` attribute, not our state marker. It
+releases on native collapse intent so width-based detection can see the panel
+shrink; without that flag, native width remains authoritative. Sizing and
+account behavior are specified in the section refinement below rather than
+in a second fixed-width model. The native modal drawer opens at `left: 52px`
+beside the rail, retaining its dismissal, scrim, and focus trap; docked
+navigation occupies its own column without a modal scrim.
+
+Rail buttons gain a `data-app-mode-rail-active` selected state when the site's
+`aria-current` link matches their label. The single rendered content `main`
+is marked `data-app-mode-workspace` and painted as the rounded workspace.
+There is no unconditional workspace top spacer for a second header row;
+ambiguous structure stays native. Surface, radius, and spacing values live
+as `light-dark()` tokens on the marker body.
 
 ## Section-based navigation refinement
 
@@ -83,10 +88,10 @@ from actual native browser zoom verification.
 
 ## Ownership and scope
 
-The Electron host owns the title bar. The page header normalizer owns the
-40px full-width subheader. The navigation controller in the shared page
-override owns the compact rail and the geometry applied to native sidebar
-containers. A home-only layout controller owns the welcome/composer wrapper
+The [unified header architecture](ARCHITECTURE.md#native-header-host)
+separates the trusted caption strip from native page actions within one row.
+The navigation controller in the shared page override owns the permanent
+activity rail and the geometry applied to recognized native sidebar containers. A home-only layout controller owns the welcome/composer wrapper
 geometry on the blank home route. ChatGPT retains its conversation layout,
 editor content, sidebar contents, action handlers, dialogs, and focus trap.
 
@@ -95,7 +100,7 @@ sidebar rail, `aside.app-shell-left-panel`, and the sidebar-specific
 `browser-sidebar-popover` dialog. These are assumptions about the current
 frontend, not a public API. Unknown markup must restore native navigation.
 
-## Implementation sequence
+## Reconciliation and verification checklist
 
 1. Consolidate native element discovery and activation in an adapter. Match
    only known navigation actions. Exclude App Mode controls to prevent
@@ -109,10 +114,11 @@ frontend, not a public API. Unknown markup must restore native navigation.
 3. Apply state in one reconciliation pass. Keep a set of owned attributes and
    remove stale attributes from retained or replaced nodes. Reserve rail space
    exactly once; retain the native desktop column's layout space when present.
-   Hide the compact rail in both expanded states. Keep native scrolling intact.
-4. Share dimensions through CSS variables: 40px subheader, 52px rail, 40px
-   icon targets. The docked panel and modal drawer begin below the subheader.
-   Keep native panel widths; they serve different desktop and touch layouts.
+   Keep the activity rail mounted in all states; suppress duplicate native
+   controls only when a working replacement exists. Keep native scrolling intact.
+4. Share the unified header height, rail width, and responsive sizing through
+   CSS variables. The docked panel and native drawer begin below the header.
+   Apply the flag-keyed docked width only while open; preserve native drawer sizing.
 5. Normalize toggle labels, expanded state, focus styling, and duplicate
    controls. Retain the modal's native dismissal and focus handling. Return
    focus to the App Mode toggle after the drawer closes when native focus
@@ -128,7 +134,7 @@ frontend, not a public API. Unknown markup must restore native navigation.
 
 ## Acceptance criteria
 
-- One navigation surface is visible in each state; no duplicate rail or offset.
+- One coherent rail/sidebar/workspace layout is maintained; no duplicate rail or offset.
 - The header spans the viewport and clears the sidebar title and controls.
 - Resizing never leaves an empty navigation strip or stale owned attributes.
 - Native sidebar contents and their scroll position are not reconstructed.
@@ -136,7 +142,7 @@ frontend, not a public API. Unknown markup must restore native navigation.
 - Focus remains usable after opening and dismissing the native drawer.
 - Unrelated configuration, profiles, and worktree changes remain untouched.
 
-## Implemented and verified
+## Historical navigation-controller verification (19-test suite)
 
 The shared override now contains a native navigation adapter and a controller
 with one rendered-state model and a tracked attribute set. State cleanup
@@ -163,12 +169,12 @@ Verification performed:
 - Native drawer dismissal, focus restoration, and retained drawer state
   during Explore's popup were checked in the isolated live profile.
 
-This is current-frontend compatibility evidence, not a guarantee against
-future native DOM changes. Unknown native markup restores the native layout.
+This records frontend compatibility at that milestone, not a current release
+certification or a guarantee against future native DOM changes. Unknown native markup restores the native layout.
 No native host, launcher, server, profile, or release behavior was changed by
 this consolidation; their suites were not rerun for these page-only changes.
 
-## Modal lifecycle correction
+## Historical modal-lifecycle correction (21-test suite)
 
 Layout discovery and action availability are separate. Structural discovery
 may retain rendered background elements while Search makes them aria-hidden
@@ -204,7 +210,12 @@ Library, Explore, and New Chat also passed desktop and narrow live checks
 after removal of the fixed action delays. No native runtime or profile code
 was changed by this correction.
 
-## Home-screen consistency across widths
+## Historical home-screen consistency (22-test suite)
+
+This milestone predates the later homepage refinement in `a370a65`. Its composer
+height and suggestion placement below are historical measurements, not current
+layout requirements. The accepted home presentation retains a native editor,
+a bottom-aligned composer, and an independent Recent activity disclosure.
 
 The home controller is restricted to the blank `/` route and validates a
 rendered welcome heading and native editor form in separate branches of a
@@ -234,7 +245,7 @@ All 22 visual tests passed after the home-layout change. Syntax and scoped
 diff checks passed. The implementation did not change host zoom, viewport
 metrics, user-agent settings, profiles, or native runtime behavior.
 
-## Sidebar and subheader corner boundary
+## Historical sidebar/header corner-boundary correction
 
 The native sidebar column reserves the 40px subheader boundary even while
 opening or closing. Previously that boundary was applied only after expanded
@@ -255,9 +266,9 @@ sidebar frames above the boundary. Four focused fixture checks passed for
 the animation boundary, narrow navigation, modal header resizing, and home
 composition. JavaScript syntax and scoped whitespace checks also passed.
 
-## Merge validation
+## Historical merge validation (23 visual tests)
 
-The final release review passed all 23 visual fixture tests, all five
+That milestone's merge review passed all 23 visual fixture tests, all five
 runtime/release checks, and all seven Electron host checks. The first host
 attempts encountered foreground/covered-window guards while the desktop was
 in use; the unchanged host suite passed with the desktop idle. Temporary
