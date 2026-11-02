@@ -6,13 +6,17 @@
 body.faux-chatgpt-app-mode {
   --app-mode-subheader-height: 40px;
   --app-mode-rail-width: 52px;
-  /* Codex-inspired layered surfaces. Dark values follow the supplied
-     reference palette; light values are proportionate equivalents. */
-  --app-mode-shell-bg: light-dark(#eceef2, #1c2325);
+  /* Follow ChatGPT's resolved surfaces first. The light-dark values are only
+     fallbacks for older or reduced fixtures without native surface tokens. */
+  --app-mode-shell-bg: var(--main-surface-secondary, var(--sidebar-surface-primary, light-dark(#f4f4f4, #171717)));
   --app-mode-activity-bg: var(--app-mode-shell-bg);
-  --app-mode-sidebar-bg: light-dark(#e1e4ea, #2d3745);
-  --app-mode-workspace-bg: light-dark(#f7f8fa, #374357);
-  --app-mode-composer-bg: light-dark(#ffffff, #4e5a6c);
+  --app-mode-sidebar-bg: var(--sidebar-surface-primary, var(--main-surface-secondary, light-dark(#f4f4f4, #171717)));
+  --app-mode-workspace-bg: var(--main-surface-primary, var(--sidebar-surface-secondary, light-dark(#ffffff, #212121)));
+  --app-mode-composer-bg: var(--main-surface-primary, light-dark(#ffffff, #212121));
+  --app-mode-text: var(--text-primary, currentColor);
+  --app-mode-border: var(--border-light, color-mix(in srgb, currentColor 14%, transparent));
+  --app-mode-hover: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 8%, transparent));
+  --app-mode-selected: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 12%, transparent));
   --app-mode-sidebar-width: clamp(240px, 28vw, 256px);
   --app-mode-radius-small: 10px;
   --app-mode-radius-medium: 12px;
@@ -23,7 +27,7 @@ body.faux-chatgpt-app-mode {
 
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) {
   background: var(--app-mode-sidebar-bg, var(--sidebar-surface-primary)) !important;
-  color: inherit;
+  color: var(--app-mode-text);
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href] {
   border-radius: 8px;
@@ -31,10 +35,10 @@ body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-
   line-height: 1.5;
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href]:hover {
-  background: var(--sidebar-surface-secondary);
+  background: var(--app-mode-hover);
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[aria-current="page"] {
-  background: var(--sidebar-surface-secondary);
+  background: var(--app-mode-selected);
   font-weight: 600;
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href]:focus-visible {
@@ -72,9 +76,9 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-section] { min-width: 0; margin-bl
 body.faux-chatgpt-app-mode [data-app-mode-nav-content] :is(a, .sidebar-item) {
   min-width: 0; min-height: 34px; border-radius: 8px; font-size: 13px; font-weight: 400;
 }
-body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):hover { background: var(--app-mode-control-hover); }
+body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):hover { background: var(--app-mode-hover); }
 body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
-body.faux-chatgpt-app-mode [data-app-mode-nav-content] a[aria-current="page"] { background: var(--sidebar-surface-secondary, var(--app-mode-control-hover)); }
+body.faux-chatgpt-app-mode [data-app-mode-nav-content] a[aria-current="page"] { background: var(--app-mode-selected); }
 body.faux-chatgpt-app-mode [data-app-mode-nav-collapsed] { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-fallback-heading] { position: relative; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-disclosure] {
@@ -195,7 +199,9 @@ body.faux-chatgpt-app-mode [data-app-mode-home-group] {
   width: 100% !important; max-width: 788px !important; box-sizing: border-box;
   margin-inline: auto !important; padding: 0 24px !important; gap: 16px !important;
 }
-body.faux-chatgpt-app-mode [data-app-mode-home-composer-path] { padding-block: 0 !important; margin-block: 0 !important; }
+body.faux-chatgpt-app-mode [data-app-mode-home-composer-path] {
+  padding-block: 0 !important; margin-block: 0 !important; background: transparent !important;
+}
 /* Codex home order: welcome | recent activity | composer docked at the
    bottom. Suggestions keep their content and stay in flow above it. */
 body.faux-chatgpt-app-mode [data-app-mode-home-suggestions] { order: 0 !important; margin-top: 0 !important; }
@@ -386,13 +392,14 @@ body.faux-chatgpt-app-mode {
   /* Custom themes may recolor the app without updating ChatGPT's tokens.
      Inherit the rendered text color and let the actual app surface show through. */
   --app-mode-control-color: inherit;
-  --app-mode-control-border: color-mix(in srgb, currentColor 14%, transparent);
-  --app-mode-control-bg: var(--app-mode-shell-bg, var(--sidebar-surface-primary, var(--bg-elevated-secondary, light-dark(#f4f5f7, #1c1f26))));
-  --app-mode-control-hover: color-mix(in srgb, currentColor 8%, var(--app-mode-control-bg));
+  --app-mode-control-border: var(--app-mode-border);
+  --app-mode-control-bg: var(--app-mode-workspace-bg, var(--main-surface-primary, light-dark(#ffffff, #212121)));
+  --app-mode-control-hover: var(--app-mode-hover);
   --app-mode-control-hover-border: color-mix(in srgb, currentColor 24%, transparent);
   --app-mode-control-pressed: color-mix(in srgb, currentColor 14%, var(--app-mode-control-bg));
-  --app-mode-active-color: light-dark(#08755e, #7edac0);
-  --app-mode-active-bg: light-dark(#e0f3ed, #203e36);
+  /* No stable native accent token is established here; inherit rather than guess. */
+  --app-mode-active-color: inherit;
+  --app-mode-active-bg: var(--app-mode-selected);
   --app-mode-warning-color: light-dark(#9a3412, #f5b98b);
 }
 

@@ -1559,6 +1559,44 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
   await expect(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveCount(0);
 });
 
+test('App Mode surfaces follow resolved ChatGPT theme tokens and update live', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/');
+  await page.addStyleTag({ content: ':root { --main-surface-primary: rgb(31, 32, 34); --main-surface-secondary: rgb(23, 24, 26); --sidebar-surface-primary: rgb(25, 26, 28); --sidebar-surface-secondary: rgb(48, 49, 52); --text-primary: rgb(238, 239, 240); --border-light: rgb(80, 81, 84); }' });
+
+  const surfaces = await page.evaluate(() => {
+    const style = getComputedStyle(document.body);
+    return {
+      shell: style.getPropertyValue('--app-mode-shell-bg').trim(),
+      sidebar: style.getPropertyValue('--app-mode-sidebar-bg').trim(),
+      workspace: style.getPropertyValue('--app-mode-workspace-bg').trim(),
+      composer: style.getPropertyValue('--app-mode-composer-bg').trim(),
+      text: style.getPropertyValue('--app-mode-text').trim(),
+      border: style.getPropertyValue('--app-mode-border').trim(),
+      controls: style.getPropertyValue('--app-mode-control-bg').trim(),
+    };
+  });
+  expect(surfaces).toEqual({ shell: 'rgb(23, 24, 26)', sidebar: 'rgb(25, 26, 28)', workspace: 'rgb(31, 32, 34)', composer: 'rgb(31, 32, 34)', text: 'rgb(238, 239, 240)', border: 'rgb(80, 81, 84)', controls: 'rgb(31, 32, 34)' });
+
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--main-surface-primary', 'rgb(250, 250, 250)');
+    document.documentElement.style.setProperty('--main-surface-secondary', 'rgb(242, 242, 242)');
+    document.documentElement.style.setProperty('--sidebar-surface-primary', 'rgb(246, 246, 246)');
+    document.documentElement.style.setProperty('--sidebar-surface-secondary', 'rgb(232, 232, 232)');
+  });
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-workspace-bg').trim())).toBe('rgb(250, 250, 250)');
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-control-bg').trim())).toBe('rgb(250, 250, 250)');
+  await page.evaluate(() => {
+    const element = document.createElement('div');
+    element.setAttribute('data-app-mode-home-composer-path', '');
+    document.body.append(element);
+  });
+  const composerProbe = page.locator('[data-app-mode-home-composer-path]').last();
+  await expect(composerProbe).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await composerProbe.evaluate(element => element.remove());
+});
+
 test('session retry, connection recovery, pin synchronization and header fallback', async ({ page }) => {
   let sessionAttempts = 0;
   let pinOnline = false;
