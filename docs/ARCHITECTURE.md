@@ -14,7 +14,7 @@ The maintained source lives at the project root, in `extension/`, `tools/`, `Win
 
 ## Shared override entry points
 
-The host injects the shared override CSS and the ordered classic scripts from `extension/manifest.json`, followed by `WindowHost/header.css` and `WindowHost/header.js` for the page-owned part of the unified header. MV3 contexts use the same script order. See the [page behavior inventory](CONTENT_SCRIPT_BEHAVIOR.md) for responsibilities and cleanup. Site nodes retain their native handlers and containers; the remote page receives no privileged bridge.
+The host injects `extension/styles/chatgpt-overrides.css` and concatenates the ordered classic scripts listed in `extension/manifest.json` into ChatGPT pages, then injects `WindowHost/header.css`/`header.js` for the page-owned part of the unified header. MV3 uses the same ordered script list for Playwright fixture and live-audit browser contexts. The shared page-local context owns lifecycle, sidebar, home layout, Share, Pin/session, and event coordination; repeated initialization in one document is ignored. The scripts add a body marker, set the document title, create the always-on-top button, report eligible current URLs to the local session endpoint, and observe DOM changes to restore owned controls. They never spoof viewport media queries, edit the site's stylesheets, or move site controls out of their containers.
 
 The content script uses selectors derived from chat links and IDs (`aria-current`, `href`, `data-testid`, and `nav`). These are implementation details of ChatGPT and can change. Keep page-specific selectors in a clearly marked compatibility layer as customization grows.
 
@@ -28,7 +28,7 @@ Enabled session/recent-chat metadata remain local plaintext. Settings control re
 
 ## Visual customization direction
 
-The shared override stylesheet defines Codex-inspired surface, spacing, and radius tokens. The permanent activity rail, responsive native sidebar, rounded workspace, and home-only welcome/composer treatment use reversible, scoped adapters; native conversation content and editor behavior remain intact. Header normalization shares one row with the caption strip, without an unconditional workspace top inset. See [navigation behavior](NAVIGATION_LAYOUT.md) for the authoritative sizing and disclosure rules.
+The single override stylesheet now carries a Codex-inspired token layer: `light-dark()` surface, radius, and spacing custom properties on the marker body (`--app-mode-shell-bg`, `--app-mode-sidebar-bg`, `--app-mode-workspace-bg`, `--app-mode-composer-bg`). The shared page context implements the Codex layout directly: a permanent 52px activity rail, the native docked/drawer sidebar beside it, a rounded workspace panel marked on the single rendered content `main`, a centered welcome hero, and a bottom-anchored composer on the blank home route. Header normalization shares the unified row with the caption strip rather than adding a second row or an unconditional workspace top inset; its control surface inherits the shell token. Any setting should have a reversible default and support both `prefers-color-scheme` appearances. Presets are optional future work.
 
 ## Native header host
 

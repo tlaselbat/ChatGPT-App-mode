@@ -34,22 +34,21 @@ Reinstalling preserves preferences, adds missing settings, and backs up the prev
 
 ## Offline visual development
 
-Install Node.js 22.12+ and use the project lockfile:
+Install Node.js 22.12+ and use the project lockfile. Run setup when dependencies or the fixture browser are missing or need updating:
 
 ```powershell
 npm ci
 npx playwright install chromium
-npm test
-npm run test:runtime
-npm run test:host
 ```
+
+Choose checks for the change: `npm test -- --grep "<test title>"` for affected extension fixtures (or `npm test` for the suite), `npm run test:runtime` for runtime behavior, and `npm run test:host` for native Electron behavior. Combine them when multiple areas are affected. Documentation changes need diff and reference inspection. See [the visual testing workflow](docs/VISUAL_TESTING.md) for check selection and evidence requirements.
 
 The browser tests open Playwright's Chromium with disposable profiles under ignored `test-results/runs/` (set `APP_MODE_CHROMIUM_EXE` to pin a different browser). They route `https://chatgpt.com` to a synthetic fixture. Control-server calls are mocked; a separate integration check uses an isolated server on a temporary port to verify allowed/rejected origins. No production host profile, authenticated page, private conversation, or live ChatGPT request is used.
 
-The test captures desktop and narrow screenshots and compares them with committed fixture baselines. Update baselines intentionally after reviewing the new images:
+The tests compare desktop and narrow screenshots with committed fixture baselines. Inspect rendered images for the affected visual behavior; responsive changes need desktop and narrow review, including the affected breakpoint. Update baselines only for intended changes, inspect the new images and Git diff, then rerun affected tests without snapshot updates. A focused update uses:
 
 ```powershell
-npm run test:update
+npm run test:update -- --grep "<test title>"
 ```
 
 Playwright writes HTML reports to `playwright-report/` and disposable output under `test-results/runs/`:
@@ -63,7 +62,7 @@ Run `npm run test:host` to exercise a disposable native window against an offlin
 
 ## Live UI audit
 
-Run the privacy-safe live audit when you are ready to authenticate in the isolated development profile:
+Use actual-site review for claims about current ChatGPT compatibility and fixes depending on its real DOM. Prefer the isolated Electron workflow below for app appearance and native behavior. Use the privacy-safe live audit when repeatable measurements or broader viewport, theme, sidebar, or stock/override comparisons are needed:
 
 ```powershell
 npm run live:audit
@@ -81,7 +80,7 @@ Build the taskbar launcher with `Build-TaskbarLauncher.ps1` using the .NET Frame
 
 ## Project notes
 
-Use `npm run test:all` as the aggregate offline verification gate. `npm test` alone covers Chromium fixtures only. See [source release packaging](docs/RELEASING.md) for the committed-source ZIP workflow.
+Use `npm run test:all` as the aggregate offline gate for releases or changes spanning extension, runtime, and host. For focused changes, run the relevant checks; repeat or broaden passing checks only for further changes, failures, or unresolved risks. `npm test` alone covers Chromium fixtures only. See [source release packaging](docs/RELEASING.md) for the committed-source ZIP workflow.
 
 - [Fresh install instructions](docs/FRESH-INSTALL-INSTRUCTIONS.txt)
 - [Architecture](docs/ARCHITECTURE.md)
