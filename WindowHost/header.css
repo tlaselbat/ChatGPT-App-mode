@@ -5,6 +5,7 @@
 /* The unified Codex bar: this row IS the window chrome, so it supplies the
    drag surface; interactive descendants opt out. The right padding reserves
    the host caption strip so actions/Pin never slide under it. */
+body.faux-chatgpt-app-mode { --app-mode-page-pin-display: none; }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   -webkit-app-region: drag;
   padding-right: 188px !important;

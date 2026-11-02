@@ -229,7 +229,7 @@ body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar] {
    the site-injected twin so there is one primary entry point. The rail's
    forwarding path stays untouched for hosts that disable the strip. */
 body.faux-chatgpt-app-mode #chatgpt-app-mode-pin-toggle {
-  display: none !important;
+  display: var(--app-mode-page-pin-display, grid) !important;
 }
 /* Application identity at the left of the unified row, independent of the
    sidebar state. Decorative text; native controls follow it in the flex row. */

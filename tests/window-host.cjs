@@ -305,12 +305,18 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.equal(result.status, 0, result.stdout + result.stderr);
     };
     await native('Activate');
+    assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
+    assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').isVisible(), false);
+    assert.equal(await controlsEval(`Array.from(document.querySelectorAll('[data-action="pin"]')).filter(button => {
+      const box = button.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && getComputedStyle(button).visibility === 'visible';
+    }).length`), 1);
     // Always-on-Top is owned by the host caption strip; exercise the real
     // validated bridge rather than the hidden site-injected twin.
-    await controlsEval(`window.appModeControls.action('pin')`);
+    await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), true);
     assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'true');
-    await controlsEval(`window.appModeControls.action('pin')`);
+    await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), false);
     assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'false');
     // Keyboard and wheel events must reach the native host after removing its

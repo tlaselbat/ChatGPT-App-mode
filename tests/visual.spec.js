@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
+const { pathToFileURL } = require('node:url');
 
 const root = path.resolve(__dirname, '..');
 const extensionPath = path.join(root, 'extension');
@@ -45,6 +46,23 @@ const test = base.extend({
     await page.close();
   },
 });
+
+async function captionStripFixture(page) {
+  const caption = await page.context().newPage();
+  await caption.setViewportSize({ width: 184, height: 40 });
+  await caption.addInitScript(() => {
+    let publish;
+    const state = { pinned: false, compact: false, maximized: false };
+    window.appModeControls = {
+      onState(callback) { publish = callback; publish(state); },
+      action(action) {
+        if (action === 'pin') { state.pinned = !state.pinned; publish(state); }
+      },
+    };
+  });
+  await caption.goto(pathToFileURL(path.join(root, 'WindowHost', 'controls.html')).href);
+  return caption;
+}
 
 async function sidebarOverlayFixture(page, scheme = 'light') {
   await page.goto('about:blank');
@@ -928,6 +946,8 @@ test('a stale pin refresh cannot replace the accepted window binding', async ({ 
   await page.bringToFront();
   await expect.poll(() => Boolean(staleStatusRoute)).toBe(true);
   const pin = page.locator('#chatgpt-app-mode-pin-toggle');
+  await expect(pin).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle always on top', exact: true })).toHaveCount(1);
   await pin.click();
   await expect(pin).toHaveAttribute('aria-pressed', 'true');
   await page.mouse.wheel(0, 1);
@@ -1041,15 +1061,38 @@ test('standardized action row normalizes the site header in place without moving
   const html = fixture.replace('<span class="header-title">',
     '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button>' +
     '<button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
+  let enabled = false;
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
-  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.route('http://127.0.0.1:17863/**', route => {
+    const action = new URLSearchParams(route.request().postData() || '').get('action');
+    if (action === 'on' || action === 'off') enabled = action === 'on';
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ saved: true, enabled }) });
+  });
   await page.goto('https://chatgpt.com/c/action-row-fixture');
   // The Electron host injects the shared layout module alongside the content
   // script; reproduce that pairing in the fixture context.
-  await page.addStyleTag({ content: headerLayoutCss });
+  const hostStyle = await page.addStyleTag({ content: headerLayoutCss });
   await page.evaluate(script => (0, eval)(script), headerLayoutScript);
   const header = page.locator('header');
   await expect(header).toHaveAttribute('data-app-mode-header-layout', '');
+  const pagePin = page.locator('#chatgpt-app-mode-pin-toggle');
+  const caption = await captionStripFixture(page);
+  const hostPin = caption.getByRole('button', { name: 'Always on top', exact: true });
+  await expect(hostPin).toBeVisible();
+  await expect(caption.locator('[data-action="pin"]:visible')).toHaveCount(1);
+  await expect(pagePin).toHaveCount(1);
+  await expect(pagePin).toBeHidden();
+  await expect(page.locator('#chatgpt-app-mode-pin-toggle:visible')).toHaveCount(0);
+  await hostPin.click();
+  await expect(hostPin).toHaveAttribute('aria-pressed', 'true');
+  await hostPin.focus();
+  await caption.keyboard.press('Enter');
+  await expect(hostPin).toHaveAttribute('aria-pressed', 'false');
+  await page.bringToFront();
+  await page.keyboard.press('Alt+Shift+P');
+  await expect(pagePin).toHaveAttribute('aria-pressed', 'true');
+  await expect(pagePin).toBeHidden();
+  await caption.close();
   const geometry = await page.evaluate(() => {
     const headerBox = document.querySelector('header').getBoundingClientRect();
     const box = element => element.getBoundingClientRect();
@@ -1080,9 +1123,12 @@ test('standardized action row normalizes the site header in place without moving
   expect(geometry.overlap ?? false).toBe(false);
   expect(geometry.overflow).toBe(false);
   // Sidebar is the leading control even though the site renders it second;
-  // the action group is right-aligned and the app pin stays rightmost.
+  // the action group is right-aligned; Pin belongs to the separate host strip.
   expect(geometry.sidebar.left).toBeLessThanOrEqual(geometry.newChat.left);
-  expect(geometry.options.right).toBeLessThanOrEqual(geometry.pin.left + 6);
+  expect(geometry.options.right).toBeLessThanOrEqual(geometry.header.right);
+  expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 24);
+  expect(geometry.pin.width).toBe(0);
+  expect(geometry.pin.height).toBe(0);
   // The layout contract never moves nodes out of the site's own containers:
   // original handlers still fire exactly once on their native elements.
   await page.evaluate(() => {
@@ -1106,6 +1152,12 @@ test('standardized action row normalizes the site header in place without moving
   await page.evaluate(() => document.querySelector('header').remove());
   await expect(page.locator('[data-app-mode-header-layout]')).toHaveCount(0);
   await expect(page.locator('[data-app-mode-header-tabs],[data-app-mode-header-strip],[data-app-mode-header-control-branch]')).toHaveCount(0);
+  await expect(pagePin).toBeHidden();
+  await hostStyle.evaluate(element => element.remove());
+  await expect(pagePin).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle always on top', exact: true })).toHaveCount(1);
+  await pagePin.click();
+  await expect(pagePin).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('conversation typography and composer retain native styling with long content in both themes', async ({ page }) => {
@@ -1247,6 +1299,8 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
     main { min-height: 0; overflow: auto; color: #cdd6f4; background: #1e1e2e; }
   ` });
   const pin = page.locator('#chatgpt-app-mode-pin-toggle');
+  await expect(pin).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle always on top', exact: true })).toHaveCount(1);
   await expect(page.locator('#page-header #chatgpt-app-mode-pin-toggle')).toBeVisible();
   await expect(pin).toHaveCSS('color', 'rgb(205, 214, 244)');
   await expect(page.locator('#page-header')).toHaveCSS('backdrop-filter', 'none');
@@ -1323,6 +1377,8 @@ test('session retry, connection recovery, pin synchronization and header fallbac
   await page.goto('https://chatgpt.com/c/synthetic-retry?synthetic=discarded#discarded');
   await page.bringToFront();
   const pin = page.locator('#chatgpt-app-mode-pin-toggle');
+  await expect(pin).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle always on top', exact: true })).toHaveCount(1);
   await expect(pin).toHaveClass(/is-unavailable/);
   await expect(page.locator('#chatgpt-app-mode-control-status')).toHaveCount(0);
   await expect(pin).toHaveCSS('color', 'rgb(154, 52, 18)');
@@ -1455,6 +1511,8 @@ base('content-script pin clicks reach a real HTTP endpoint after header cloning'
     await page.goto('https://chatgpt.com/c/synthetic-real-control');
     await page.bringToFront();
     const pin = page.locator('#chatgpt-app-mode-pin-toggle');
+    await expect(pin).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Toggle always on top', exact: true })).toHaveCount(1);
     await pin.click();
     await expect(pin).toHaveAttribute('aria-pressed', 'true');
     await page.evaluate(() => {
