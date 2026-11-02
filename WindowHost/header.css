@@ -14,6 +14,20 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolb
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] {
   -webkit-app-region: no-drag;
 }
+/* The host caption strip overlays the right side of this row. Electron's
+   native hit test can resolve HTCAPTION from this view's drag region even
+   beneath the strip's own no-drag buttons, so carve the reserved band out
+   of the page's drag surface explicitly. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 188px;
+  height: 100%;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   pointer-events: auto;
   box-sizing: border-box;

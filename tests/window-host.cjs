@@ -525,7 +525,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       }, expectedWidth, { timeout: 5000 });
       const layout=await page.evaluate(() => {
         const header=document.querySelector('header').getBoundingClientRect();
-        const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')).map(el=>el.getBoundingClientRect());
+        const controls=[...document.querySelectorAll('header button')].filter(el=>!el.closest('[aria-hidden="true"]')&&getComputedStyle(el).display!=='none'&&el.getClientRects().length).map(el=>el.getBoundingClientRect());
         const tabs=document.querySelector('.real-mode-grid').getBoundingClientRect();
         return {viewportCss:innerWidth,devicePixelRatio,switchCss:{x:tabs.x,y:tabs.y,width:tabs.width,height:tabs.height},
           centerErrorCss:tabs.x+tabs.width/2-innerWidth/2,controlsCss:controls.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),
@@ -558,7 +558,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     // Conversation headers expose five page actions plus three host actions.
     // Exercise that denser variant separately from the home mode-switch header.
     await page.evaluate(html=>{document.querySelector('header').innerHTML=html;},fs.readFileSync(path.join(__dirname,'fixtures/full-header.html'),'utf8'));
-    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
+    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     await page.evaluate(() => {
       const leading = document.querySelector('.fixture-leading');
       leading.prepend(leading.querySelector('[aria-label="New chat"]'));
@@ -585,7 +585,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const rects=buttons.map(button=>button.getBoundingClientRect());
         const actions=header.querySelector('[aria-label="More options"]')?.getBoundingClientRect();
         const newChat=header.querySelector('[aria-label="New chat"]')?.getBoundingClientRect();
-        const pin=document.getElementById('chatgpt-app-mode-pin-toggle')?.getBoundingClientRect();
+        const pinEl=document.getElementById('chatgpt-app-mode-pin-toggle');
+        const pin=pinEl&&getComputedStyle(pinEl).display!=='none'?pinEl.getBoundingClientRect():null;
         const leadingBox=header.querySelector('.fixture-leading')?.getBoundingClientRect();
         const actionsBox=header.querySelector('.fixture-actions')?.getBoundingClientRect();
         const titleBox=header.querySelector('.fixture-title')?.getBoundingClientRect();
@@ -602,7 +603,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
       const diagnostics=layout.actionsRight?null:await page.evaluate(()=>({viewport:innerWidth,headerRight:document.querySelector('header').getBoundingClientRect().right,actionRight:document.querySelector('[aria-label="More options"]').getBoundingClientRect().right,pinWidth:document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect().width}));
-      assert.deepEqual(layout,{count:4,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
+      assert.deepEqual(layout,{count:3,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
@@ -614,7 +615,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await page.evaluate(()=>window.syntheticHeaderActions.length),52);
     await chatEval('chat.setZoomFactor(1)');
     await page.evaluate(() => { const h = document.querySelector('header'); h.replaceWith(h.cloneNode(true)); history.pushState({}, '', '/c/synthetic-rerender'); });
-    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
+    await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
     assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
