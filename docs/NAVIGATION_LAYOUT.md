@@ -12,16 +12,22 @@ a rendered native rail beside a docked panel does too. A docked panel inside
 the shell shifts right with the offset, so the layout reads rail | sidebar |
 workspace in the expanded state.
 
-The docked sidebar keeps its native width. Forcing ~239px would break the
-adapter's width-based state detection (a pinned width can never shrink back
-to compact), so the native ~260px is the accepted approximation. The modal
-drawer opens at `left: 52px` beside the permanent rail. A bottom-pinned
-account action joins the rail only while a native account/profile control has
-been seen; it forwards through the existing action path and is never
-invented. The single rendered content `main` inside the shell is marked
-`data-app-mode-workspace` and painted as the rounded Codex workspace panel;
-ambiguous structure leaves the layout unmarked and native. Codex surface,
-radius, and spacing values live as `light-dark()` tokens on the marker body.
+The docked sidebar renders at the ~239px Codex width, but the override is
+keyed to the site's own `data-app-shell-sidebar-open="true"` attribute, not
+our state mark — so the moment the site signals collapse intent the override
+releases and the width-based docked detection can still see the panel shrink.
+If the site stops exposing that flag, the rule simply stops applying and the
+native width returns. The modal drawer opens at `left: 52px` beside the
+permanent rail. A bottom-pinned account action joins the rail only after a
+native account/profile control has been seen; it hides while the expanded
+sidebar already exposes the native account row, so one primary entry point
+remains. Rail buttons gain a `data-app-mode-rail-active` selected state when
+the site's `aria-current` link matches their label. The single rendered
+content `main` inside the shell is marked `data-app-mode-workspace` and
+painted as the rounded Codex workspace panel, inset one gap below the
+subheader; ambiguous structure leaves the layout unmarked and native. Codex
+surface, radius, and spacing values live as `light-dark()` tokens on the
+marker body.
 
 ## Ownership and scope
 
