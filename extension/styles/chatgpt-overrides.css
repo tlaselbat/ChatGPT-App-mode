@@ -215,6 +215,14 @@ body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar] {
   padding-block: var(--app-mode-gap) !important;
   padding-inline: var(--app-mode-gap) !important;
 }
+/* The conversation composer's dark card surface sits on the lighter Codex
+   workspace — retint it to the composer layer token so it reads as part of
+   the panel instead of a floating dark block. Class-name hook is a
+   compatibility assumption; if it stops matching, the native color returns. */
+body.faux-chatgpt-app-mode [data-app-mode-workspace] [class*="ComposerLayoutRoot"] {
+  background: var(--app-mode-composer-bg) !important;
+  border-radius: var(--app-mode-radius-composer) !important;
+}
 
 /* The site's modal sidebar normally starts at the top of the page view.
    Reserve the shared subheader so its title cannot overlap our toggle. */
