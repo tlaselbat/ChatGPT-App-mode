@@ -3,7 +3,7 @@
   const c = window.__APP_MODE_CONTEXT__;
   if (!c || !c.initialized || c.reinjection) return;
   with (c) {
-  homeLayoutController = { owned: new Map() };
+  homeLayoutController = { owned: new Map(), activity: null, disclosure: null, expanded: false };
 
   c.ensureHomeLayout = function ensureHomeLayout() {
     const next = new Map();
@@ -77,6 +77,30 @@
         }
       }
       if (!next.size) setCompatibility('home-layout', 'unsupported');
+    }
+    const activity = [...next.keys()].filter(element => next.get(element).has('data-app-mode-home-suggestions'))
+      .flatMap(element => [...element.children]).find(element => element.matches('section') && element.classList.contains('group/home-suggestions'));
+    if (homeLayoutController.activity !== activity || !homeLayoutController.disclosure?.isConnected) {
+      homeLayoutController.disclosure?.remove();
+      homeLayoutController.activity = activity;
+      homeLayoutController.disclosure = null;
+      if (activity) {
+        const disclosure = document.createElement('button');
+        disclosure.type = 'button';
+        disclosure.textContent = 'Recent activity';
+        disclosure.setAttribute('data-app-mode-home-disclosure', '');
+        disclosure.addEventListener('click', () => {
+          homeLayoutController.expanded = !homeLayoutController.expanded;
+          ensureHomeLayout();
+        });
+        activity.before(disclosure);
+        homeLayoutController.disclosure = disclosure;
+      }
+    }
+    if (activity) {
+      const expanded = String(homeLayoutController.expanded);
+      if (homeLayoutController.disclosure.getAttribute('aria-expanded') !== expanded) homeLayoutController.disclosure.setAttribute('aria-expanded', expanded);
+      if (!homeLayoutController.expanded) own(activity, 'data-app-mode-home-activity-collapsed');
     }
     for (const [element, attributes] of homeLayoutController.owned) {
       for (const attribute of attributes) if (!next.get(element)?.has(attribute)) element.removeAttribute(attribute);

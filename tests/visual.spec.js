@@ -676,13 +676,13 @@ test('home composition stays stable across the mobile breakpoint and preserves t
     .layout{height:100%;display:flex;flex-direction:column}.contents{display:contents}
     .hero{flex:1;display:flex;align-items:end;justify-content:center}.composer{flex:1}
     .group{display:flex;flex-direction:column;width:100%;max-width:816px;margin:auto}
-    .suggestions{order:9999;height:36px}form{margin:0}.card{border-radius:28px}
+    .suggestions{order:9999}form{margin:0}.card{border-radius:28px}
     .grid{display:grid;grid-template-columns:36px minmax(0,1fr) 150px;gap:8px;padding:8px}
     .editor{min-height:26px}.trailing{display:flex}.grid button{height:36px}
     @media(max-width:639px){.composer{position:sticky;bottom:0;flex:0}.suggestions{order:0}.grid{grid-template-columns:36px 1fr;grid-template-rows:auto auto}.cell{grid-column:1/-1;grid-row:1}.leading{grid-column:1;grid-row:2}.trailing{grid-column:2;grid-row:2}}
     </style><header></header><main><div class="layout"><div class="contents">
     <section class="hero"><h1>Synthetic welcome</h1></section>
-    <section class="composer"><div class="group"><div class="suggestions"><button>Suggestion</button></div>
+    <section class="composer"><div class="group"><div class="suggestions"><section class="group/home-suggestions"><button type="button" onclick="window.suggestionClicks=(window.suggestionClicks||0)+1">Suggestion</button></section></div>
     <form><div class="card"><div class="grid"><div class="leading"><button type="button">Add</button></div>
     <div class="cell"><div class="editor" contenteditable="true" role="textbox" aria-label="Synthetic editor"></div></div>
     <div class="trailing"><button type="button">Model</button><button type="button">Voice</button></div></div></div></form>
@@ -709,6 +709,26 @@ test('home composition stays stable across the mobile breakpoint and preserves t
     if (width === 639) expect(Math.abs(bounds.y - boundaryTop)).toBeLessThanOrEqual(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+  const disclosure = page.getByRole('button', { name: 'Recent activity', exact: true });
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('button', { name: 'Suggestion', exact: true })).toBeHidden();
+  await disclosure.focus();
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('button', { name: 'Suggestion', exact: true }).click();
+  expect(await page.evaluate(() => window.suggestionClicks)).toBe(1);
+  await page.locator('.suggestions section').evaluate(element => element.replaceWith(element.cloneNode(true)));
+  await expect(disclosure).toHaveCount(1);
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('button', { name: 'Suggestion', exact: true })).toBeVisible();
+  await expect(editor).toHaveText('Synthetic unsent draft');
+  expect((await page.locator('.card').boundingBox()).height).toBeGreaterThanOrEqual(120);
+  await disclosure.click();
+  await expect(disclosure).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Suggestion', exact: true })).toBeHidden();
+  await page.locator('.suggestions').evaluate(element => { element.innerHTML = '<button type="button">Unknown native action</button>'; });
+  await expect(disclosure).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Unknown native action' })).toBeVisible();
   await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-home-exit'); document.querySelector('h1').remove(); });
   await expect(page.locator('[data-app-mode-home-layout], [data-app-mode-home-form], [data-app-mode-home-composer]')).toHaveCount(0);
   await expect(editor).toHaveText('Synthetic unsent draft');
