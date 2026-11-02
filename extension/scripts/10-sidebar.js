@@ -57,6 +57,34 @@
     navigationController.cancelShortcut = stop;
   }
 
+  c.restoreRailAccountFocus = function restoreRailAccountFocus(source, root) {
+    const existing = new Set([...document.querySelectorAll('[role="menu"]')].filter(element => element.getClientRects().length));
+    let menu = null;
+    const stop = () => {
+      observer.disconnect(); clearTimeout(timer);
+      if (navigationController.cancelShortcut === stop) navigationController.cancelShortcut = null;
+    };
+    const check = () => {
+      const model = navigationAdapter.read();
+      if (!source.isConnected || root !== model.root) { stop(); return; }
+      if (!menu) {
+        menu = [...document.querySelectorAll('[role="menu"]')].find(element => !existing.has(element) && element.getClientRects().length);
+        if (menu) clearTimeout(timer);
+        return;
+      }
+      if (menu.isConnected && menu.getClientRects().length && getComputedStyle(menu).visibility !== 'hidden') return;
+      stop();
+      const active = document.activeElement;
+      if (!model.blocked && source.getClientRects().length && getComputedStyle(source).visibility !== 'hidden' &&
+          !source.closest('[inert], [aria-hidden="true"]') &&
+          (active === document.body || !active?.getClientRects().length || getComputedStyle(active).visibility === 'hidden')) source.focus({ preventScroll: true });
+    };
+    const observer = new MutationObserver(check);
+    const timer = setTimeout(stop, 3000);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'style', 'data-state'] });
+    navigationController.cancelShortcut = stop;
+  }
+
   c.runSidebarAction = async function runSidebarAction(label) {
     navigationController.cancelShortcut?.();
     const root = navigationAdapter.read().root;
@@ -69,6 +97,8 @@
     }
     if (!target?.isConnected || root !== navigationAdapter.read().root) return false;
     if (temporaryDrawer && label.test('Search')) restoreTemporarySearchDrawer(root, temporaryDrawer);
+    const accountSource = document.querySelector('[data-app-mode-rail-account]');
+    if (accountSource && label.test(accountSource.getAttribute('aria-label') || '')) restoreRailAccountFocus(accountSource, root);
     if (target?.getAttribute('aria-haspopup') === 'menu') {
       target.focus();
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
@@ -122,6 +152,21 @@
         if (owned) overlay.setAttribute(marker, '');
       }
     },
+    sections(panel) {
+      const navigation = panel?.querySelector('.sidebar-navigation');
+      if (!navigation) return [];
+      return [...navigation.querySelectorAll('section[class~="group/nav-section"]')].flatMap(section => {
+        const heading = section.querySelector('[class~="group/nav-section-title"]');
+        const native = heading?.querySelector('button[class~="group/section-toggle"][aria-expanded]');
+        const label = (native ? accessibleName(native) || native.textContent : heading?.textContent)?.trim();
+        const key = ['Pinned', 'Projects', 'Recents'].includes(label) ? label.toLowerCase() : null;
+        const children = heading?.parentElement?.children;
+        if (!heading || !children || children.length !== 2 || children[0] !== heading || !section.contains(children[1])) return [];
+        if (native && ['true', 'false'].includes(native.getAttribute('aria-expanded'))) return [{ section, heading, control: native, content: children[1], key: key || 'native', navigation, native: true }];
+        if (!key || heading.querySelector('button:not([data-app-mode-nav-disclosure]), a, input, [role="button"]')) return [];
+        return [{ section, heading, content: children[1], key, label, navigation, native: false }];
+      });
+    },
     async toggle() {
       const model = this.read();
       if (model.blocked) return false;
@@ -171,6 +216,74 @@
     cancelShortcut: null,
     owned: new Map(),
     queued: false,
+    sections: new Map(),
+    preferences: null,
+    sectionPreferences() {
+      if (this.preferences) return this.preferences;
+      this.preferences = {};
+      try {
+        const saved = JSON.parse(localStorage.getItem('app-mode-sidebar-disclosures-v1') || '{}');
+        for (const key of ['pinned', 'projects', 'recents']) if (typeof saved?.[key] === 'boolean') this.preferences[key] = saved[key];
+      } catch {}
+      return this.preferences;
+    },
+    toggleSection(control) {
+      const entry = [...this.sections.values()].find(entry => !entry.native && entry.control === control);
+      if (!entry) return;
+      const preferences = this.sectionPreferences();
+      preferences[entry.key] = !preferences[entry.key];
+      try { localStorage.setItem('app-mode-sidebar-disclosures-v1', JSON.stringify(preferences)); } catch {}
+      this.schedule();
+    },
+    reconcileSections(panel, own) {
+      const next = new Map();
+      for (const entry of navigationAdapter.sections(panel)) {
+        const { section, heading, content, key, navigation } = entry;
+        if (!entry.native) {
+          let control = heading.querySelector('[data-app-mode-nav-disclosure]');
+          if (!control) {
+            control = document.createElement('button');
+            control.type = 'button';
+            control.setAttribute('data-app-mode-nav-disclosure', '');
+            control.setAttribute('aria-label', entry.label);
+            heading.append(control);
+          }
+          entry.control = control;
+          const expanded = this.sectionPreferences()[key] === true;
+          own(control, 'aria-expanded', String(expanded));
+          if (!expanded) own(content, 'data-app-mode-nav-collapsed');
+          own(heading, 'data-app-mode-nav-fallback-heading');
+        }
+        own(section, 'data-app-mode-nav-section', key);
+        own(entry.control, 'data-app-mode-nav-heading');
+        own(content, 'data-app-mode-nav-content');
+        own(navigation, 'data-app-mode-sidebar-navigation');
+        const wrapper = panel.firstElementChild;
+        if (wrapper?.contains(navigation) && wrapper.style.width && wrapper.style.minWidth) own(wrapper, 'data-app-mode-sidebar-width-wrapper');
+        let scroll = section.parentElement;
+        while (scroll && scroll !== navigation && !['auto', 'scroll'].includes(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+        if (scroll && scroll !== navigation) {
+          own(scroll, 'data-app-mode-nav-scroll');
+          for (let node = section.parentElement; node && node !== scroll; node = node.parentElement) {
+            if (node.querySelectorAll('section').length === 1) own(node, 'data-app-mode-nav-group-wrapper');
+          }
+        }
+        const header = navigation.querySelector('[class~="h-toolbar"]');
+        if (header && !header.contains(section)) own(header, 'data-app-mode-nav-header');
+        const account = [...navigation.querySelectorAll('button, [role="button"]')].find(element =>
+          !element.closest('section') && /account|profile|user menu/i.test(accessibleName(element)));
+        const accountRow = account?.closest('[class~="h-toolbar"]');
+        if (accountRow && accountRow !== header) own(accountRow, 'data-app-mode-nav-account-row');
+        for (const list of navigation.querySelectorAll('[class~="group/nav-list"]')) {
+          if (!list.closest('section')) own(list, 'data-app-mode-nav-primary');
+        }
+        next.set(section, entry);
+      }
+      for (const [section, entry] of this.sections) {
+        if (!entry.native && next.get(section)?.control !== entry.control) entry.control.remove();
+      }
+      this.sections = next;
+    },
     schedule() {
       if (this.queued) return;
       this.queued = true;
@@ -190,6 +303,7 @@
     },
     reset() {
       this.cancelShortcut?.();
+      this.reconcileSections(null, () => {});
       this.apply(new Map());
       document.getElementById('app-mode-compact-sidebar')?.remove();
       document.getElementById('app-mode-compact-sidebar-actions')?.remove();
@@ -313,6 +427,7 @@
     own(toggle, 'aria-label', open ? 'Close sidebar' : 'Open sidebar');
     const label = open ? 'Close sidebar' : 'Open sidebar';
     if (toggle.title !== label) toggle.title = label;
+    navigationController.reconcileSections(model.drawer || dockedPanel, own);
     const previous = navigationController.state;
     navigationController.apply(next);
     navigationController.state = state;

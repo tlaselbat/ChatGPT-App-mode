@@ -23,6 +23,12 @@
       });
       return;
     }
+    const disclosure = event.target instanceof Element ? event.target.closest('[data-app-mode-nav-disclosure]') : null;
+    if (disclosure) {
+      event.preventDefault(); event.stopPropagation();
+      navigationController.toggleSection(disclosure);
+      return;
+    }
     const button = event.target instanceof Element ? event.target.closest(`#${pinButtonId}`) : null;
     const sidebarAction = event.target instanceof Element ? event.target.closest('[data-app-mode-sidebar-action], #app-mode-compact-sidebar') : null;
     if (sidebarAction) {

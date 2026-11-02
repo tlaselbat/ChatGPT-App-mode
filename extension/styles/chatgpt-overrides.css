@@ -41,6 +41,11 @@ body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
+body.faux-chatgpt-app-mode [data-app-mode-nav-collapsed] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-nav-fallback-heading] { position: relative; }
+body.faux-chatgpt-app-mode [data-app-mode-nav-disclosure] {
+  position: absolute; inset: 0; width: 100%; border: 0; background: transparent; color: inherit; cursor: pointer;
+}
 body.faux-chatgpt-app-mode [data-app-mode-relocated-share] { display: none !important; }
 
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar,
