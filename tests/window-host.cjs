@@ -224,6 +224,17 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const rect=button.getBoundingClientRect(), style=getComputedStyle(button);
       return {width:rect.width,height:rect.height,center:rect.y+rect.height/2,radius:style.borderRadius,drag:style.webkitAppRegion};
     })`), Array(3).fill({width:32,height:28,center:24,radius:'8px',drag:'no-drag'}));
+    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => ({
+      label:button.getAttribute('aria-label'),tabIndex:button.tabIndex,
+    }))`), [
+      {label:'Minimize',tabIndex:0},{label:'Maximize',tabIndex:0},{label:'Close',tabIndex:0},
+    ]);
+    assert.deepEqual(await controlsEval(`(() => {
+      const button=document.querySelector('[data-action=minimize]');
+      button.focus({focusVisible:true});
+      const style=getComputedStyle(button);
+      return {focused:document.activeElement===button,outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth};
+    })()`), {focused:true,outlineStyle:'solid',outlineWidth:'2px'});
     await waitControlLabel('Maximize');
     assert.notEqual(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
     const security = await electron.evaluate(({ BrowserWindow }, modulePath) => {

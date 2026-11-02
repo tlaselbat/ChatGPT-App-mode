@@ -118,7 +118,9 @@ function createWindow(args) {
       // Main-process injection is restricted to exact ChatGPT origins. No API
       // is exposed to the page; these are the same unprivileged site overrides.
       const css = fs.readFileSync(path.join(sourceRoot, 'extension/styles/chatgpt-overrides.css'), 'utf8');
-      let script = fs.readFileSync(path.join(sourceRoot, 'extension/scripts/chatgpt-overrides.js'), 'utf8');
+      const manifestPath = path.join(sourceRoot, 'extension/manifest.json');
+      const scriptFiles = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).content_scripts[0].js;
+      let script = scriptFiles.map(file => fs.readFileSync(path.join(sourceRoot, 'extension', file), 'utf8')).join('\n');
       const compactSidebar = config.layout?.compactSidebar !== false;
       script = `window.__APP_MODE_COMPACT_SIDEBAR__=${JSON.stringify(compactSidebar)};\n${script}`;
       if (fixturePath && /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')) {

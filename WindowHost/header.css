@@ -106,14 +106,14 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
   display: flex !important;
   align-items: center;
   justify-content: center;
-  flex: 0 1 192px;
-  width: clamp(96px, 28vw, 192px) !important;
+  flex: 0 1 clamp(96px, calc(28vw - 22px), 192px);
+  width: clamp(96px, calc(28vw - 22px), 192px) !important;
   min-width: 96px !important;
   max-width: 192px;
   height: 28px !important;
   border: 1px solid var(--app-mode-control-border);
   border-radius: 8px;
-  padding: 2px;
+  padding: 1px 2px;
   gap: 2px;
   box-sizing: border-box;
 }
@@ -148,9 +148,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-t
   width: auto !important;
   min-width: 0 !important;
   max-width: 100%;
-  height: 22px;
+  height: 24px;
   padding: 0 6px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   font-size: 12px;
@@ -159,6 +159,12 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-t
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"], [data-state="active"]) {
   background: var(--app-mode-control-hover);
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  font-weight: 600;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where(button, [role="tab"], [role="radio"]):focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :not([data-app-mode-header-tab-path]) {
   flex-shrink: 0;
@@ -192,10 +198,6 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
      switch never overlaps them; it centers in whatever space remains. */
   body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] { flex: 0 0 auto !important; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 28px !important; min-width: 28px !important; max-width: 28px; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
-    gap: 4px;
-    padding-inline: 8px !important;
-  }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] button {
     min-width: 28px;
     height: 28px;
@@ -210,13 +212,12 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
     width: 112px !important;
   }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where(button, [role="tab"], [role="radio"]) {
-    height: 22px;
+    height: 24px;
     min-width: 0;
     padding-inline: 4px;
   }
 }
 @media (max-width: 420px) {
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] { gap: 3px; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] { min-width: 80px !important; width: 96px !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] { min-width: 80px !important; flex-basis: 96px; width: 96px !important; }
   body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-pin-button { width: 28px; flex-basis: 28px; }
 }

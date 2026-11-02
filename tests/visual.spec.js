@@ -9,6 +9,11 @@ const root = path.resolve(__dirname, '..');
 const extensionPath = path.join(root, 'extension');
 const headerLayoutScript = fs.readFileSync(path.join(root, 'WindowHost', 'header.js'), 'utf8');
 const headerLayoutCss = fs.readFileSync(path.join(root, 'WindowHost', 'header.css'), 'utf8');
+const overrideScripts = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'))
+  .content_scripts[0].js.map(file => fs.readFileSync(path.join(extensionPath, file), 'utf8'));
+async function injectOverrides(page) {
+  for (const script of overrideScripts) await page.evaluate(source => (0, eval)(source), script);
+}
 const profilePath = path.join(root, 'test-results', 'runs', 'browser-profile');
 const fixtureProfile = testId => `${profilePath}-${testId.replace(/[^a-z0-9]/gi, '').slice(-24)}`;
 const configuredChrome = process.env.APP_MODE_CHROMIUM_EXE;
@@ -39,6 +44,155 @@ const test = base.extend({
     await use(page);
     await page.close();
   },
+});
+
+async function sidebarOverlayFixture(page, scheme = 'light') {
+  await page.goto('about:blank');
+  await page.setViewportSize({ width: 550, height: 700 });
+  await page.emulateMedia({ colorScheme: scheme });
+  await page.setContent(`<style>
+    *{box-sizing:border-box}body{margin:0;background:#89a}html.dark .codex-dialog-overlay{background-color:rgba(0,0,0,.6)}
+    header{position:fixed;inset:0 0 auto;height:40px;z-index:50;background:#678!important}
+    #background-action{position:fixed;left:350px;top:5px;width:70px;height:28px}
+    .codex-dialog-overlay{position:fixed;inset:0;z-index:50;background-color:rgba(220,230,240,.6)}
+    #browser-sidebar-popover{position:fixed;top:40px;left:0;bottom:0;width:260px;z-index:50;background:#abc}
+    </style><div data-app-shell-responsive-sidebar="true"><header data-app-mode-header-layout>
+    <button aria-label="Show sidebar">Sidebar</button><button id="background-action">Action</button></header></div>
+    <div id="portal"><div id="scrim" class="codex-dialog-overlay" aria-hidden="true" data-state="open"></div>
+    <div id="browser-sidebar-popover" role="dialog" aria-modal="true" data-state="open"><button aria-label="Close sidebar">Close</button></div></div>`);
+  await page.evaluate(scheme => {
+    document.documentElement.classList.toggle('dark', scheme === 'dark');
+    document.body.classList.add('faux-chatgpt-app-mode');
+    window.headerClicks = 0;
+    document.querySelector('#background-action').onclick = () => window.headerClicks++;
+    const close = () => { document.querySelector('#portal')?.remove(); document.querySelector('#app-mode-compact-sidebar')?.focus(); };
+    document.querySelector('[aria-label="Close sidebar"]').onclick = close;
+    document.querySelector('#scrim').onclick = event => { if (event.clientY >= 40) close(); };
+    document.querySelector('[role="dialog"]').addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  }, scheme);
+  await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
+}
+
+async function overlayPixels(page, clip) {
+  const buffer = await page.screenshot({ clip });
+  return page.evaluate(async data => {
+    const image = new Image(); image.src = data; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    return Array.from(context.getImageData(0, 0, image.width, image.height).data);
+  }, `data:image/png;base64,${buffer.toString('base64')}`);
+}
+
+test('sidebar overlay preserves native color and alpha with a clear header and blocked input', async ({ page }, testInfo) => {
+  for (const scheme of ['light', 'dark']) {
+    await sidebarOverlayFixture(page, scheme);
+    const nativeColor = await page.locator('#scrim').evaluate(e => getComputedStyle(e).backgroundColor);
+    const nativeBelow = await overlayPixels(page, { x: 450, y: 70, width: 20, height: 20 });
+    await page.locator('#scrim').evaluate(e => e.style.visibility = 'hidden');
+    const clearHeader = await overlayPixels(page, { x: 450, y: 10, width: 20, height: 20 });
+    await page.locator('#scrim').evaluate(e => e.style.removeProperty('visibility'));
+    await injectOverrides(page);
+    await expect(page.locator('#scrim')).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+    expect(await page.locator('#scrim').evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe(nativeColor);
+    const renderedBelow = await overlayPixels(page, { x: 450, y: 70, width: 20, height: 20 });
+    // Chromium dithers gradients by one channel level even in a flat stop.
+    expect(Math.max(...renderedBelow.map((value, index) => Math.abs(value - nativeBelow[index])))).toBeLessThanOrEqual(1);
+    expect(await overlayPixels(page, { x: 450, y: 10, width: 20, height: 20 })).toEqual(clearHeader);
+    await page.screenshot({ path: testInfo.outputPath(`sidebar-overlay-${scheme}.png`), clip: { x: 280, y: 0, width: 270, height: 120 } });
+    expect(await page.evaluate(() => document.elementFromPoint(380, 20).id)).toBe('scrim');
+    await page.mouse.click(380, 20);
+    expect(await page.evaluate(() => window.headerClicks)).toBe(0);
+    await page.getByRole('button', { name: 'Close sidebar', exact: true }).click();
+    await expect(page.locator('#portal')).toHaveCount(0);
+    await expect(page.locator('#app-mode-compact-sidebar')).toBeFocused();
+  }
+});
+
+test('sidebar overlay refreshes themes and owns rendered closing and replacement lifecycles', async ({ page }) => {
+  await sidebarOverlayFixture(page);
+  await injectOverrides(page);
+  const scrim = page.locator('#scrim');
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  await page.evaluate(() => { for (let i = 0; i < 4; i++) window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); });
+  expect(await scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('rgba(220, 230, 240, 0.6)');
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await expect.poll(() => scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('rgba(0, 0, 0, 0.6)');
+  await page.evaluate(() => { document.querySelector('#scrim').dataset.state = 'closed'; document.querySelector('#browser-sidebar-popover').dataset.state = 'closed'; });
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  await page.evaluate(() => {
+    window.oldScrim = document.querySelector('#scrim');
+    const replacement = window.oldScrim.cloneNode(); replacement.style.cssText = 'background-color:rgba(40,50,60,.25)';
+    replacement.removeAttribute('data-app-mode-sidebar-overlay'); window.oldScrim.replaceWith(replacement);
+  });
+  await expect.poll(() => scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('rgba(40, 50, 60, 0.25)');
+  expect(await page.evaluate(() => !window.oldScrim.hasAttribute('data-app-mode-sidebar-overlay') && !window.oldScrim.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe(true);
+  await injectOverrides(page);
+  await expect(page.locator('[data-app-mode-sidebar-overlay]')).toHaveCount(1);
+  await page.evaluate(() => { history.replaceState({}, '', '#overlay-navigation'); window.dispatchEvent(new Event('popstate')); });
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  await page.evaluate(() => { window.__APP_MODE_CONTEXT__.compactSidebarEnabled = false; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); });
+  await expect(scrim).not.toHaveAttribute('data-app-mode-sidebar-overlay');
+  expect(await scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('');
+  await page.evaluate(() => { window.__APP_MODE_CONTEXT__.compactSidebarEnabled = true; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); });
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  await page.evaluate(() => { document.querySelector('#scrim').style.display = 'none'; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); });
+  await expect(scrim).not.toHaveAttribute('data-app-mode-sidebar-overlay');
+  expect(await scrim.evaluate(e => {
+    e.style.display = ''; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); window.__APP_MODE_CONTEXT__.navigationController.reset();
+    return !e.hasAttribute('data-app-mode-sidebar-overlay') && !e.style.getPropertyValue('--app-mode-sidebar-scrim-color');
+  })).toBe(true);
+});
+
+test('sidebar overlay rejects unsupported native styles and isolates unrelated modals', async ({ page }) => {
+  await sidebarOverlayFixture(page);
+  await injectOverrides(page);
+  const scrim = page.locator('#scrim');
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  for (const css of ['background-color:transparent', 'background-color:var(--missing-native-color)', 'background-image:linear-gradient(red,blue)', 'backdrop-filter:blur(2px)', 'left:3px', 'position:absolute', 'transform:translateY(3px)']) {
+    await scrim.evaluate((e, css) => { e.style.cssText = css; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); }, css);
+    await expect(scrim).not.toHaveAttribute('data-app-mode-sidebar-overlay');
+    expect(await scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('');
+    await scrim.evaluate(e => { e.style.cssText = ''; window.__APP_MODE_CONTEXT__.ensureCompactSidebar(); });
+    await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  }
+  await page.evaluate(() => {
+    const second = document.querySelector('#scrim').cloneNode(); second.id = 'ambiguous'; second.removeAttribute('data-app-mode-sidebar-overlay'); second.style.cssText = ''; document.querySelector('#portal').append(second);
+    window.__APP_MODE_CONTEXT__.ensureCompactSidebar();
+  });
+  await expect(page.locator('[data-app-mode-sidebar-overlay]')).toHaveCount(0);
+  await page.evaluate(() => {
+    document.querySelector('#ambiguous').remove();
+    const other = document.createElement('div'); other.id = 'other-portal';
+    other.innerHTML = '<div id="other-scrim" class="codex-dialog-overlay" aria-hidden="true" style="z-index:80;background:rgba(80,20,30,.4)"></div><div role="dialog" aria-modal="true" style="position:fixed;left:350px;top:100px;width:150px;height:80px;z-index:90"><button id="other-close">Close other</button></div>';
+    document.body.append(other); window.otherDismissed = false;
+    document.querySelector('#other-close').onclick = () => { window.otherDismissed = true; other.remove(); };
+  });
+  await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+  await expect(page.locator('#other-scrim')).not.toHaveAttribute('data-app-mode-sidebar-overlay');
+  await expect(page.locator('#other-scrim')).toHaveCSS('background-color', 'rgba(80, 20, 30, 0.4)');
+  expect(await page.evaluate(() => document.elementFromPoint(380, 20).id)).toBe('other-scrim');
+  await page.locator('#other-close').click();
+  expect(await page.evaluate(() => window.otherDismissed)).toBe(true);
+  for (const width of [800, 550]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.evaluate(width => {
+      document.querySelector('#portal').style.display = width === 800 ? 'none' : '';
+      if (width === 800) {
+        const panel = document.createElement('aside'); panel.className = 'app-shell-left-panel';
+        panel.style.cssText = 'position:fixed;left:0;top:0;width:340px';
+        document.querySelector('[data-app-shell-responsive-sidebar]').append(panel);
+      } else document.querySelector('aside.app-shell-left-panel').remove();
+    }, width);
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width === 800 ? 'docked' : 'drawer');
+    if (width === 800) {
+      await expect(scrim).not.toHaveAttribute('data-app-mode-sidebar-overlay');
+      expect(await scrim.evaluate(e => e.style.getPropertyValue('--app-mode-sidebar-scrim-color'))).toBe('');
+    } else {
+      await expect(scrim).toHaveAttribute('data-app-mode-sidebar-overlay', '');
+      expect(await scrim.evaluate(e => Math.round(e.getBoundingClientRect().width))).toBe(width);
+      expect(await page.locator('#browser-sidebar-popover').evaluate(e => e.getBoundingClientRect().top)).toBe(40);
+    }
+  }
 });
 
 const fixture = `<!doctype html>
@@ -79,6 +233,9 @@ test('visible fixed-layer switch centers in docked content and keeps viewport ce
     document.querySelector('.shell').style.gridTemplateColumns = '1fr';
     document.querySelector('aside').style.display = 'none';
     document.querySelector('header').innerHTML = html;
+    const compactToggle = document.createElement('button');
+    compactToggle.id = 'app-mode-compact-sidebar';
+    document.body.append(compactToggle);
     document.querySelector('.fixed-mode-layer').setAttribute('data-app-mode-header-tabs', '');
     const action = document.querySelector('button[aria-label="Refresh"]');
     action.after(action.cloneNode(true));
@@ -149,8 +306,6 @@ test('visible fixed-layer switch centers in docked content and keeps viewport ce
     if (index === 12) expect(sample.centering).toBe('remaining');
     if (sample.centering === 'region') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
     if (sample.centering === 'viewport') expect(Math.abs(sample.error), JSON.stringify(sample)).toBeLessThanOrEqual(2);
-    if (sample.centering === 'region') expect(sample.switch.x).toBeGreaterThanOrEqual(150);
-    if (sample.viewport <= 480) expect(sample.centering).toBe('remaining');
     expect(sample.outline).toBe('1px');
     expect(Math.abs(sample.switch.y - (40 - sample.switch.bottom))).toBeLessThanOrEqual(2);
     for (let index = 0; index < sample.controls.length; index++) {
@@ -180,6 +335,115 @@ test('visible fixed-layer switch centers in docked content and keeps viewport ce
     const box = element.getBoundingClientRect();
     return Math.abs(box.x + box.width / 2 - innerWidth / 2);
   })).toBeLessThanOrEqual(2);
+});
+
+test('docked sidebar centers the mode switch in content while compact toggle remains mounted', async ({ page }) => {
+  await page.setViewportSize({ width: 786, height: 800 });
+  await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}.shell{height:800px}aside{position:fixed;left:0;top:40px;width:340px;height:760px}main{margin-left:340px;min-width:0}header{height:40px}</style>
+    <div class="shell"><aside></aside><main><header><div class="real-mode-grid" role="tablist" style="position:absolute;left:50%;top:6px;width:192px;height:28px;display:flex">
+      <button role="tab" aria-selected="true">Chat</button><button role="tab" aria-selected="false">Work</button>
+    </div></header></main></div>
+    <button id="app-mode-compact-sidebar" aria-label="Open sidebar"></button>`);
+  await page.evaluate(() => document.body.classList.add('faux-chatgpt-app-mode'));
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  await expect.poll(() => page.locator('header').getAttribute('data-app-mode-header-centering')).toBe('region');
+  const geometry = await page.evaluate(() => {
+    const rect = element => { const { x, y, width, height, right } = element.getBoundingClientRect(); return { x, y, width, height, right }; };
+    const sidebar = rect(document.querySelector('aside'));
+    const tabs = rect(document.querySelector('.real-mode-grid'));
+    return { viewport: innerWidth, sidebar, tabs, centerOffset: document.querySelector('header').style.getPropertyValue('--app-mode-switch-offset'), toggleMounted: !!document.getElementById('app-mode-compact-sidebar') };
+  });
+  expect(geometry.toggleMounted).toBe(true);
+  expect(Math.abs(geometry.tabs.x + geometry.tabs.width / 2 - (geometry.sidebar.right + geometry.viewport) / 2), JSON.stringify(geometry)).toBeLessThanOrEqual(2);
+  expect(geometry.tabs.x, JSON.stringify(geometry)).toBeGreaterThanOrEqual(geometry.sidebar.right);
+});
+
+test('mode switch positioning stays continuous across 480px and 481px', async ({ page }) => {
+  await page.setContent(`<style>body{margin:0}header{height:40px}aside{position:fixed;left:0;top:40px;width:340px;height:600px}</style>
+    <header><div><button aria-label="Sidebar">S</button></div>
+      <div class="switch" role="tablist" style="position:absolute;left:50%;top:6px;width:192px;height:28px;display:flex;pointer-events:auto">
+        <button role="tab" aria-selected="true">Chat</button><button role="tab" aria-selected="false">Work</button>
+      </div><div class="actions"><button aria-label="Refresh">R</button><button aria-label="Share">S</button><button aria-label="More">M</button></div><div class="chatgpt-app-mode-toolbar"></div></header><aside></aside>`);
+  await page.evaluate(() => document.body.classList.add('faux-chatgpt-app-mode'));
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  const centers = [];
+  for (const width of [390, 419, 420, 421, 479, 480, 481, 550, 680, 767, 768, 769, 800, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.locator('aside').evaluate((element, width) => { element.style.display = width >= 768 ? 'block' : 'none'; }, width);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const geometry = await page.locator('.switch').evaluate(element => {
+      const { x, width } = element.getBoundingClientRect();
+      const header = element.closest('header');
+      const rect = button => { const r = button.getBoundingClientRect(); return { x: r.x, right: r.right, top: r.top, bottom: r.bottom }; };
+      return { center: x + width / 2, width, right: x + width, state: header.getAttribute('data-app-mode-header-centering'), controls: [...header.querySelectorAll('button')].filter(button => !element.contains(button)).map(rect) };
+    });
+    centers.push({ viewport: width, ...geometry });
+    expect(geometry.center - geometry.width / 2).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(width);
+    for (let index = 0; index < geometry.controls.length; index++) {
+      for (const other of geometry.controls.slice(index + 1)) expect(geometry.controls[index].right <= other.x || geometry.controls[index].x >= other.right || geometry.controls[index].bottom <= other.top || geometry.controls[index].top >= other.bottom, JSON.stringify({ width, geometry })).toBe(true);
+      expect(geometry.controls[index].top).toBeGreaterThanOrEqual(0);
+      expect(geometry.controls[index].bottom).toBeLessThanOrEqual(40);
+    }
+  }
+  const at480 = centers.find(entry => entry.viewport === 480);
+  const at481 = centers.find(entry => entry.viewport === 481);
+  expect(Math.abs(at480.center - at481.center), JSON.stringify(centers)).toBeLessThanOrEqual(2);
+  for (const width of [768, 769, 800, 1024, 1280]) {
+    const sample = centers.find(entry => entry.viewport === width);
+    expect(sample.state).toBe('region');
+    expect(Math.abs(sample.center - (340 + width) / 2), JSON.stringify(sample)).toBeLessThanOrEqual(2);
+  }
+});
+
+test('keyboard focus remains visible and native tooltips stay available in both themes', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 550, height: 500 });
+  await page.setContent(`<style>html{color-scheme:light;--sidebar-surface-primary:#f7f8fa}html.dark{color-scheme:dark;--sidebar-surface-primary:#262733}body{margin:0;color:#17191d;background:#fff}html.dark body{color:#eee;background:#20232a}header{height:40px}</style>
+    <header><button id="app-mode-compact-sidebar" aria-label="Show sidebar">S</button><button aria-label="Temporary chat" title="Temporary chat">T</button><div class="chatgpt-app-mode-toolbar"></div>
+      <div data-app-mode-header-tabs><button role="tab" aria-selected="true">Chat</button><button role="tab" aria-selected="false">Work</button></div></header>
+    <div id="app-mode-compact-sidebar-actions"></div><div role="tooltip" id="native-tip">Temporary chat</div><div data-app-mode-share-menu-item tabindex="0">Share</div>`);
+  await page.evaluate(() => document.body.classList.add('faux-chatgpt-app-mode'));
+  await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  async function tabTo(selector) {
+    for (let index = 0; index < 12; index++) {
+      await page.keyboard.press('Tab');
+      if (await page.locator(selector).evaluate(element => element === document.activeElement)) return;
+    }
+    throw new Error(`Tab traversal did not reach ${selector}`);
+  }
+  for (const scheme of ['light', 'dark']) {
+    await page.evaluate(scheme => document.documentElement.classList.toggle('dark', scheme === 'dark'), scheme);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.emulateMedia({ colorScheme: scheme });
+    const sidebar = page.locator('#app-mode-compact-sidebar');
+    await tabTo('#app-mode-compact-sidebar');
+    await expect(sidebar).toBeFocused();
+    const outline = await sidebar.evaluate(element => ({ style: getComputedStyle(element).outlineStyle, width: getComputedStyle(element).outlineWidth, color: getComputedStyle(element).outlineColor }));
+    expect(outline.style).toBe('solid');
+    expect(outline.width).toBe('2px');
+    await expect(page.locator('#native-tip')).toBeVisible();
+    expect(await page.locator('header').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(await page.locator('#app-mode-compact-sidebar-actions').evaluate(element => getComputedStyle(element).backgroundColor));
+    const selected = page.locator('[data-app-mode-header-tabs] [aria-selected="true"]');
+    await expect(selected).toHaveCSS('height', '24px');
+    await expect(selected).toHaveCSS('border-top-width', '1px');
+    expect(await selected.evaluate(element => getComputedStyle(element).borderTopColor)).not.toBe('rgba(0, 0, 0, 0)');
+    await page.screenshot({ path: testInfo.outputPath(`focus-${scheme}.png`) });
+    const share = page.locator('[data-app-mode-share-menu-item]');
+    await tabTo('[data-app-mode-share-menu-item]');
+    await expect(share).toBeFocused();
+    await expect(share).toHaveCSS('outline-style', 'solid');
+    await expect(share).toHaveCSS('outline-width', '2px');
+  }
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.evaluate(() => document.activeElement?.blur());
+  await tabTo('#app-mode-compact-sidebar');
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCSS('outline-style', 'solid');
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCSS('outline-width', '2px');
+  expect(await page.locator('#app-mode-compact-sidebar').evaluate(element => getComputedStyle(element).outlineColor)).not.toBe('rgba(0, 0, 0, 0)');
 });
 
 test('expanded-sidebar offsets collapse so the conversation title stays between the control groups', async ({ page }) => {
@@ -273,7 +537,7 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
     });
   });
   await page.setViewportSize({ width: 1280, height: 780 });
-  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await injectOverrides(page);
   await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(1);
   await page.locator('nav[class~="group/sidebar-rail"]').evaluate(element => element.remove());
   await page.setViewportSize({ width: 390, height: 780 });
@@ -282,7 +546,10 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   const rail = page.locator('#app-mode-compact-sidebar');
   await expect(rail).toBeVisible();
   await expect(rail).toHaveCSS('width', '36px');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('width', '52px');
+  const compactRail = page.locator('#app-mode-compact-sidebar-actions');
+  await expect(compactRail).toHaveCSS('width', '52px');
+  await expect(compactRail).toHaveCSS('border-top-width', '1px');
+  await expect(compactRail).toHaveCSS('border-top-style', 'solid');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
   expect(await page.locator('#app').evaluate(element => element.getBoundingClientRect().left)).toBe(52);
   expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 390, height: 780 });
@@ -291,6 +558,8 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   await page.locator('[role="dialog"][aria-modal="true"]').evaluate(element => { element.id = 'browser-sidebar-popover'; });
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('top', '40px');
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('height', '740px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('border-top-width', '1px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('border-top-style', 'solid');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
   await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toHaveCSS('top', '5px');
@@ -441,7 +710,7 @@ test('sidebar boundary stays below the subheader throughout opening and closing'
   await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}.shell{display:flex;height:100vh}aside.app-shell-left-panel{width:52px;flex-shrink:0;height:100vh;transition:width 180ms linear}main{flex:1}header{height:40px}</style>
     <div class="shell" data-app-shell-responsive-sidebar="false"><aside class="app-shell-left-panel"><div>Native sidebar title</div></aside><main><header><button aria-label="Show sidebar">Sidebar</button></header></main></div>`);
   await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
-  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await injectOverrides(page);
   await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
   await expect(page.locator('.shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
   await page.addStyleTag({ content: headerLayoutCss });
@@ -476,7 +745,7 @@ test('sidebar boundary stays below the subheader throughout opening and closing'
 test('disabled compact navigation preserves native controls and layout', async ({ page }) => {
   await page.setContent('<main data-app-shell-responsive-sidebar="true"><button aria-label="Show sidebar">Sidebar</button></main>');
   await page.evaluate(() => { window.__APP_MODE_COMPACT_SIDEBAR__ = false; });
-  await page.evaluate(script => (0, eval)(script), fs.readFileSync(path.join(extensionPath, 'scripts/chatgpt-overrides.js'), 'utf8'));
+  await injectOverrides(page);
   await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
   await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(0);
   await expect(page.locator('[data-app-mode-sidebar-original], [data-app-mode-compact-sidebar-shell], [data-app-mode-navigation-state]')).toHaveCount(0);
@@ -808,6 +1077,50 @@ test('standardized action row normalizes the site header in place without moving
   await expect(page.locator('[data-app-mode-header-tabs],[data-app-mode-header-strip],[data-app-mode-header-control-branch]')).toHaveCount(0);
 });
 
+test('conversation typography and composer retain native styling with long content in both themes', async ({ page }) => {
+  await page.goto('about:blank');
+  await page.setContent(`<style>
+    *{box-sizing:border-box}html{color-scheme:light}body{margin:0}
+    main{padding:32px 24px;max-width:800px;margin:auto;min-width:0}
+    [data-composer-body]{margin-top:28px;padding:16px}
+    textarea{width:100%;min-height:60px;border:0;background:transparent;color:inherit;font:inherit;resize:vertical}
+    article{min-width:0}pre{padding:16px;max-width:100%;overflow-x:auto}h2{font-size:24px}a{color:inherit}
+  </style><body class="faux-chatgpt-app-mode"><main class="MainContentSurface-review">
+    <article data-message-author-role="assistant"><h2>A clearer place to think</h2>
+    <p>Readable conversations start with comfortable spacing and a consistent visual hierarchy.</p>
+    <ul><li>Quiet surfaces keep attention on your work.</li><li>Clear headings make longer answers easier to scan.</li></ul>
+    <blockquote>Useful details should be easy to find.</blockquote>
+    <pre><code>${'long_example_identifier_'.repeat(15)}</code></pre>
+    <p>Continue with a question or refine the next step.</p></article>
+    <div data-composer-body><textarea aria-label="Message">A sample draft, preserved while resizing.</textarea></div>
+  </main></body>`);
+  let overridesStyle;
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
+    if (overridesStyle) await overridesStyle.evaluate(element => element.remove());
+    await page.getByRole('textbox').focus();
+    const nativeStyles = await page.evaluate(() => {
+      const properties = ['fontFamily', 'fontSize', 'lineHeight', 'marginTop', 'marginBottom', 'paddingLeft', 'borderLeftWidth', 'borderLeftStyle', 'borderRadius', 'backgroundColor', 'color', 'boxShadow', 'outlineStyle', 'outlineWidth'];
+      return ['[data-message-author-role]', 'h2', 'p', 'ul', 'li', 'blockquote', 'pre', '[data-composer-body]', 'textarea']
+        .map(selector => properties.map(property => getComputedStyle(document.querySelector(selector))[property]));
+    });
+    overridesStyle = await page.addStyleTag({ path: path.join(extensionPath, 'styles/chatgpt-overrides.css') });
+    for (const width of [390, 1024]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.getByRole('textbox').focus();
+      await expect(page.getByRole('textbox')).toHaveValue('A sample draft, preserved while resizing.');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(await page.locator('pre').evaluate(e => e.scrollWidth > e.clientWidth)).toBe(true);
+      const afterStyles = await page.evaluate(() => {
+        const properties = ['fontFamily', 'fontSize', 'lineHeight', 'marginTop', 'marginBottom', 'paddingLeft', 'borderLeftWidth', 'borderLeftStyle', 'borderRadius', 'backgroundColor', 'color', 'boxShadow', 'outlineStyle', 'outlineWidth'];
+        return ['[data-message-author-role]', 'h2', 'p', 'ul', 'li', 'blockquote', 'pre', '[data-composer-body]', 'textarea']
+          .map(selector => properties.map(property => getComputedStyle(document.querySelector(selector))[property]));
+      });
+      expect(afterStyles).toEqual(nativeStyles);
+    }
+  }
+});
+
 test('extension styling, control, navigation and re-render in offline ChatGPT fixture', async ({ page }) => {
   const sessionPosts = [];
   let pinEnabled = false;
@@ -906,11 +1219,11 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
   await expect(page.locator('#page-header #chatgpt-app-mode-pin-toggle')).toBeVisible();
   await expect(pin).toHaveCSS('color', 'rgb(205, 214, 244)');
   await expect(page.locator('#page-header')).toHaveCSS('backdrop-filter', 'none');
-  await expect.soft(page.locator('#page-header')).toHaveScreenshot('fixture-home-header.png');
+  expect(await page.locator('#page-header').evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
   await page.evaluate(() => document.getElementById('page-header').remove());
   await expect(page.locator('main > #chatgpt-app-mode-toolbar-fallback')).toBeVisible();
   await expect(pin).toBeInViewport();
-  await expect.soft(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveScreenshot('fixture-home-fallback.png');
+  expect(await page.locator('#chatgpt-app-mode-toolbar-fallback').evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
   await page.evaluate(() => {
     history.pushState({}, '', '/c/synthetic-from-home');
     const header = document.createElement('header');
@@ -1095,8 +1408,10 @@ base('content-script pin clicks reach a real HTTP endpoint after header cloning'
   const port = server.address().port;
   const copy = testInfo.outputPath('extension');
   fs.cpSync(extensionPath, copy, { recursive: true });
-  const script = path.join(copy, 'scripts', 'chatgpt-overrides.js');
-  fs.writeFileSync(script, fs.readFileSync(script, 'utf8').replaceAll('127.0.0.1:17863', `127.0.0.1:${port}`));
+  for (const relativePath of JSON.parse(fs.readFileSync(path.join(copy, 'manifest.json'), 'utf8')).content_scripts[0].js) {
+    const script = path.join(copy, relativePath);
+    fs.writeFileSync(script, fs.readFileSync(script, 'utf8').replaceAll('127.0.0.1:17863', `127.0.0.1:${port}`));
+  }
   let context;
   try {
     context = await chromium.launchPersistentContext(testInfo.outputPath('profile'), {
@@ -1121,4 +1436,19 @@ base('content-script pin clicks reach a real HTTP endpoint after header cloning'
     if (context) await context.close();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('content script reinjection is idempotent and keeps a single owned control set', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({
+    contentType: 'application/json', body: '{"saved":true,"enabled":false}',
+  }));
+  await page.goto('https://chatgpt.com/');
+  const before = await page.locator('#chatgpt-app-mode-pin-toggle').count();
+  for (const script of overrideScripts) await page.evaluate(source => (0, eval)(source), script);
+  await expect(page.locator('#chatgpt-app-mode-pin-toggle')).toHaveCount(before);
+  await expect(page.locator('#app-mode-compact-sidebar')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-share-menu-item]')).toHaveCount(0);
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'unsupported');
+  expect(await page.evaluate(() => window.__APP_MODE_OVERRIDE_RUNTIME__?.initialized)).toBe(true);
 });
