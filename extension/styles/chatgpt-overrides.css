@@ -17,6 +17,7 @@ body.faux-chatgpt-app-mode {
   --app-mode-border: var(--border-light, color-mix(in srgb, currentColor 14%, transparent));
   --app-mode-hover: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 8%, transparent));
   --app-mode-selected: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 12%, transparent));
+  --app-mode-accent: var(--app-color-icon-accent, currentColor);
   --app-mode-sidebar-width: clamp(240px, 28vw, 256px);
   --app-mode-radius-small: 10px;
   --app-mode-radius-medium: 12px;
@@ -40,9 +41,11 @@ body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[aria-current="page"] {
   background: var(--app-mode-selected);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--app-mode-accent);
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href]:focus-visible {
   outline: 2px solid currentColor;
+  outline-color: var(--app-mode-accent);
   outline-offset: -2px;
 }
 @media (min-width: 900px) {
@@ -77,8 +80,14 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-content] :is(a, .sidebar-item) {
   min-width: 0; min-height: 34px; border-radius: 8px; font-size: 13px; font-weight: 400;
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):hover { background: var(--app-mode-hover); }
-body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
-body.faux-chatgpt-app-mode [data-app-mode-nav-content] a[aria-current="page"] { background: var(--app-mode-selected); }
+body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):focus-visible {
+  outline: 2px solid currentColor; outline-color: var(--app-mode-accent); outline-offset: -2px;
+}
+body.faux-chatgpt-app-mode [data-app-mode-nav-primary] :is(a, button)[aria-current="page"],
+body.faux-chatgpt-app-mode [data-app-mode-nav-content] a[aria-current="page"] {
+  background: var(--app-mode-selected);
+  box-shadow: inset 2px 0 0 var(--app-mode-accent);
+}
 body.faux-chatgpt-app-mode [data-app-mode-nav-collapsed] { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-fallback-heading] { position: relative; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-disclosure] {
@@ -126,10 +135,13 @@ body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-a
 }
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions [data-app-mode-rail-active] {
   background: var(--app-mode-control-hover);
+  box-shadow: inset 2px 0 0 var(--app-mode-accent);
 }
 body.faux-chatgpt-app-mode :is(#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button):hover,
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar[aria-expanded="true"] { background: var(--app-mode-control-hover); }
-body.faux-chatgpt-app-mode :is(#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button):focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+body.faux-chatgpt-app-mode :is(#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button):focus-visible {
+  outline: 2px solid currentColor; outline-color: var(--app-mode-accent); outline-offset: -3px;
+}
 body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] {
   box-sizing: border-box !important; min-width: 0 !important;
   width: calc(100% - var(--app-mode-rail-width)) !important; margin-left: var(--app-mode-rail-width) !important;
@@ -397,8 +409,7 @@ body.faux-chatgpt-app-mode {
   --app-mode-control-hover: var(--app-mode-hover);
   --app-mode-control-hover-border: color-mix(in srgb, currentColor 24%, transparent);
   --app-mode-control-pressed: color-mix(in srgb, currentColor 14%, var(--app-mode-control-bg));
-  /* No stable native accent token is established here; inherit rather than guess. */
-  --app-mode-active-color: inherit;
+  --app-mode-active-color: var(--app-mode-accent);
   --app-mode-active-bg: var(--app-mode-selected);
   --app-mode-warning-color: light-dark(#9a3412, #f5b98b);
 }
@@ -453,6 +464,7 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
 
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button:focus-visible {
   outline: 2px solid currentColor;
+  outline-color: var(--app-mode-accent);
   outline-offset: 2px;
 }
 
@@ -523,6 +535,7 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
 
 .chatgpt-app-mode-pin-button:focus-visible {
   outline: 2px solid currentColor;
+  outline-color: var(--app-mode-accent);
   outline-offset: 2px;
 }
 

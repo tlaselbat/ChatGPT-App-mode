@@ -1563,7 +1563,7 @@ test('App Mode surfaces follow resolved ChatGPT theme tokens and update live', a
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
   await page.goto('https://chatgpt.com/');
-  await page.addStyleTag({ content: ':root { --main-surface-primary: rgb(31, 32, 34); --main-surface-secondary: rgb(23, 24, 26); --sidebar-surface-primary: rgb(25, 26, 28); --sidebar-surface-secondary: rgb(48, 49, 52); --text-primary: rgb(238, 239, 240); --border-light: rgb(80, 81, 84); }' });
+  await page.addStyleTag({ content: ':root { --main-surface-primary: rgb(31, 32, 34); --main-surface-secondary: rgb(23, 24, 26); --sidebar-surface-primary: rgb(25, 26, 28); --sidebar-surface-secondary: rgb(48, 49, 52); --text-primary: rgb(238, 239, 240); --border-light: rgb(80, 81, 84); --app-color-icon-accent: rgb(46, 103, 197); }' });
 
   const surfaces = await page.evaluate(() => {
     const style = getComputedStyle(document.body);
@@ -1580,13 +1580,32 @@ test('App Mode surfaces follow resolved ChatGPT theme tokens and update live', a
   expect(surfaces).toEqual({ shell: 'rgb(23, 24, 26)', sidebar: 'rgb(25, 26, 28)', workspace: 'rgb(31, 32, 34)', composer: 'rgb(31, 32, 34)', text: 'rgb(238, 239, 240)', border: 'rgb(80, 81, 84)', controls: 'rgb(31, 32, 34)' });
 
   await page.evaluate(() => {
+    const nav = document.createElement('div');
+    nav.setAttribute('data-app-mode-nav-primary', '');
+    const activeNav = document.createElement('button');
+    activeNav.setAttribute('aria-current', 'page');
+    nav.append(activeNav);
+    document.body.append(nav);
+    const activePin = document.createElement('button');
+    activePin.className = 'chatgpt-app-mode-pin-button is-active';
+    document.body.append(activePin);
+  });
+  const activeNav = page.locator('[data-app-mode-nav-primary] button[aria-current="page"]').last();
+  const activePin = page.locator('.chatgpt-app-mode-pin-button.is-active').last();
+  expect(await activeNav.evaluate(element => getComputedStyle(element).boxShadow)).toContain('rgb(46, 103, 197)');
+  await expect(activePin).toHaveCSS('color', 'rgb(46, 103, 197)');
+
+  await page.evaluate(() => {
     document.documentElement.style.setProperty('--main-surface-primary', 'rgb(250, 250, 250)');
     document.documentElement.style.setProperty('--main-surface-secondary', 'rgb(242, 242, 242)');
     document.documentElement.style.setProperty('--sidebar-surface-primary', 'rgb(246, 246, 246)');
     document.documentElement.style.setProperty('--sidebar-surface-secondary', 'rgb(232, 232, 232)');
+    document.documentElement.style.setProperty('--app-color-icon-accent', 'rgb(64, 201, 119)');
   });
   await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-workspace-bg').trim())).toBe('rgb(250, 250, 250)');
   await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-control-bg').trim())).toBe('rgb(250, 250, 250)');
+  await expect.poll(() => activeNav.evaluate(element => getComputedStyle(element).boxShadow)).toContain('rgb(64, 201, 119)');
+  await expect(activePin).toHaveCSS('color', 'rgb(64, 201, 119)');
   await page.evaluate(() => {
     const element = document.createElement('div');
     element.setAttribute('data-app-mode-home-composer-path', '');
