@@ -697,11 +697,13 @@ test('home composition stays stable across the mobile breakpoint and preserves t
     await page.setViewportSize({ width, height: 850 });
     await expect(page.locator('[data-app-mode-home-composer]')).toHaveCSS('position', 'relative');
     await expect(editor).toHaveText('Synthetic unsent draft');
-    await expect(page.locator('[data-app-mode-home-suggestions]')).toHaveCSS('order', '1');
+    // Recent activity stays accessible above the bottom-docked composer.
+    await expect(page.locator('[data-app-mode-home-suggestions]')).toHaveCSS('order', '0');
+    await expect(page.locator('[data-app-mode-home-form]')).toHaveCSS('order', '1');
     const bounds = await page.locator('form').boundingBox();
     // Codex layout: the composer anchors near the bottom of the workspace
     // while the welcome hero centers independently above it.
-    expect(bounds.y).toBeGreaterThan(400);expect(bounds.y).toBeLessThan(780);
+    expect(bounds.y).toBeGreaterThan(400);expect(bounds.y).toBeLessThan(820);
     expect(bounds.y + bounds.height).toBeGreaterThan(600);
     if (width === 640) boundaryTop = bounds.y;
     if (width === 639) expect(Math.abs(bounds.y - boundaryTop)).toBeLessThanOrEqual(2);

@@ -258,6 +258,17 @@
       account.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>';
       menu.append(account);
     }
+    // Route-aware selection: mirror the site's aria-current link onto the
+    // matching rail action when its accessible name lines up.
+    const current = [...document.querySelectorAll('[aria-current="page"], a[aria-current]')]
+      .find(element => element.getClientRects().length && (accessibleName(element) || element.textContent.trim()));
+    for (const action of menu.querySelectorAll('[data-app-mode-sidebar-action]')) {
+      const label = action.getAttribute('aria-label') || '';
+      const selected = !!current && !!label &&
+        new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+          .test(accessibleName(current) || current.textContent.trim());
+      action.toggleAttribute('data-app-mode-rail-active', selected);
+    }
     own(document.body, 'data-app-mode-navigation-state', state);
     if (model.blocked) {
       own(document.body, 'data-app-mode-navigation-blocked');
