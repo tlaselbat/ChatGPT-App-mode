@@ -244,6 +244,31 @@
       }
       document.body.append(menu);
     }
+    // Codex-style rail keeps an account action pinned to the bottom. Only a
+    // native account/profile control can back it; remember its accessible name
+    // once seen so the button survives collapsed states where the control is
+    // unmounted. When none is ever found, no button is offered.
+    const accountControl = nativeSidebarControl(/account|profile|user menu/i);
+    if (accountControl) railAccountLabel = accessibleName(accountControl) || accountControl.textContent.trim() || railAccountLabel;
+    if (railAccountLabel && !menu.querySelector('[data-app-mode-rail-account]')) {
+      const account = document.createElement('button'); account.type = 'button';
+      account.setAttribute('data-app-mode-sidebar-action', '');
+      account.setAttribute('data-app-mode-rail-account', '');
+      account.setAttribute('aria-label', railAccountLabel); account.title = railAccountLabel;
+      account.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>';
+      menu.append(account);
+    }
+    // Route-aware selection: mirror the site's aria-current link onto the
+    // matching rail action when its accessible name lines up.
+    const current = [...document.querySelectorAll('[aria-current="page"], a[aria-current]')]
+      .find(element => element.getClientRects().length && (accessibleName(element) || element.textContent.trim()));
+    for (const action of menu.querySelectorAll('[data-app-mode-sidebar-action]')) {
+      const label = action.getAttribute('aria-label') || '';
+      const selected = !!current && !!label &&
+        new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+          .test(accessibleName(current) || current.textContent.trim());
+      action.toggleAttribute('data-app-mode-rail-active', selected);
+    }
     own(document.body, 'data-app-mode-navigation-state', state);
     if (model.blocked) {
       own(document.body, 'data-app-mode-navigation-blocked');
@@ -262,7 +287,19 @@
     }
     const modalClose = model.drawer?.querySelector('button[aria-label="Hide sidebar" i], button[aria-label="Close sidebar" i]');
     own(modalClose, 'data-app-mode-modal-sidebar-toggle');
-    if (!model.reservedRail && !dockedPanel) own(root, 'data-app-mode-compact-sidebar-shell');
+    // The rail is permanent, so the app column reserves its 52px — except
+    // when the site itself already reserves that space: a rendered collapsed
+    // panel or native rail column we overlay, including a native rail kept
+    // beside a docked panel. A docked panel inside the shell shifts right
+    // with the offset instead of needing its own reservation.
+    const navRailReserved = nativeRail && nativeRail.getBoundingClientRect().width > 0 &&
+      [...nativeRail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1;
+    if (!navRailReserved && (dockedPanel || !model.reservedRail)) own(root, 'data-app-mode-compact-sidebar-shell');
+    // The rounded Codex workspace is the single rendered content main inside
+    // the shell. Ambiguous structure keeps the native, unmarked layout.
+    const contentMains = [...root.querySelectorAll('main')].filter(element =>
+      element.getClientRects().length && !element.closest('aside, nav, [role="dialog"]'));
+    if (contentMains.length === 1) own(contentMains[0], 'data-app-mode-workspace');
     // Hide duplicate toggles only once a working replacement exists. Keep the
     // modal's native close control inside its focus trap as a fallback.
     const duplicates = [...document.querySelectorAll('header button, [role="banner"] button, [data-app-mode-header-layout] button')];

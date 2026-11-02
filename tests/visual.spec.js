@@ -548,20 +548,18 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   await expect(rail).toHaveCSS('width', '36px');
   const compactRail = page.locator('#app-mode-compact-sidebar-actions');
   await expect(compactRail).toHaveCSS('width', '52px');
-  await expect(compactRail).toHaveCSS('border-top-width', '1px');
-  await expect(compactRail).toHaveCSS('border-top-style', 'solid');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
-  expect(await page.locator('#app').evaluate(element => element.getBoundingClientRect().left)).toBe(52);
+  await expect.poll(() => page.locator('#app').evaluate(element => element.getBoundingClientRect().left)).toBe(52);
   expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 390, height: 780 });
   await rail.click();
   await expect(page.locator('[role="dialog"][aria-modal="true"]')).toBeVisible();
   await page.locator('[role="dialog"][aria-modal="true"]').evaluate(element => { element.id = 'browser-sidebar-popover'; });
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('top', '40px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('left', '52px');
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('height', '740px');
-  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('border-top-width', '1px');
-  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('border-top-style', 'solid');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  // The rail is permanent: it stays mounted beneath the modal drawer.
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toHaveCSS('top', '5px');
   // A native popup may temporarily hide its parent drawer from accessibility.
   // Its rendered layout and dismissal control must remain owned and stable.
@@ -606,7 +604,15 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
     aside.querySelector('#synthetic-sidebar-scroll').scrollTop = 80;
   });
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
-  await expect(page.locator('#app')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+  // The docked panel sits inside the shell column, so the permanent rail's
+  // 52px reservation now shifts it right: rail 0-52, sidebar 52-291.
+  await expect(page.locator('#app')).toHaveAttribute('data-app-mode-compact-sidebar-shell', '');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  const dockedBox = await page.locator('aside.app-shell-left-panel').boundingBox();
+  // Native panel width is preserved (width-based state detection rules out
+  // forcing 239px); only its position right of the rail is asserted.
+  expect(dockedBox.width).toBeGreaterThanOrEqual(200);
+  expect(Math.abs(dockedBox.x - 52)).toBeLessThanOrEqual(2);
   await expect(page.locator('aside.app-shell-left-panel')).toHaveCSS('margin-top', '40px');
   // A separate global modal blocks background controls without invalidating
   // the docked navigation layout or its scroll position.
@@ -691,9 +697,14 @@ test('home composition stays stable across the mobile breakpoint and preserves t
     await page.setViewportSize({ width, height: 850 });
     await expect(page.locator('[data-app-mode-home-composer]')).toHaveCSS('position', 'relative');
     await expect(editor).toHaveText('Synthetic unsent draft');
-    await expect(page.locator('[data-app-mode-home-suggestions]')).toHaveCSS('order', '1');
+    // Recent activity stays accessible above the bottom-docked composer.
+    await expect(page.locator('[data-app-mode-home-suggestions]')).toHaveCSS('order', '0');
+    await expect(page.locator('[data-app-mode-home-form]')).toHaveCSS('order', '1');
     const bounds = await page.locator('form').boundingBox();
-    expect(bounds.y).toBeGreaterThan(100);expect(bounds.y).toBeLessThan(550);
+    // Codex layout: the composer anchors near the bottom of the workspace
+    // while the welcome hero centers independently above it.
+    expect(bounds.y).toBeGreaterThan(400);expect(bounds.y).toBeLessThan(820);
+    expect(bounds.y + bounds.height).toBeGreaterThan(600);
     if (width === 640) boundaryTop = bounds.y;
     if (width === 639) expect(Math.abs(bounds.y - boundaryTop)).toBeLessThanOrEqual(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -1155,7 +1166,7 @@ test('extension styling, control, navigation and re-render in offline ChatGPT fi
   await expect(page).toHaveTitle('ChatGPT');
   await expect(page.locator('body')).toHaveClass(/faux-chatgpt-app-mode/);
   await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
-  await expect(page.locator('header')).toHaveCSS('background-color', 'rgb(244, 245, 247)');
+  await expect(page.locator('header')).toHaveCSS('background-color', 'rgb(236, 238, 242)');
   await expect.soft(page).toHaveScreenshot('fixture-desktop.png');
 
   await page.setViewportSize({ width: 390, height: 844 });
