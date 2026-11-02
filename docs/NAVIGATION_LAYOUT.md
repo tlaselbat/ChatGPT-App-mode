@@ -1,5 +1,28 @@
 # Navigation layout implementation plan
 
+## Codex-inspired surface update (2026-11)
+
+The navigation controller now implements a Codex-style persistent activity
+rail: the custom 52px rail (`#app-mode-compact-sidebar-actions`) stays mounted
+in every navigation state — compact, docked, and beneath the modal drawer —
+instead of appearing only in the compact state. The shell therefore reserves
+the rail width whenever the site itself does not reserve a rail column: a
+rendered collapsed panel or a rendered native rail suppresses the offset, and
+a rendered native rail beside a docked panel does too. A docked panel inside
+the shell shifts right with the offset, so the layout reads rail | sidebar |
+workspace in the expanded state.
+
+The docked sidebar keeps its native width. Forcing ~239px would break the
+adapter's width-based state detection (a pinned width can never shrink back
+to compact), so the native ~260px is the accepted approximation. The modal
+drawer opens at `left: 52px` beside the permanent rail. A bottom-pinned
+account action joins the rail only while a native account/profile control has
+been seen; it forwards through the existing action path and is never
+invented. The single rendered content `main` inside the shell is marked
+`data-app-mode-workspace` and painted as the rounded Codex workspace panel;
+ambiguous structure leaves the layout unmarked and native. Codex surface,
+radius, and spacing values live as `light-dark()` tokens on the marker body.
+
 ## Ownership and scope
 
 The Electron host owns the title bar. The page header normalizer owns the

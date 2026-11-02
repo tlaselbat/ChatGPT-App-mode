@@ -15,3 +15,4 @@ The app-owned title bar is a 48px strip rendered by the host above the page, wit
 - Check keyboard navigation, focus visibility, reduced motion, contrast, and text zoom along with screenshots.
 - Use short color/border transitions and disable them for reduced motion. Keep hover, pressed, and focus feedback free of size changes. Preserve custom theme colors through the existing shared control tokens.
 - When ChatGPT markup changes, disable or soften an override that no longer matches instead of applying it globally.
+- The Codex surface model is four layers: shell/activity `#1c2325`, sidebar `#2d3745`, workspace `#374357`, composer `#4e5a6c` (dark; light uses proportionate equivalents via `light-dark()`). The activity rail is permanent at 52px; the docked sidebar keeps its native width because the adapter detects state by measuring it. The workspace is an 8px-inset panel with ~14px radius and no overflow clipping, so native menus and dialogs are never cut.
