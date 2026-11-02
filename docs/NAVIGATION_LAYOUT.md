@@ -29,6 +29,58 @@ subheader; ambiguous structure leaves the layout unmarked and native. Codex
 surface, radius, and spacing values live as `light-dark()` tokens on the
 marker body.
 
+## Section-based navigation refinement
+
+The sidebar adapter recognizes native `section.group/nav-section` wrappers,
+`group/nav-section-title` headings, and `button.group/section-toggle` controls
+inside the active panel's `.sidebar-navigation`. Native disclosures remain the
+source of truth, including an already-expanded Recents section. Their handlers,
+project actions, links, additional sections, and persistence are not replaced.
+The adapter never repeatedly closes an expanded native section.
+
+A narrowly recognized Pinned, Projects, or Recents section without a native
+control receives one adapter-owned disclosure button over its existing plain
+heading. Only its sibling content wrapper is hidden; no native node is moved,
+cloned, or deleted. These fallback sections initially collapse. Boolean-only
+preferences use `app-mode-sidebar-disclosures-v1` in origin-local storage, with
+an in-memory fallback if storage is blocked. Preferences survive native sidebar
+replacement and are independent of the homepage Recent activity disclosure.
+Unknown headings, interactive unsupported headings, and ambiguous wrappers
+remain native. Cleanup removes adapter controls and owned markers when a panel
+or recognized structure disappears. Existing reconciliation handles all updates;
+there is no new polling loop.
+
+The native scroll container, footer anchoring, drawer focus trap, dismissal, and
+scrim color/alpha remain intact. Styling separates primary actions from compact
+36px section headings, uses 14px collapsed-group gaps, and keeps native title
+truncation and selected-state semantics. Only recognized sidebar wrappers receive
+these rules. Docked widths are approximately 240–256px below 900 CSS pixels,
+260–288px from 900px, and 288–320px from 1200px. These are sizing ranges, not new
+sidebar-state breakpoints: the site's rendered panel/drawer and open flag still
+determine layout, and the width override releases as soon as the flag closes.
+The recognized direct inner wrapper can carry a native inline fixed minimum
+width; normalize that wrapper only while docked-open so Search and section
+content fit the resized panel. This override also releases on native collapse.
+
+Account access remains native. The rail is the compact-state entry point; when
+a docked panel or modal drawer exposes its own account row, that row remains the
+primary entry point and the duplicate rail account action steps back. Recognized
+account rows receive a smaller minimum footprint but no maximum height or hidden
+account information. In particular, the rail outside a modal drawer is not used
+to bypass its focus trap. A rail-opened native menu restores focus to the rail
+when dismissal otherwise leaves focus on the body or an unavailable native
+trigger; it does not override focus placed on another usable control or modal.
+This uses a bounded mount observer and the existing shortcut cancellation
+lifecycle, not polling. Unrecognized account controls remain untouched.
+
+The sidebar change does not alter `WindowHost/`, the unified title bar, caption
+hit testing, Pin ownership, composer, homepage activity, or native chat rendering.
+Visual tests distinguish native authoritative state from adapter-owned fallback
+state and cover replacement, keyboard activation, navigation, account forwarding,
+scroll retention, themes, drawer dismissal, and viewport-equivalent zoom geometry.
+The geometry artifacts explicitly distinguish effective CSS viewport coverage
+from actual native browser zoom verification.
+
 ## Ownership and scope
 
 The Electron host owns the title bar. The page header normalizer owns the

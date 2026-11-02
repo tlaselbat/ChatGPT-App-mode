@@ -688,6 +688,211 @@ test('header stays viewport-wide while a modal blocks sidebar resizing', async (
   }
 });
 
+async function navigationSectionsFixture(page, native = false) {
+  const body = `<!doctype html><html><head><style>
+    *{box-sizing:border-box}body{margin:0;font:13px system-ui;color:#243247}html{color-scheme:light dark}
+    #section-shell{display:flex;height:100vh}main{flex:1;min-width:0}header{height:40px;display:flex;align-items:center}
+    aside{flex:0 0 280px;width:280px;overflow:hidden}.sidebar-navigation{height:100%;display:flex;flex-direction:column;min-height:0}
+    .h-toolbar{height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between}
+    .nav-scroll{min-height:0;flex:1;overflow-y:auto}.section-footer{height:56px;flex-shrink:0}
+    .group\\/nav-list{display:flex;flex-direction:column}.group\\/nav-section-title{display:flex;align-items:center;min-height:36px;position:relative}
+    .group\\/nav-section-title>div:first-child{min-width:0;flex:1}.group\\/section-toggle{width:100%;background:transparent;border:0;text-align:left;color:inherit}
+    a{display:flex;align-items:center;min-height:34px;min-width:0;color:inherit;text-decoration:none}a>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    button{color:inherit;min-height:32px}section{margin:0}.native-scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50}
+    #browser-sidebar-popover{position:fixed;left:0;top:0;width:min(320px,calc(100vw - 52px));bottom:0;z-index:51;background:#e1e4ea}
+    [role=menu]{position:fixed;bottom:50px;left:60px;z-index:80;background:Canvas;color:CanvasText;padding:12px}
+    @media(prefers-color-scheme:dark){body{color:#d5deef}}
+    </style></head><body><div id="section-shell" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="true"><main><header><button aria-label="Open sidebar" id="section-opener">Sidebar</button><button id="chat-mode">Chat</button><button id="work-mode">Work</button></header><h1>Synthetic workspace</h1></main></div>
+    <script>
+    const native = ${JSON.stringify(native)};
+    const state = {open:true, sections:{pinned:false,projects:false,recents:true,collections:true},mode:'chat'};
+    const labels = {pinned:'Pinned',projects:'Projects',recents:'Recents',collections:'Collections'};
+    function section(key) {
+      const label=labels[key], controlled=native||key==='collections';
+      const heading=controlled?'<button type="button" class="group/section-toggle" aria-expanded="'+state.sections[key]+'" data-native-section="'+key+'">'+label+'</button>':label;
+      const rows=Array.from({length:key==='recents'?45:3},(_,i)=>'<a href="'+(key==='projects'?'/g/g-synthetic/project':'/c/synthetic-'+key+'-'+i)+'"><span>'+label+' synthetic navigation entry '+i+' with a long title</span></a>').join('');
+      return '<section class="group/nav-section" data-section="'+key+'"><div class="group/nav-section"><div class="group/nav-section-title"><div>'+heading+'</div></div><div '+(controlled&&!state.sections[key]?'hidden':'')+'>'+rows+'</div></div></section>';
+    }
+    function navigation(drawer) {
+      return '<div class="sidebar-navigation"><div class="h-toolbar"><strong>ChatGPT</strong><button aria-label="Search">Search</button>'+(drawer?'<button aria-label="Close sidebar" id="drawer-close">Close</button>':'')+'</div><div class="group/nav-list"><a href="/" data-primary>New chat</a></div><div class="nav-scroll"><div class="group/nav-list"><a href="/scheduled" data-primary>Scheduled</a><a href="/library" data-primary>Library</a><button>Plugins</button><button>Explore</button></div>'+Object.keys(labels).map(section).join('')+'<section class="group/nav-section" data-section="unknown"><div><div class="group/nav-section-title"><a href="/library">Unknown native group</a></div><div><a href="/library">Unrecognized action</a></div></div></section></div><div class="section-footer"><button aria-label="User menu" aria-haspopup="menu" id="native-account">Synthetic account</button></div></div>';
+    }
+    function render() {
+      document.querySelector('aside')?.remove();document.querySelector('#section-portal')?.remove();
+      if(!state.open)return;
+      if(innerWidth>=700){const aside=document.createElement('aside');aside.className='app-shell-left-panel';aside.innerHTML='<div style="min-width:340px;width:340px;max-width:100%;height:100%">'+navigation(false)+'</div>';document.querySelector('#section-shell').prepend(aside)}
+      else{const portal=document.createElement('div');portal.id='section-portal';portal.innerHTML='<div class="native-scrim codex-dialog-overlay" aria-hidden="true"></div><div id="browser-sidebar-popover" role="dialog" aria-modal="true">'+navigation(true)+'</div>';document.body.append(portal)}
+    }
+    function toggle(){state.open=!state.open;document.querySelector('#section-shell').setAttribute('data-app-shell-sidebar-open',String(state.open));render()}
+    document.querySelector('#section-opener').onclick=toggle;
+    document.querySelector('#work-mode').onclick=()=>{state.mode='work';render()};document.querySelector('#chat-mode').onclick=()=>{state.mode='chat';render()};
+    function account(){if(document.querySelector('[role=menu]'))return;const menu=document.createElement('div');menu.setAttribute('role','menu');menu.innerHTML='<button role="menuitem">Settings</button><button role="menuitem">Subscription</button><button role="menuitem">Sign out</button>';document.body.append(menu);menu.querySelector('button').focus()}
+    document.addEventListener('keydown',event=>{if(event.target.id==='native-account'&&event.key==='Enter')account();if(event.key==='Escape'){if(document.querySelector('[role=menu]')){document.querySelector('[role=menu]').remove();document.querySelector('#native-account')?.focus()}else if(innerWidth<700&&state.open)toggle()}});
+    document.addEventListener('click',event=>{const target=event.target.closest('button,a,.native-scrim');if(!target)return;if(target.id==='drawer-close'||target.classList.contains('native-scrim'))toggle();if(target.id==='native-account')account();if(target.dataset.nativeSection){const key=target.dataset.nativeSection;state.sections[key]=!state.sections[key];target.setAttribute('aria-expanded',String(state.sections[key]));target.closest('section').firstElementChild.lastElementChild.hidden=!state.sections[key]}
+      if(target.matches('a[href]')){event.preventDefault();history.pushState({},'',target.getAttribute('href'));document.querySelectorAll('[aria-current]').forEach(e=>e.removeAttribute('aria-current'));target.setAttribute('aria-current','page');window.syntheticNavigationCalls=(window.syntheticNavigationCalls||0)+1}
+    });
+    window.syntheticSidebarRender=render;window.addEventListener('resize',render);render();
+    </script></body></html>`;
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await page.goto('https://chatgpt.com/');
+}
+
+test('sidebar fallback disclosures retain native nodes, keyboard access and saved preferences through navigation', async ({ page }) => {
+  await navigationSectionsFixture(page);
+  const heading = key => page.locator('[data-section="' + key + '"] [data-app-mode-nav-heading]');
+  for (const key of ['pinned', 'projects', 'recents']) {
+    await expect(heading(key)).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-section="' + key + '"] a').first()).toBeHidden();
+    await heading(key).focus();
+    await page.keyboard.press('Enter');
+    await expect(heading(key)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-section="' + key + '"] a').first()).toBeVisible();
+  }
+  await page.locator('[data-section="projects"] a').first().click();
+  await expect(page).toHaveURL(/\/g\/g-synthetic\/project$/);
+  await page.locator('[data-section="recents"] a').first().click();
+  await expect(page).toHaveURL(/\/c\/synthetic-recents-0$/);
+  expect(await page.evaluate(() => window.syntheticNavigationCalls)).toBe(2);
+  await page.evaluate(() => window.syntheticSidebarRender());
+  for (const key of ['pinned', 'projects', 'recents']) await expect(heading(key)).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await expect(heading('recents')).toHaveAttribute('aria-expanded', 'true');
+  await heading('recents').focus();
+  await page.keyboard.press('Space');
+  await expect(heading('recents')).toHaveAttribute('aria-expanded', 'false');
+  await page.reload();
+  await expect(heading('pinned')).toHaveAttribute('aria-expanded', 'true');
+  await expect(heading('recents')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('[data-section="unknown"] [data-app-mode-nav-heading]')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Unrecognized action', exact: true })).toBeVisible();
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(heading('pinned')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('[data-app-mode-nav-disclosure]')).toHaveCount(3);
+});
+
+test('sidebar native disclosures remain authoritative and account access survives docked, drawer and SPA states', async ({ page }) => {
+  await navigationSectionsFixture(page, true);
+  await expect(page.locator('[data-app-mode-nav-disclosure]')).toHaveCount(0);
+  const recents = page.locator('[data-native-section="recents"]');
+  await expect(recents).toHaveAttribute('aria-expanded', 'true');
+  await recents.focus();
+  await page.keyboard.press('Space');
+  await expect(recents).toHaveAttribute('aria-expanded', 'false');
+  await recents.click();
+  await expect(recents).toHaveAttribute('aria-expanded', 'true');
+  const scroll = page.locator('[data-app-mode-nav-scroll]');
+  await scroll.evaluate(element => element.scrollTop = 200);
+  expect(await scroll.evaluate(element => element.scrollTop)).toBeGreaterThan(100);
+  await page.locator('[data-section="recents"] a').nth(5).click();
+  await expect(page.locator('[data-section="recents"] a[aria-current="page"]')).toHaveCount(1);
+  const position = await scroll.evaluate(element => element.scrollTop);
+  await page.evaluate(() => { document.body.classList.toggle('synthetic-reconcile'); return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
+  expect(await scroll.evaluate(element => element.scrollTop)).toBe(position);
+  await page.locator('#native-account').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#native-account')).toBeFocused();
+  await page.locator('#app-mode-compact-sidebar').click();
+  await page.evaluate(() => {
+    const native = document.createElement('button'); native.id = 'native-account';
+    native.setAttribute('aria-label', 'User menu'); native.setAttribute('aria-haspopup', 'menu');
+    native.style.cssText = 'visibility:hidden;position:fixed;width:36px;height:36px'; document.body.append(native);
+  });
+  const account = page.locator('[data-app-mode-rail-account]');
+  await expect(account).toBeVisible();
+  await account.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: 'Subscription' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(account).toBeFocused();
+  await page.locator('#native-account').evaluate(element => element.remove());
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await expect(page.locator('#native-account')).toBeVisible();
+  await expect(account).toBeHidden();
+  await page.locator('#native-account').click();
+  await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+});
+
+test('sidebar geometry stays usable across themes, effective zoom, and native responsive states', async ({ page }, testInfo) => {
+  test.setTimeout(120000);
+  await navigationSectionsFixture(page, true);
+  const measurements = [];
+  for (const scheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const zoom of [1, 1.25, 1.5]) for (const width of [390, 489, 680, 893, 1024, 1280]) {
+      const cssWidth = Math.round(width / zoom);
+      await page.setViewportSize({ width: cssWidth, height: Math.round(850 / zoom) });
+      await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', cssWidth < 700 ? 'drawer' : 'docked');
+      const panel = page.locator(cssWidth < 700 ? '#browser-sidebar-popover' : '[data-app-mode-docked-sidebar]');
+      await expect(panel.locator('[data-app-mode-nav-section]')).toHaveCount(4);
+      const geometry = await page.evaluate(() => {
+        const box = element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
+        const panel = document.querySelector('#browser-sidebar-popover, [data-app-mode-docked-sidebar]');
+        return { state: document.body.dataset.appModeNavigationState, viewport: innerWidth,
+          rail: box(document.querySelector('#app-mode-compact-sidebar-actions')), sidebar: box(panel),
+          workspace: box(document.querySelector('main')), header: box(document.querySelector('main header')),
+          sidebarHeader: box(panel.querySelector('[data-app-mode-nav-header]')), scroll: box(panel.querySelector('[data-app-mode-nav-scroll]')),
+          account: box(panel.querySelector('.section-footer')), overflow: document.documentElement.scrollWidth > innerWidth };
+      });
+      expect(geometry.rail.width).toBe(52);
+      expect(geometry.sidebar.x).toBeGreaterThanOrEqual(52);
+      expect(geometry.sidebar.right).toBeLessThanOrEqual(cssWidth + 1);
+      expect(geometry.workspace.width).toBeGreaterThan(150);
+      expect(geometry.header.y).toBe(0);
+      expect(geometry.sidebarHeader.height).toBe(44);
+      expect(geometry.sidebarHeader.right).toBeLessThanOrEqual(geometry.sidebar.right);
+      expect(geometry.scroll.height).toBeGreaterThan(100);
+      expect(geometry.account.bottom).toBeLessThanOrEqual(Math.round(850 / zoom));
+      expect(geometry.overflow).toBe(false);
+      if (geometry.state === 'docked') {
+        expect(geometry.workspace.x).toBeGreaterThanOrEqual(geometry.sidebar.right);
+        expect(geometry.sidebar.width).toBeGreaterThanOrEqual(cssWidth >= 1200 ? 288 : cssWidth >= 900 ? 260 : 240);
+      }
+      measurements.push({ scheme, effectiveZoom: zoom, windowWidth: width, ...geometry });
+      if (zoom === 1 && [390, 893, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath('sidebar-' + scheme + '-' + width + '.png') });
+    }
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.setViewportSize({ width: 893, height: 850 });
+  for (const control of await page.locator('[data-native-section]').all()) {
+    if (await control.getAttribute('aria-expanded') === 'true') await control.click();
+  }
+  const headings = page.locator('[data-app-mode-nav-heading]');
+  const bounds = await headings.evaluateAll(elements => elements.slice(0, 3).map(element => { const r = element.closest('section').getBoundingClientRect(); return { y: r.y, bottom: r.bottom }; }));
+  expect(bounds[1].y - bounds[0].bottom).toBeGreaterThanOrEqual(12);
+  expect(bounds[1].y - bounds[0].bottom).toBeLessThanOrEqual(20);
+  await page.screenshot({ path: testInfo.outputPath('B-all-groups-collapsed.png') });
+  for (const [key, name] of [['recents', 'C-recents-expanded'], ['projects', 'D-projects-expanded'], ['pinned', 'E-pinned-expanded']]) {
+    const control = page.locator('[data-native-section="' + key + '"]');
+    await control.click();
+    await expect(control).toHaveAttribute('aria-expanded', 'true');
+    await page.screenshot({ path: testInfo.outputPath(name + '.png') });
+    if (key === 'recents') {
+      await page.locator('[data-section="recents"] a').first().click();
+      await page.screenshot({ path: testInfo.outputPath('G-active-conversation.png') });
+    }
+    await control.click();
+  }
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  await page.screenshot({ path: testInfo.outputPath('A-sidebar-collapsed.png') });
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await page.screenshot({ path: testInfo.outputPath('F-temporary-drawer.png') });
+  fs.writeFileSync(testInfo.outputPath('sidebar-geometry.json'), JSON.stringify({ zoomMethod: 'CSS viewport equivalents of the requested window widths at 100%, 125%, and 150%; not a native browser zoom claim', collapsedGroupBounds: bounds, measurements }, null, 2));
+});
+
 test('home composition stays stable across the mobile breakpoint and preserves the native draft', async ({ page }) => {
   const home = `<!doctype html><style>
     *{box-sizing:border-box}body{margin:0}header{height:40px}main{height:calc(100vh - 40px)}
