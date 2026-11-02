@@ -10,7 +10,7 @@
     lastReportedUrl: '', lastReportedTitle: '', sessionPending: false, sessionRetryAt: 0, retryDelay: 3000,
     windowHandle: '', windowProcessId: 0, pinPending: false, pinRevision: 0, activityPending: false, activityRetryAt: 0,
     relocatedShare: null, shareMenuTrigger: null, navigationAdapter: null, navigationController: null,
-    homeLayoutController: null, observer: null, titleObserver: null, titleElement: null
+    homeLayoutController: null, observer: null, titleObserver: null, titleElement: null, railAccountLabel: ''
   });
   window.__APP_MODE_OVERRIDE_RUNTIME__ = c;
   c.setCompatibility = (feature, state) => {
