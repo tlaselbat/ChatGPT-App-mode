@@ -87,18 +87,13 @@ body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] {
 body.faux-chatgpt-app-mode [data-app-mode-workspace] {
   background: var(--app-mode-workspace-bg) !important;
   border-radius: var(--app-mode-radius-workspace);
-  margin: calc(var(--app-mode-subheader-height) + var(--app-mode-gap)) var(--app-mode-gap) var(--app-mode-gap) var(--app-mode-gap) !important;
+  margin: 0 var(--app-mode-gap) var(--app-mode-gap) var(--app-mode-gap) !important;
   min-width: 0 !important;
   min-height: 0 !important;
 }
-/* The shared subheader sits at the top of the workspace column; pull it
-   back to the shell's top edge only when the adapter verified it is the
-   panel's first rendered child — otherwise it keeps its native position
-   and the panel simply insets around it. */
-body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-workspace-header] {
-  margin-top: calc(-1 * (var(--app-mode-subheader-height) + var(--app-mode-gap))) !important;
-  margin-bottom: var(--app-mode-gap) !important;
-}
+/* The subheader keeps its native position inside the workspace column.
+   A top inset was tried and reverted: on the live site the header is not
+   the panel's first child, so any pull offset pushes it off-screen. */
 @media (prefers-reduced-motion: reduce) {
   body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] { transition: none; }
 }

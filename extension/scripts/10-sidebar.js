@@ -299,19 +299,7 @@
     // the shell. Ambiguous structure keeps the native, unmarked layout.
     const contentMains = [...root.querySelectorAll('main')].filter(element =>
       element.getClientRects().length && !element.closest('aside, nav, [role="dialog"]'));
-    if (contentMains.length === 1) {
-      own(contentMains[0], 'data-app-mode-workspace');
-      // Pull the subheader back over the workspace's top inset only when it
-      // is actually the first rendered child of the panel. A header found
-      // anywhere else keeps its native position — pulling it up would push
-      // it off-screen.
-      const workspace = contentMains[0];
-      const firstRendered = [...workspace.children].find(child =>
-        child.getClientRects().length && getComputedStyle(child).display !== 'contents');
-      const header = [...workspace.querySelectorAll('header, [role="banner"], #page-header, #conversation-header, [data-testid="page-header"], [data-app-mode-header-layout]')]
-        .find(element => element.getClientRects().length);
-      if (header && firstRendered && firstRendered.contains(header)) own(header, 'data-app-mode-workspace-header');
-    }
+    if (contentMains.length === 1) own(contentMains[0], 'data-app-mode-workspace');
     // Hide duplicate toggles only once a working replacement exists. Keep the
     // modal's native close control inside its focus trap as a fallback.
     const duplicates = [...document.querySelectorAll('header button, [role="banner"] button, [data-app-mode-header-layout] button')];
