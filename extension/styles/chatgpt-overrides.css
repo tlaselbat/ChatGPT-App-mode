@@ -211,6 +211,28 @@ body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar] {
   padding-block: var(--app-mode-gap) !important;
   padding-inline: var(--app-mode-gap) !important;
 }
+/* Always-on-Top is owned by the host caption strip in the unified bar; hide
+   the site-injected twin so there is one primary entry point. The rail's
+   forwarding path stays untouched for hosts that disable the strip. */
+body.faux-chatgpt-app-mode #chatgpt-app-mode-pin-toggle {
+  display: none !important;
+}
+/* Application identity at the left of the unified row, independent of the
+   sidebar state. Decorative text; native controls follow it in the flex row. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before {
+  content: 'ChatGPT';
+  order: -10;
+  flex: 0 0 auto;
+  font: 600 12px/1.2 "Segoe UI", sans-serif;
+  letter-spacing: .01em;
+  color: var(--app-mode-control-color);
+  opacity: .9;
+  padding-inline-start: 4px;
+  -webkit-app-region: drag;
+}
+@media (max-width: 480px) {
+  body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before { content: none; }
+}
 /* The conversation composer's dark card surface sits on the lighter Codex
    workspace — retint it to the composer layer token so it reads as part of
    the panel instead of a floating dark block. Class-name hook is a

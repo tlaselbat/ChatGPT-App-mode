@@ -7,7 +7,7 @@
    the host caption strip so actions/Pin never slide under it. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   -webkit-app-region: drag;
-  padding-right: 152px !important;
+  padding-right: 188px !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="radio"], [contenteditable="true"]),
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolbar,
