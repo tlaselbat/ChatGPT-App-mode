@@ -13,23 +13,15 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
   display: flex;
   align-items: stretch;
   width: 100%;
-  height: 48px;
+  height: 40px;
   -webkit-app-region: drag;
 }
-/* Application-owned drag surface; it never overlaps page content because the
-   remote view starts below this title bar. */
+/* Small drag region left of the caption buttons; the page's own subheader
+   provides the main drag surface in the unified bar. */
 .titlebar-drag { flex: 1 1 auto; }
+/* The brand name lives in the page's own row now — the strip is captions only. */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding-inline-start: 16px;
-  color: var(--app-mode-control-color);
-  opacity: .9;
-  font: 600 12px/1.2 "Segoe UI", sans-serif;
-  letter-spacing: .01em;
-  -webkit-app-region: drag;
+  display: none;
 }
 .brand-mark {
   display: grid;
@@ -45,8 +37,8 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 48px;
-  padding-inline-end: 10px;
+  height: 40px;
+  padding-inline-end: 8px;
   -webkit-app-region: no-drag;
 }
 button {

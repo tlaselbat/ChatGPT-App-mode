@@ -223,7 +223,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => {
       const rect=button.getBoundingClientRect(), style=getComputedStyle(button);
       return {width:rect.width,height:rect.height,center:rect.y+rect.height/2,radius:style.borderRadius,drag:style.webkitAppRegion};
-    })`), Array(3).fill({width:32,height:28,center:24,radius:'8px',drag:'no-drag'}));
+    })`), Array(3).fill({width:32,height:28,center:20,radius:'8px',drag:'no-drag'}));
     assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => ({
       label:button.getAttribute('aria-label'),tabIndex:button.tabIndex,
     }))`), [
@@ -269,9 +269,9 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('location.href'),originalControlsUrl,'Trusted controls must block remote navigation');
     assert.equal(await controlsEval("window.appModeControls.action('restore')"),true,'Blocked navigation must leave trusted controls functional');
     assert.equal(await page.evaluate(() => navigator.windowControlsOverlay?.visible || false), false);
-    // The drag region lives in the app-owned title bar view above the page;
-    // the site header itself is an ordinary no-drag action row.
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    // The unified bar: the site's subheader is the drag surface; interactive
+    // descendants opt out, and the host strip still drags on its left edge.
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     assert.equal(await page.locator('[aria-label="Share"]').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
     const geometry = await page.evaluate(() => {
@@ -543,13 +543,13 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const chat=win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'));
         return {bounds:view.getBounds(),chatBounds:chat.getBounds(),zoom:view.webContents.getZoomFactor(),width:win.getContentBounds().width,height:win.getContentBounds().height};
       });
-      // The app-owned title bar spans the full window width; the remote page
-      // view starts exactly beneath it, so the two surfaces never overlap.
-      assert.equal(surface.bounds.x,0);
-      assert.equal(surface.bounds.width,surface.width);
-      assert.ok(Math.abs(surface.bounds.height-48*zoom)<=1);
-      assert.equal(surface.chatBounds.y,surface.bounds.height);
-      assert.equal(surface.chatBounds.height,surface.height-surface.bounds.height);
+      // The app-owned caption strip is right-anchored over the page's own
+      // 40px subheader; the remote page view fills the whole window beneath it.
+      assert.ok(Math.abs(surface.bounds.width-Math.round(148*zoom))<=2, `strip width: ${JSON.stringify(surface)}`);
+      assert.equal(surface.bounds.x,surface.width-surface.bounds.width);
+      assert.ok(Math.abs(surface.bounds.height-40*zoom)<=1);
+      assert.equal(surface.chatBounds.y,0);
+      assert.equal(surface.chatBounds.height,surface.height);
       assert.equal(surface.zoom,zoom,'Controls and header must share a physical centerline at page zoom');
     }
     fs.writeFileSync(path.join(scratch,'header-zoom-geometry.json'),JSON.stringify(zoomSamples,null,2));
@@ -614,7 +614,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.evaluate(() => { const h = document.querySelector('header'); h.replaceWith(h.cloneNode(true)); history.pushState({}, '', '/c/synthetic-rerender'); });
     await page.waitForSelector('header #chatgpt-app-mode-pin-toggle');
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     // Initial maximized state and separate control ownership use a second
     // fixture window in the same process, with no production profile access.

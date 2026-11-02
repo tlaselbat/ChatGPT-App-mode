@@ -2,8 +2,19 @@
    nothing here provides window chrome. The site's own header is normalized
    in place into the standard 40px secondary action row: original ChatGPT
    nodes keep their handlers; only container layout is shared. */
+/* The unified Codex bar: this row IS the window chrome, so it supplies the
+   drag surface; interactive descendants opt out. The right padding reserves
+   the host caption strip so actions/Pin never slide under it. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
+  -webkit-app-region: drag;
+  padding-right: 152px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="radio"], [contenteditable="true"]),
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolbar,
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] {
   -webkit-app-region: no-drag;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   pointer-events: auto;
   box-sizing: border-box;
   display: flex;

@@ -7,7 +7,10 @@ const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close']);
 const COMPACT_BREAKPOINT = 480;
-const HEADER_HEIGHT = 48;
+// Unified Codex-style bar: the page's own subheader supplies the 40px row;
+// this view is only the right-anchored caption strip overlaying it.
+const HEADER_HEIGHT = 40;
+const CAPTION_STRIP_WIDTH = 148;
 const DEFAULT_THEME = Object.freeze({ color: 'rgb(221, 221, 221)', border: 'rgba(221, 221, 221, 0.24)',
   background: '#1c1f26', hover: '#2a2f3a', hoverBorder: '#4f5d7a', pressed: '#3a4050' });
 
@@ -126,8 +129,9 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
     contents.setZoomFactor(zoom);
     const fullscreen = win.isFullScreen();
     const bar = fullscreen ? 0 : Math.round(HEADER_HEIGHT * zoom);
-    view.setBounds({ x: 0, y: 0, width, height: bar });
-    chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
+    const strip = Math.round(CAPTION_STRIP_WIDTH * zoom);
+    view.setBounds({ x: Math.max(0, width - strip), y: 0, width: Math.min(strip, width), height: bar });
+    chatView.setBounds({ x: 0, y: 0, width, height });
     view.setVisible(!fullscreen);
     publish();
   }
