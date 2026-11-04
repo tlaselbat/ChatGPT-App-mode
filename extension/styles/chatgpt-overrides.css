@@ -6,15 +6,16 @@
 body.faux-chatgpt-app-mode {
   --app-mode-subheader-height: 40px;
   --app-mode-rail-width: 52px;
-  /* Follow ChatGPT's resolved surfaces first. The light-dark values are only
-     fallbacks for older or reduced fixtures without native surface tokens. */
-  --app-mode-shell-bg: var(--main-surface-secondary, var(--sidebar-surface-primary, light-dark(#f4f4f4, #171717)));
+  /* Current ChatGPT uses --color-surface tokens. Retain the older names only
+     as compatibility fallbacks; otherwise custom themes become a gray shell
+     around a differently colored native conversation footer and composer. */
+  --app-mode-shell-bg: var(--color-surface-secondary, var(--main-surface-secondary, var(--sidebar-surface-primary, light-dark(#f4f4f4, #171717))));
   --app-mode-activity-bg: var(--app-mode-shell-bg);
-  --app-mode-sidebar-bg: var(--sidebar-surface-primary, var(--main-surface-secondary, light-dark(#f4f4f4, #171717)));
-  --app-mode-workspace-bg: var(--main-surface-primary, var(--sidebar-surface-secondary, light-dark(#ffffff, #212121)));
-  --app-mode-composer-bg: var(--main-surface-primary, light-dark(#ffffff, #212121));
-  --app-mode-text: var(--text-primary, currentColor);
-  --app-mode-border: var(--border-light, color-mix(in srgb, currentColor 14%, transparent));
+  --app-mode-sidebar-bg: var(--color-surface-secondary, var(--sidebar-surface-primary, var(--main-surface-secondary, light-dark(#f4f4f4, #171717))));
+  --app-mode-workspace-bg: var(--color-surface, var(--main-surface-primary, var(--sidebar-surface-secondary, light-dark(#ffffff, #212121))));
+  --app-mode-composer-bg: var(--color-surface-elevated, var(--bg-elevated-primary, light-dark(#ffffff, #303030)));
+  --app-mode-text: var(--color-text-primary, var(--text-primary, currentColor));
+  --app-mode-border: var(--color-border-primary-outline, var(--border-light, color-mix(in srgb, currentColor 14%, transparent)));
   --app-mode-hover: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 8%, transparent));
   --app-mode-selected: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 12%, transparent));
   --app-mode-accent: var(--app-color-icon-accent, currentColor);
@@ -35,10 +36,10 @@ body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-
   font-size: 13px;
   line-height: 1.5;
 }
-body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href]:hover {
+body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[href]:not([data-interactive-row-link]):hover {
   background: var(--app-mode-hover);
 }
-body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[aria-current="page"] {
+body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation) a[aria-current="page"]:not([data-interactive-row-link]) {
   background: var(--app-mode-selected);
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--app-mode-accent);
@@ -76,8 +77,15 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] {
 body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] [data-app-mode-nav-primary] { margin-block: 0 24px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-group-wrapper] { margin-block: 0 !important; padding-block: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-section] { min-width: 0; margin-block: 0 14px; }
-body.faux-chatgpt-app-mode [data-app-mode-nav-content] :is(a, .sidebar-item) {
+body.faux-chatgpt-app-mode [data-app-mode-nav-content] :is(a:not([data-interactive-row-link]), .sidebar-item) {
   min-width: 0; min-height: 34px; border-radius: 8px; font-size: 13px; font-weight: 400;
+}
+/* Current thread links sit inside a padded native row. Giving the inner link
+   another 34px minimum height overflows its 24px content area and lifts the
+   title above the row center. The native row also owns selection/hover paint. */
+body.faux-chatgpt-app-mode [data-app-mode-sidebar-navigation] .sidebar-item a[data-interactive-row-link] {
+  min-height: 0; align-items: center; background: transparent; box-shadow: none;
+  font-weight: 400;
 }
 body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):hover { background: var(--app-mode-hover); }
 body.faux-chatgpt-app-mode :is([data-app-mode-nav-primary], [data-app-mode-nav-content]) :is(a, button):focus-visible {
@@ -211,6 +219,10 @@ body.faux-chatgpt-app-mode [data-app-mode-home-group] {
   width: 100% !important; max-width: 788px !important; box-sizing: border-box;
   margin-inline: auto !important; padding: 0 24px !important; gap: 16px !important;
 }
+@media (max-width: 480px) {
+  body.faux-chatgpt-app-mode [data-app-mode-home-group] { padding-inline: 12px !important; }
+  body.faux-chatgpt-app-mode [data-app-mode-home-hero] { padding-inline: 12px !important; }
+}
 body.faux-chatgpt-app-mode [data-app-mode-home-composer-path] {
   padding-block: 0 !important; margin-block: 0 !important; background: transparent !important;
 }
@@ -313,17 +325,15 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before {
   padding-inline-start: 4px;
   -webkit-app-region: drag;
 }
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout]::before {
+  position: absolute; left: 64px; top: 50%; transform: translateY(-50%);
+  padding-inline-start: 0;
+}
 @media (max-width: 480px) {
   body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before { content: none; }
 }
-/* The conversation composer's dark card surface sits on the lighter Codex
-   workspace — retint it to the composer layer token so it reads as part of
-   the panel instead of a floating dark block. Class-name hook is a
-   compatibility assumption; if it stops matching, the native color returns. */
-body.faux-chatgpt-app-mode [data-app-mode-workspace] [class*="ComposerLayoutRoot"] {
-  background: var(--app-mode-composer-bg) !important;
-  border-radius: var(--app-mode-radius-composer) !important;
-}
+/* Conversation composers retain their native elevated surface and geometry.
+   Only the recognized blank-home card above needs an App Mode surface. */
 
 /* The site's modal sidebar normally starts at the top of the page view.
    Reserve the shared subheader so its title cannot overlap our toggle. */
@@ -405,7 +415,7 @@ body.faux-chatgpt-app-mode {
      Inherit the rendered text color and let the actual app surface show through. */
   --app-mode-control-color: inherit;
   --app-mode-control-border: var(--app-mode-border);
-  --app-mode-control-bg: var(--app-mode-workspace-bg, var(--main-surface-primary, light-dark(#ffffff, #212121)));
+  --app-mode-control-bg: var(--app-mode-shell-bg);
   --app-mode-control-hover: var(--app-mode-hover);
   --app-mode-control-hover-border: color-mix(in srgb, currentColor 24%, transparent);
   --app-mode-control-pressed: color-mix(in srgb, currentColor 14%, var(--app-mode-control-bg));
