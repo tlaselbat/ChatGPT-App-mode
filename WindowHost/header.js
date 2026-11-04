@@ -27,9 +27,9 @@
   }
   function layout() {
     queued = false;
-    // The app-owned title bar lives in a separate native view above the page;
-    // this pass only normalizes the site's own header into the standard
-    // secondary action row. The toolbar fallback mounts outside any header;
+    // The trusted caption strip overlays the right side of the shared row;
+    // this pass normalizes the site's own controls in the remaining space.
+    // The toolbar fallback mounts outside any header;
     // never treat its fallback host as the row.
     const toolbarHost = document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
     const header = (toolbarHost && toolbarHost.id !== 'chatgpt-app-mode-toolbar-fallback' ? toolbarHost : null) ||
@@ -230,7 +230,10 @@
         const left = center - box.width / 2;
         const right = left + box.width;
         const controls = [...header.querySelectorAll('button, a[href], [role="button"]')].filter(element => !tabs.contains(element) && visible(element));
-        const fits = left >= regionLeft && right <= innerWidth && controls.every(element => {
+        // The trusted caption view overlays the page; it cannot appear in
+        // querySelectorAll. Reserve its band when deciding whether centering fits.
+        const availableRight = Math.min(innerWidth - 188, header.getBoundingClientRect().right - 188);
+        const fits = left >= regionLeft && right <= availableRight && controls.every(element => {
           const bounds = element.getBoundingClientRect();
           return bounds.right <= left - 6 || bounds.left >= right + 6;
         });

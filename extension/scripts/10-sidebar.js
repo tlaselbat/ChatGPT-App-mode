@@ -416,7 +416,10 @@
     if (contentMains.length === 1) own(contentMains[0], 'data-app-mode-workspace');
     // Hide duplicate toggles only once a working replacement exists. Keep the
     // modal's native close control inside its focus trap as a fallback.
-    const duplicates = [...document.querySelectorAll('header button, [role="banner"] button, [data-app-mode-header-layout] button')];
+    const duplicates = new Set([
+      ...document.querySelectorAll('header button, [role="banner"] button, [data-app-mode-header-layout] button'),
+      ...(dockedPanel?.querySelectorAll('button') || [])
+    ]);
     for (const control of duplicates) {
       if (/^(open|show|hide|close) sidebar$/i.test(accessibleName(control)) &&
           !control.closest('[role="dialog"]')) own(control, 'data-app-mode-sidebar-original');

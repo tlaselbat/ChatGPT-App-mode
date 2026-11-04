@@ -313,10 +313,24 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     }).length`), 1);
     // Always-on-Top is owned by the host caption strip; exercise the real
     // validated bridge rather than the hidden site-injected twin.
+    const waitPinState = async expected => {
+      // DOM click dispatch returns before the async IPC invocation completes.
+      // Wait for both native state and the published accessible state, rather
+      // than racing the first main-process read against the click handler.
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const nativeState = await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop());
+        const renderedState = await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`);
+        if (nativeState === expected && renderedState === String(expected)) return;
+        await page.waitForTimeout(50);
+      }
+      assert.fail(`Native Pin did not synchronize to ${expected}`);
+    };
     await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
+    await waitPinState(true);
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), true);
     assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'true');
     await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
+    await waitPinState(false);
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), false);
     assert.equal(await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`), 'false');
     // Keyboard and wheel events must reach the native host after removing its
@@ -485,7 +499,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const rects = [...document.querySelectorAll('header button')].map(el => el.getBoundingClientRect());
         return {
           height: header.height,
-          bounded: rects.every(r => r.left >= header.left && r.right <= innerWidth + 1 && r.top >= header.top - 1 && r.bottom <= header.bottom + 1),
+          bounded: rects.every(r => r.left >= header.left && r.right <= innerWidth - 184 && r.top >= header.top - 1 && r.bottom <= header.bottom + 1),
           overlaps: rects.some((a, i) => rects.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
           overflow: document.documentElement.scrollWidth > innerWidth,
         };
@@ -537,7 +551,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
           centerErrorCss:tabs.x+tabs.width/2-innerWidth/2,controlsCss:controls.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),
           centering:document.querySelector('header').getAttribute('data-app-mode-header-centering'),
           groups:document.querySelectorAll('[data-app-mode-header-tabs]').length,
-          bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth+1 && r.top>=0 && r.bottom<=header.bottom+1),
+          bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth-184 && r.top>=0 && r.bottom<=header.bottom+1),
           overlap:controls.some((a,i)=>controls.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           minimum:Math.min(...controls.map(r=>r.width))};
       });
@@ -599,10 +613,10 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const titleText=header.querySelector('.fixture-title .title')?.getBoundingClientRect();
         const siteRects=buttons.filter(button=>button.id!=='chatgpt-app-mode-pin-toggle').map(button=>button.getBoundingClientRect());
         return {count:buttons.length,height:bounds.height,aligned:rects.every(rect=>Math.abs(rect.y+rect.height/2-20)<=1),
-          bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth+1&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
+          bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth-184&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           order:siteRects.every(rect=>rect.right<=(pin?.left??innerWidth)+6),
-          actionsRight:actions?actions.right>=bounds.right-(pin?.width??40)-30:true,
+          actionsRight:actions?actions.right>=bounds.right-188-30:true,
           spacersGone:![...header.querySelectorAll('.fixture-sidebar-spacer,.fixture-title-offset')].some(element=>element.getClientRects().length),
           titleBetween:!!titleBox&&!!leadingBox&&!!actionsBox&&titleBox.left>=leadingBox.right-1&&titleBox.right<=actionsBox.left+1,
           titleReadable:!!titleText&&titleText.width>8&&titleText.right<=innerWidth+1,

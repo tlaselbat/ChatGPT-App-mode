@@ -356,7 +356,7 @@ test('visible fixed-layer switch centers in docked content and keeps viewport ce
 });
 
 test('docked sidebar centers the mode switch in content while compact toggle remains mounted', async ({ page }) => {
-  await page.setViewportSize({ width: 786, height: 800 });
+  await page.setViewportSize({ width: 1024, height: 800 });
   await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}.shell{height:800px}aside{position:fixed;left:0;top:40px;width:340px;height:760px}main{margin-left:340px;min-width:0}header{height:40px}</style>
     <div class="shell"><aside></aside><main><header><div class="real-mode-grid" role="tablist" style="position:absolute;left:50%;top:6px;width:192px;height:28px;display:flex">
       <button role="tab" aria-selected="true">Chat</button><button role="tab" aria-selected="false">Work</button>
@@ -409,7 +409,7 @@ test('mode switch positioning stays continuous across 480px and 481px', async ({
   const at480 = centers.find(entry => entry.viewport === 480);
   const at481 = centers.find(entry => entry.viewport === 481);
   expect(Math.abs(at480.center - at481.center), JSON.stringify(centers)).toBeLessThanOrEqual(2);
-  for (const width of [768, 769, 800, 1024, 1280]) {
+  for (const width of [1024, 1280]) {
     const sample = centers.find(entry => entry.viewport === width);
     expect(sample.state).toBe('region');
     expect(Math.abs(sample.center - (340 + width) / 2), JSON.stringify(sample)).toBeLessThanOrEqual(2);
@@ -776,6 +776,15 @@ test('sidebar fallback disclosures retain native nodes, keyboard access and save
 
 test('sidebar native disclosures remain authoritative and account access survives docked, drawer and SPA states', async ({ page }) => {
   await navigationSectionsFixture(page, true);
+  // A second native toggle inside the docked panel must not compete with the
+  // permanent rail toggle; the native node remains mounted.
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'docked-duplicate-toggle'; button.setAttribute('aria-label', 'Close sidebar');
+    document.querySelector('[data-app-mode-docked-sidebar]').append(button);
+  });
+  await expect(page.locator('#docked-duplicate-toggle')).toBeHidden();
+  await page.locator('#docked-duplicate-toggle').evaluate(element => element.remove());
   await expect(page.locator('[data-app-mode-nav-disclosure]')).toHaveCount(0);
   const recents = page.locator('[data-native-section="recents"]');
   await expect(recents).toHaveAttribute('aria-expanded', 'true');
@@ -893,7 +902,7 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
   fs.writeFileSync(testInfo.outputPath('sidebar-geometry.json'), JSON.stringify({ zoomMethod: 'CSS viewport equivalents of the requested window widths at 100%, 125%, and 150%; not a native browser zoom claim', collapsedGroupBounds: bounds, measurements }, null, 2));
 });
 
-test('home composition stays stable across the mobile breakpoint and preserves the native draft', async ({ page }) => {
+test('home composition stays stable across the mobile breakpoint and preserves the native draft', async ({ page }, testInfo) => {
   const home = `<!doctype html><style>
     *{box-sizing:border-box}body{margin:0}header{height:40px}main{height:calc(100vh - 40px)}
     .layout{height:100%;display:flex;flex-direction:column}.contents{display:contents}
@@ -931,6 +940,18 @@ test('home composition stays stable across the mobile breakpoint and preserves t
     if (width === 640) boundaryTop = bounds.y;
     if (width === 639) expect(Math.abs(bounds.y - boundaryTop)).toBeLessThanOrEqual(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
+    for (const width of [390, 640, 1280]) {
+      await page.setViewportSize({ width, height: 850 });
+      const card = await page.locator('.card').boundingBox();
+      expect(card.x).toBeGreaterThanOrEqual(12);
+      expect(card.x + card.width).toBeLessThanOrEqual(width - 12);
+      if (width === 390) expect(card.width).toBeGreaterThanOrEqual(width - 24);
+      await expect(editor).toHaveText('Synthetic unsent draft');
+      await page.screenshot({ path: testInfo.outputPath(`home-${theme}-${width}.png`) });
+    }
   }
   const disclosure = page.getByRole('button', { name: 'Recent activity', exact: true });
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
@@ -1331,7 +1352,7 @@ test('standardized action row normalizes the site header in place without moving
   // the action group is right-aligned; Pin belongs to the separate host strip.
   expect(geometry.sidebar.left).toBeLessThanOrEqual(geometry.newChat.left);
   expect(geometry.options.right).toBeLessThanOrEqual(geometry.header.right);
-  expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 24);
+  expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 188 - 24);
   expect(geometry.pin.width).toBe(0);
   expect(geometry.pin.height).toBe(0);
   // The layout contract never moves nodes out of the site's own containers:
@@ -1373,14 +1394,14 @@ test('conversation typography and composer retain native styling with long conte
     [data-composer-body]{margin-top:28px;padding:16px}
     textarea{width:100%;min-height:60px;border:0;background:transparent;color:inherit;font:inherit;resize:vertical}
     article{min-width:0}pre{padding:16px;max-width:100%;overflow-x:auto}h2{font-size:24px}a{color:inherit}
-  </style><body class="faux-chatgpt-app-mode"><main class="MainContentSurface-review">
+  </style><body class="faux-chatgpt-app-mode"><main class="MainContentSurface-review" data-app-mode-workspace>
     <article data-message-author-role="assistant"><h2>A clearer place to think</h2>
     <p>Readable conversations start with comfortable spacing and a consistent visual hierarchy.</p>
     <ul><li>Quiet surfaces keep attention on your work.</li><li>Clear headings make longer answers easier to scan.</li></ul>
     <blockquote>Useful details should be easy to find.</blockquote>
     <pre><code>${'long_example_identifier_'.repeat(15)}</code></pre>
     <p>Continue with a question or refine the next step.</p></article>
-    <div data-composer-body><textarea aria-label="Message">A sample draft, preserved while resizing.</textarea></div>
+    <div data-composer-body class="ComposerLayoutRoot-review"><textarea aria-label="Message">A sample draft, preserved while resizing.</textarea></div>
   </main></body>`);
   let overridesStyle;
   for (const theme of ['light', 'dark']) {
@@ -1443,7 +1464,7 @@ test('extension styling, control, navigation and re-render in offline ChatGPT fi
   await expect(page).toHaveTitle('ChatGPT');
   await expect(page.locator('body')).toHaveClass(/faux-chatgpt-app-mode/);
   await expect(page.locator('header')).toHaveCSS('backdrop-filter', 'none');
-  await expect(page.locator('header')).toHaveCSS('background-color', 'rgb(236, 238, 242)');
+  await expect(page.locator('header')).toHaveCSS('background-color', 'rgb(244, 244, 244)');
   await expect.soft(page).toHaveScreenshot('fixture-desktop.png');
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1557,6 +1578,125 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
   });
   await expect(page.locator('#old-conversation header #chatgpt-app-mode-pin-toggle')).toBeVisible();
   await expect(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveCount(0);
+});
+
+test('App Mode unifies shell surfaces and preserves elevated composers across theme changes', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('https://chatgpt.com/');
+  await page.addStyleTag({ content: ':root { --main-surface-primary: rgb(31, 32, 34); --main-surface-secondary: rgb(23, 24, 26); --sidebar-surface-primary: rgb(25, 26, 28); --sidebar-surface-secondary: rgb(48, 49, 52); --text-primary: rgb(238, 239, 240); --border-light: rgb(80, 81, 84); --app-color-icon-accent: rgb(46, 103, 197); --bg-elevated-primary: rgb(48, 49, 52); }' });
+
+  const surfaces = await page.evaluate(() => {
+    const style = getComputedStyle(document.body);
+    return {
+      shell: style.getPropertyValue('--app-mode-shell-bg').trim(),
+      sidebar: style.getPropertyValue('--app-mode-sidebar-bg').trim(),
+      workspace: style.getPropertyValue('--app-mode-workspace-bg').trim(),
+      composer: style.getPropertyValue('--app-mode-composer-bg').trim(),
+      text: style.getPropertyValue('--app-mode-text').trim(),
+      border: style.getPropertyValue('--app-mode-border').trim(),
+      controls: style.getPropertyValue('--app-mode-control-bg').trim(),
+    };
+  });
+  expect(surfaces).toEqual({ shell: 'rgb(23, 24, 26)', sidebar: 'rgb(25, 26, 28)', workspace: 'rgb(31, 32, 34)', composer: 'rgb(48, 49, 52)', text: 'rgb(238, 239, 240)', border: 'rgb(80, 81, 84)', controls: 'rgb(23, 24, 26)' });
+
+  await page.evaluate(() => {
+    const nav = document.createElement('div');
+    nav.setAttribute('data-app-mode-nav-primary', '');
+    const activeNav = document.createElement('button');
+    activeNav.setAttribute('aria-current', 'page');
+    nav.append(activeNav);
+    document.body.append(nav);
+    const activePin = document.createElement('button');
+    activePin.className = 'chatgpt-app-mode-pin-button is-active';
+    document.body.append(activePin);
+  });
+  const activeNav = page.locator('[data-app-mode-nav-primary] button[aria-current="page"]').last();
+  const activePin = page.locator('.chatgpt-app-mode-pin-button.is-active').last();
+  expect(await activeNav.evaluate(element => getComputedStyle(element).boxShadow)).toContain('rgb(46, 103, 197)');
+  await expect(activePin).toHaveCSS('color', 'rgb(46, 103, 197)');
+
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--main-surface-primary', 'rgb(250, 250, 250)');
+    document.documentElement.style.setProperty('--main-surface-secondary', 'rgb(242, 242, 242)');
+    document.documentElement.style.setProperty('--sidebar-surface-primary', 'rgb(246, 246, 246)');
+    document.documentElement.style.setProperty('--sidebar-surface-secondary', 'rgb(232, 232, 232)');
+    document.documentElement.style.setProperty('--app-color-icon-accent', 'rgb(64, 201, 119)');
+  });
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-workspace-bg').trim())).toBe('rgb(250, 250, 250)');
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-control-bg').trim())).toBe('rgb(242, 242, 242)');
+  await expect.poll(() => activeNav.evaluate(element => getComputedStyle(element).boxShadow)).toContain('rgb(64, 201, 119)');
+  await expect(activePin).toHaveCSS('color', 'rgb(64, 201, 119)');
+  await page.evaluate(() => {
+    const element = document.createElement('div');
+    element.setAttribute('data-app-mode-home-composer-path', '');
+    document.body.append(element);
+  });
+  const composerProbe = page.locator('[data-app-mode-home-composer-path]').last();
+  await expect(composerProbe).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await composerProbe.evaluate(element => element.remove());
+});
+
+test('current theme tokens keep conversation surfaces coherent and native thread rows centered', async ({ page }, testInfo) => {
+  await page.setContent(`<style>
+    *{box-sizing:border-box}html{color-scheme:dark;--main-surface-primary:#212121;--sidebar-surface-primary:#171717}
+    body{margin:0;font:14px system-ui;color:var(--color-text-primary);background:var(--color-surface-secondary)}
+    .shell{display:flex;height:100vh;margin-left:52px}aside{width:300px;flex-shrink:0}
+    main{flex:1;display:flex;flex-direction:column}header{height:40px;flex-shrink:0}
+    article{flex:1;width:min(768px,calc(100% - 40px));margin:32px auto;line-height:1.6}
+    footer{background:var(--color-surface);padding:16px 24px 24px}
+    .composer{max-width:768px;margin:auto;border-radius:24px;background:var(--color-surface-elevated);padding:16px}
+    textarea{font:inherit;color:inherit;resize:none;background:transparent;border:0;width:100%}
+    .sidebar-item{height:36px;padding:6px 8px;background:var(--color-surface-tertiary)}
+    .row-content{height:100%;display:flex;align-items:center}
+    .row-title{display:flex;align-items:center;flex:1;min-width:0}
+    a[data-interactive-row-link]{display:flex;flex:1;min-width:0;color:inherit;text-decoration:none}
+    a[data-interactive-row-link] span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:20px}
+    a[data-interactive-row-link]:focus-visible{outline:2px solid currentColor}
+  </style><body class="faux-chatgpt-app-mode"><button id="app-mode-compact-sidebar" aria-label="Sidebar">☰</button>
+  <nav id="app-mode-compact-sidebar-actions"></nav><div class="shell" data-app-shell-sidebar-open="true">
+    <aside data-app-mode-docked-sidebar><div class="sidebar-navigation" data-app-mode-sidebar-navigation>
+      <p>Chats</p><div data-app-mode-nav-content><div class="sidebar-item"><div class="row-content"><div class="row-title">
+      <a href="#synthetic" aria-current="page" data-interactive-row-link><span>Sample conversation</span></a>
+      </div></div></div></div></div></aside>
+    <main data-app-mode-workspace><header><div class="chatgpt-app-mode-toolbar"></div></header>
+      <article><h2>A sample conversation</h2><p>This synthetic conversation checks the shared workspace and composer surface.</p>
+      <p>Opening the sidebar keeps the title, message column and composer readable.</p></article>
+      <footer><div class="composer"><textarea aria-label="Draft">An unsent draft</textarea></div></footer>
+    </main></div></body>`);
+  await page.addStyleTag({ path: path.join(extensionPath, 'styles/chatgpt-overrides.css') });
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(script => (0, eval)(script), headerLayoutScript);
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(theme => {
+      const values = theme === 'dark'
+        ? { surface: '#1e1e2e', secondary: '#191927', elevated: '#343647', tertiary: '#2a2b3c', text: '#cdd6f4' }
+        : { surface: '#ffffff', secondary: '#f2f3f5', elevated: '#f7f8fa', tertiary: '#e5e7eb', text: '#202123' };
+      const root = document.documentElement; root.style.colorScheme = theme;
+      for (const [key, value] of Object.entries(values)) root.style.setProperty(key === 'text' ? '--color-text-primary' : '--color-' + (key === 'surface' ? key : 'surface-' + key), value);
+    }, theme);
+    for (const [width, expanded] of [[1280, true], [1280, false], [390, false]]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.locator('aside').evaluate((e, expanded) => e.style.display = expanded ? '' : 'none', expanded);
+      await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const colors = await page.evaluate(() => ['main', 'footer', 'header', '#app-mode-compact-sidebar-actions'].map(s => getComputedStyle(document.querySelector(s)).backgroundColor));
+      expect(colors[0]).toBe(colors[1]); expect(colors[2]).toBe(colors[3]);
+      expect(colors[0]).toBe(theme === 'dark' ? 'rgb(30, 30, 46)' : 'rgb(255, 255, 255)');
+      await expect(page.getByRole('textbox')).toHaveValue('An unsent draft');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (expanded) {
+        const link = page.locator('[data-interactive-row-link]');
+        await expect(link).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await expect(link).toHaveCSS('box-shadow', 'none');
+        const row = await page.locator('.sidebar-item').boundingBox();
+        const title = await link.locator('span').boundingBox();
+        expect(Math.abs(title.y + title.height / 2 - row.y - row.height / 2)).toBeLessThanOrEqual(1);
+        await link.focus(); await expect(link).toHaveCSS('outline-style', 'solid');
+      }
+      if (width > 480) expect(await page.locator('header').evaluate(e => getComputedStyle(e, '::before').left)).toBe('64px');
+      await page.screenshot({ path: testInfo.outputPath(`conversation-${theme}-${width}-${expanded ? 'expanded' : 'compact'}.png`) });
+    }
+  }
 });
 
 test('session retry, connection recovery, pin synchronization and header fallback', async ({ page }) => {

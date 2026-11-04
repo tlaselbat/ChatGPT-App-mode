@@ -1,7 +1,6 @@
-/* The application owns a separate native title bar above the page view, so
-   nothing here provides window chrome. The site's own header is normalized
-   in place into the standard 40px secondary action row: original ChatGPT
-   nodes keep their handlers; only container layout is shared. */
+/* Normalize the site's header in place into the shared 40px caption row.
+   Original ChatGPT nodes retain their handlers; the trusted caption view
+   overlays the reserved right-hand band of this same row. */
 /* The unified Codex bar: this row IS the window chrome, so it supplies the
    drag surface; interactive descendants opt out. The right padding reserves
    the host caption strip so actions/Pin never slide under it. */
@@ -42,7 +41,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: 5px 12px !important;
+  padding: 5px 188px 5px 12px !important;
   width: calc(100% + var(--app-mode-header-bleed, 0px)) !important;
   margin-left: calc(-1 * var(--app-mode-header-bleed, 0px)) !important;
   padding-left: max(12px, var(--app-mode-header-bleed, 0px)) !important;
@@ -71,6 +70,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tab-path] {
   height: auto !important;
   min-height: 0 !important;
   max-height: 30px;
+  overflow: visible !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) { padding: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-header-mode-branch] { order: 1; }
@@ -125,6 +125,11 @@ body.faux-chatgpt-app-mode [data-app-mode-header-icon-path] {
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 32px !important; min-width: 32px !important; max-width: 32px; height: 28px; }
 /* The sidebar trigger overlays its hidden sizing placeholder in one grid cell. */
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { display: grid !important; width: 32px !important; min-width: 32px !important; }
+/* The permanent rail already reserves its toggle. Do not keep another empty
+   32px slot when this branch contains only replaced native sidebar buttons. */
+body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"]:has([data-app-mode-sidebar-original]):not(:has(button:not([data-app-mode-sidebar-original]), a[href])) {
+  display: none !important;
+}
 /* Normalize the switch's layout only; the site's own container outline and
    pill treatment stay intact so exactly one border is ever visible. */
 body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
@@ -218,6 +223,20 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolb
    then needs no extra spacer of its own. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-control-branch="actions"] ~ .chatgpt-app-mode-toolbar {
   margin-inline-start: 0;
+}
+/* When centering would meet the caption strip, use the full shared row.
+   Empty sidebar offsets and decorative identity must not consume the scarce
+   space needed by native controls. Keep the 188px caption exclusion intact. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] {
+  padding-left: 4px !important;
+  gap: 2px;
+}
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] {
+  padding-left: 52px !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"]::before { content: none; }
+body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] [data-app-mode-header-mode-branch] {
+  min-width: 80px !important;
 }
 @media (max-width: 480px) {
   /* Defined narrow fallback: side groups stop sharing equal width so the
