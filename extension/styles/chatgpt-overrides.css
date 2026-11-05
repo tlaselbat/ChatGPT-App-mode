@@ -166,6 +166,16 @@ body.faux-chatgpt-app-mode [data-app-mode-workspace] {
   min-width: 0 !important;
   min-height: 0 !important;
 }
+/* The native 40px header overlaps the top of main, so rounding main alone
+   rounds a hidden edge. When its clipped content surface begins immediately
+   below that row, transfer the painted panel to the surface itself. */
+body.faux-chatgpt-app-mode [data-app-mode-workspace]:has(> [data-app-mode-workspace-surface]) {
+  background: transparent !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-workspace-surface] {
+  background: var(--app-mode-workspace-bg) !important;
+  border-radius: var(--app-mode-radius-workspace);
+}
 /* The subheader keeps its native position inside the workspace column.
    A top inset was tried and reverted: on the live site the header is not
    the panel's first child, so any pull offset pushes it off-screen. */

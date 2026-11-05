@@ -1699,6 +1699,78 @@ test('current theme tokens keep conversation surfaces coherent and native thread
   }
 });
 
+test('workspace radius follows the visible surface below the unified header', async ({ page }, testInfo) => {
+  await page.setContent(`<style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%}
+    html{color-scheme:light;--main-surface-primary:#fafafa;--sidebar-surface-primary:#203040}
+    body{background:#203040}.shell{height:100%;margin-left:52px}
+    [data-app-shell-responsive-sidebar]{display:flex;height:100%}
+    main{position:relative;display:flex;flex:1;flex-direction:column;min-width:0;height:100%}
+    header{height:40px;min-height:40px;flex:none;background:#fafafa}
+    .surface{position:relative;flex:1;min-height:0;overflow:hidden;background:#fafafa}
+    .composer{position:absolute;bottom:24px;left:20%;width:60%;height:56px;border-radius:20px;background:#ddd}
+  </style><body><div class="shell"><div data-app-shell-responsive-sidebar>
+    <main><header></header><div class="surface"><div class="composer"></div></div></main>
+  </div><button aria-label="Open sidebar">Open sidebar</button></div></body>`);
+  await page.addStyleTag({ path: path.join(extensionPath, 'styles/chatgpt-overrides.css') });
+  await injectOverrides(page);
+  const main = page.locator('main');
+  const surface = page.locator('.surface');
+  await expect(main).toHaveAttribute('data-app-mode-workspace', '');
+  await expect(surface).toHaveAttribute('data-app-mode-workspace-surface', '');
+  await expect(main).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(surface).toHaveCSS('border-radius', '14px');
+  await expect(surface).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await expect(page.locator('.composer')).toHaveCSS('border-radius', '20px');
+
+  // Preserve a rendered before image of the original ownership failure: the
+  // parent paints beneath the header and the visible content surface is square.
+  await page.evaluate(() => {
+    document.documentElement.style.colorScheme = 'dark';
+    document.body.style.background = '#141421';
+    document.documentElement.style.setProperty('--main-surface-primary', '#1e1e2e');
+    document.documentElement.style.setProperty('--main-surface-secondary', '#141421');
+    document.querySelector('header').style.background = '#1e1e2e';
+    document.querySelector('main').style.setProperty('background', '#1e1e2e', 'important');
+    document.querySelector('.surface').style.setProperty('border-radius', '0', 'important');
+  });
+  await page.screenshot({ path: testInfo.outputPath('workspace-surface-before.png') });
+  await page.evaluate(() => {
+    document.querySelector('main').style.removeProperty('background');
+    document.querySelector('.surface').style.removeProperty('border-radius');
+  });
+  await expect(surface).toHaveCSS('background-color', 'rgb(30, 30, 46)');
+  const box = await surface.boundingBox();
+  const screenshot = await page.screenshot({ path: testInfo.outputPath('workspace-surface-after.png') });
+  const pixels = await page.evaluate(async base64 => {
+    const image = new Image(); image.src = `data:image/png;base64,${base64}`;
+    await image.decode(); const canvas = document.createElement('canvas');
+    canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    const sample = (x, y) => [...context.getImageData(Math.round(x), Math.round(y), 1, 1).data].slice(0, 3);
+    const r = document.querySelector('.surface').getBoundingClientRect();
+    return {
+      corners: [sample(r.left+1,r.top+1),sample(r.right-2,r.top+1),sample(r.left+1,r.bottom-2),sample(r.right-2,r.bottom-2)],
+      panel: sample(r.left+16,r.top+1),
+    };
+  }, screenshot.toString('base64'));
+  expect(box.y).toBe(40);
+  expect(pixels.corners).toEqual(Array(4).fill([20, 20, 33]));
+  expect(pixels.panel).toEqual([30, 30, 46]);
+  await page.evaluate(() => {
+    document.documentElement.style.colorScheme = 'light';
+    document.body.style.background = '#203040';
+    document.documentElement.style.setProperty('--main-surface-primary', '#fafafa');
+    document.documentElement.style.setProperty('--main-surface-secondary', '#203040');
+    document.querySelector('header').style.background = '#fafafa';
+  });
+  await expect(surface).toHaveCSS('border-radius', '14px');
+  await expect(surface).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+
+  await surface.evaluate(element => element.replaceWith(element.cloneNode(true)));
+  await expect(page.locator('.surface')).toHaveAttribute('data-app-mode-workspace-surface', '');
+});
+
 test('session retry, connection recovery, pin synchronization and header fallback', async ({ page }) => {
   let sessionAttempts = 0;
   let pinOnline = false;

@@ -413,7 +413,35 @@
     // the shell. Ambiguous structure keeps the native, unmarked layout.
     const contentMains = [...root.querySelectorAll('main')].filter(element =>
       element.getClientRects().length && !element.closest('aside, nav, [role="dialog"]'));
-    if (contentMains.length === 1) own(contentMains[0], 'data-app-mode-workspace');
+    if (contentMains.length === 1) {
+      const workspace = contentMains[0];
+      own(workspace, 'data-app-mode-workspace');
+      // ChatGPT's shared title row overlaps the top of main. Its visible
+      // conversation surface starts below that row and paints independently,
+      // so put the rounded background on that surface when the geometry is
+      // unambiguous. Avoid hashed site classes and leave unknown layouts native.
+      const box = workspace.getBoundingClientRect();
+      const headers = [...workspace.children].filter(element =>
+        element.matches('header, [role="banner"]') && element.getClientRects().length &&
+        Math.abs(element.getBoundingClientRect().top - box.top) <= 1 &&
+        Math.abs(element.getBoundingClientRect().height - 40) <= 1);
+      if (headers.length === 1) {
+        const headerBox = headers[0].getBoundingClientRect();
+        const surfaces = [...workspace.children].filter(element => {
+          const style = getComputedStyle(element);
+          const surfaceBox = element.getBoundingClientRect();
+          return element !== headers[0] && element.getClientRects().length &&
+            Math.abs(surfaceBox.top - headerBox.bottom) <= 1 &&
+            Math.abs(surfaceBox.bottom - box.bottom) <= 1 &&
+            Math.abs(surfaceBox.left - box.left) <= 1 &&
+            Math.abs(surfaceBox.right - box.right) <= 1 &&
+            surfaceBox.height > 0 && style.position !== 'static' &&
+            (style.overflowX === 'hidden' || style.overflowX === 'clip') &&
+            (style.overflowY === 'hidden' || style.overflowY === 'clip');
+        });
+        if (surfaces.length === 1) own(surfaces[0], 'data-app-mode-workspace-surface');
+      }
+    }
     // Hide duplicate toggles only once a working replacement exists. Keep the
     // modal's native close control inside its focus trap as a fallback.
     const duplicates = new Set([
