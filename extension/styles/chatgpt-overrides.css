@@ -63,7 +63,7 @@ body.faux-chatgpt-app-mode [data-app-mode-sidebar-navigation] {
 body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar]:has([data-app-mode-sidebar-navigation]) { padding-inline: 4px !important; }
 body.faux-chatgpt-app-mode [data-app-shell-sidebar-open="true"] [data-app-mode-docked-sidebar] > [data-app-mode-sidebar-width-wrapper] { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] {
-  min-height: 44px; height: 44px; flex-shrink: 0; padding-inline: 12px;
+  min-height: var(--app-mode-subheader-height); height: var(--app-mode-subheader-height); flex-shrink: 0; padding-inline: 12px;
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-account-row] { min-height: 48px; height: auto; padding-block: 6px; }
@@ -73,7 +73,7 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-primary] :is(a, button) {
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] {
   min-height: 0; gap: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable;
-  padding-block: 12px 8px;
+  padding-block: 12px var(--app-mode-gap);
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] [data-app-mode-nav-primary] { margin-block: 0 24px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-group-wrapper] { margin-block: 0 !important; padding-block: 0 !important; }
@@ -315,13 +315,14 @@ body.faux-chatgpt-app-mode [data-app-mode-modal-sidebar-toggle] {
   width: 36px !important; height: 30px !important; margin: 0 !important;
   z-index: 70; border-radius: 8px;
 }
-/* Apply the boundary before an opening/closing panel reaches the expanded
-   state. Its native title must never paint into the shared header row. */
+/* The page view already begins below the Electron title bar. Sidebars and
+   workspace share that origin and the same external bottom gap. */
 body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar],
 body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) aside.app-shell-left-panel {
-  margin-top: var(--app-mode-subheader-height) !important;
-  height: calc(100dvh - var(--app-mode-subheader-height)) !important;
-  max-height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+  margin-top: 0 !important;
+  margin-bottom: var(--app-mode-gap) !important;
+  height: calc(100dvh - var(--app-mode-gap)) !important;
+  max-height: calc(100dvh - var(--app-mode-gap)) !important;
   min-height: 0 !important;
   box-sizing: border-box;
 }
@@ -336,7 +337,7 @@ body.faux-chatgpt-app-mode [data-app-shell-responsive-sidebar][data-app-shell-si
   flex-basis: var(--app-mode-sidebar-width) !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar] {
-  padding-block: var(--app-mode-gap) !important;
+  padding-block: 0 var(--app-mode-gap) !important;
   padding-inline: var(--app-mode-gap) !important;
 }
 /* Always-on-Top is owned by the host title bar; hide
@@ -348,16 +349,16 @@ body.faux-chatgpt-app-mode #chatgpt-app-mode-pin-toggle {
 /* Conversation composers retain their native elevated surface and geometry.
    Only the recognized blank-home card above needs an App Mode surface. */
 
-/* The site's modal sidebar normally starts at the top of the page view.
-   Reserve the shared subheader so its title cannot overlap our toggle. */
+/* The modal header sits beside the activity rail, sharing the page origin.
+   Keep its native footer inside the same external bottom inset. */
 body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) #browser-sidebar-popover[role="dialog"] {
   transform: none !important;
   translate: none !important;
-  top: var(--app-mode-subheader-height) !important;
+  top: 0 !important;
   left: var(--app-mode-rail-width) !important;
-  bottom: 0 !important;
-  height: calc(100dvh - var(--app-mode-subheader-height)) !important;
-  max-height: calc(100dvh - var(--app-mode-subheader-height)) !important;
+  bottom: var(--app-mode-gap) !important;
+  height: auto !important;
+  max-height: calc(100dvh - var(--app-mode-gap)) !important;
 }
 
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {
