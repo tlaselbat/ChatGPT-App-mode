@@ -19,13 +19,16 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
 /* Identity and free title-bar space provide the native drag surface. */
 .titlebar-drag { flex: 1 1 auto; min-width: 36px; }
 .navigation { display: flex; align-items: center; padding-inline-start: 8px; flex: 0 0 auto; }
-.navigation:has(button:not([hidden])) + .brand .brand-mark { display: none; }
-.navigation-search { padding-inline: 0 8px; }
+.titlebar:has(.navigation [data-action="toggle-sidebar"]:not([hidden])) .brand .brand-mark { display: none; }
+.navigation-search { padding-inline: 4px 0; }
+/* When the toggle group is unavailable, Search becomes the leading control
+   and keeps the same 8px edge inset. */
+.navigation:not(:has(button:not([hidden]))) + .navigation-search { padding-inline-start: 8px; }
 .navigation:not(:has(button:not([hidden]))) { display: none; }
 button[hidden], .brand[hidden] { display: none; }
 .brand {
   display: flex; align-items: center; gap: 8px; min-width: 0;
-  padding-inline: 12px; color: var(--app-mode-control-color);
+  padding-inline: 6px 12px; color: var(--app-mode-control-color);
   font: 600 12px/1.2 "Segoe UI", sans-serif;
 }
 .brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -65,14 +68,16 @@ button {
   -webkit-app-region: no-drag;
 }
 body[data-compact="true"] button { width: 28px; flex-basis: 28px; }
-button:hover:not(:disabled) { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, #4f5d7a); }
-button:active:not(:disabled) { background: var(--app-mode-control-pressed, #3a4050); }
+button:hover:not(:disabled) { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, color-mix(in srgb, currentColor 30%, transparent)); }
+button:active:not(:disabled) { background: var(--app-mode-control-pressed, color-mix(in srgb, currentColor 16%, transparent)); }
 button[data-action="close"]:hover:not(:disabled) { color: white; border-color: transparent; background: #c42b1c; }
 button[data-action="close"]:active:not(:disabled) { color: white; background: #a82218; }
 button:focus-visible { outline: 2px solid var(--app-mode-accent, var(--app-mode-control-color)); outline-offset: -3px; }
 button[data-action="pin"][aria-pressed="true"] { color: var(--app-mode-accent, var(--app-mode-control-color)); background: var(--app-mode-control-hover); border-color: var(--app-mode-accent, var(--app-mode-control-hover-border, currentColor)); }
 button:disabled { opacity: .4; cursor: default; }
 svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+/* Navigation glyphs match the compact rail's perceived 16px/1.5 weight. */
+.navigation button svg { width: 16px; height: 16px; stroke-width: 1.5; }
 button[data-action="pin"] svg { stroke: none; }
 .restore-icon, button[data-restored="true"] .maximize-icon { display: none; }
 button[data-restored="true"] .restore-icon { display: block; }

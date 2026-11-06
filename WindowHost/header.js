@@ -204,7 +204,9 @@
           .map(element => element.getBoundingClientRect())
           .filter(bounds => bounds.left <= 2 && bounds.width >= 160 && bounds.width < innerWidth * 0.55 && bounds.height >= 120)
           .sort((a, b) => b.width - a.width)[0];
-        const regionLeft = sidebar ? Math.min(sidebar.right, innerWidth) : 0;
+        // In compact navigation the rail is a 52px overlay, not a wide aside,
+        // so the header's own left edge marks the visible workspace region.
+        const regionLeft = sidebar ? Math.min(sidebar.right, innerWidth) : Math.max(0, header.getBoundingClientRect().left);
         const regionWidth = innerWidth - regionLeft;
         const center = regionLeft + regionWidth / 2;
         const left = center - box.width / 2;

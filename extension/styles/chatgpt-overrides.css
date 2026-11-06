@@ -81,7 +81,9 @@ body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-a
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] #app-mode-compact-sidebar { display: none; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] [data-app-mode-host-nav-header] {
-  height: 28px; min-height: 28px; padding-inline-start: 8px;
+  height: 28px; min-height: 28px;
+  /* Align the native dropdown label with the sidebar row content grid. */
+  padding-inline-start: var(--padding-row-x, 12px);
 }
 body.faux-chatgpt-app-mode [data-app-mode-host-nav-header] :is(button, a, [role="button"]) { min-height: 28px; height: 28px; }
 body.faux-chatgpt-app-mode [data-app-mode-host-search-original] { display: none !important; }
@@ -92,11 +94,13 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-primary] :is(a, button) {
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] {
   min-height: 0; gap: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable;
-  padding-block: 12px var(--app-mode-gap);
+  padding-block: 8px var(--app-mode-gap);
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-scroll] [data-app-mode-nav-primary] { margin-block: 0 24px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-group-wrapper] { margin-block: 0 !important; padding-block: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-section] { min-width: 0; margin-block: 0 14px; }
+/* Recents reads as a separate group; give it slightly more separation. */
+body.faux-chatgpt-app-mode [data-app-mode-nav-section="projects"] { margin-block-end: 18px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-content] :is(a:not([data-interactive-row-link]), .sidebar-item) {
   min-width: 0; min-height: 34px; border-radius: 8px; font-size: 13px; font-weight: 400;
 }

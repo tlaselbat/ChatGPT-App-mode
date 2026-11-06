@@ -134,10 +134,13 @@ test('trusted titlebar navigation keeps responsive hit regions, focus and native
   await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar', 'open-search']);
   await expect(caption.locator('.brand')).toBeVisible();
   const searchBefore = await caption.locator('[data-action="open-search"]').boundingBox();
+  const toggleBefore = await caption.locator('[data-action="toggle-sidebar"]').boundingBox();
   const captionsBefore = await caption.locator('.controls').boundingBox();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
   await expect(caption.locator('.brand')).toBeHidden();
-  expect((await caption.locator('[data-action="open-search"]').boundingBox()).x).toBeLessThan(searchBefore.x);
+  // Sidebar and Search keep their slots when the identity yields its width.
+  expect(Math.abs((await caption.locator('[data-action="open-search"]').boundingBox()).x - searchBefore.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs((await caption.locator('[data-action="toggle-sidebar"]').boundingBox()).x - toggleBefore.x)).toBeLessThanOrEqual(2);
   expect(await caption.locator('.controls').boundingBox()).toEqual(captionsBefore);
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: false } }));
   await expect(caption.locator('.brand')).toBeVisible();
@@ -926,7 +929,7 @@ test('trusted navigation delegates native actions and conditionally condenses on
     c.navigationController.schedule();
   });
   await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
-  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('padding-inline-start', '8px');
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('padding-inline-start', '12px');
   await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
   expect((await page.locator('aside [data-primary]').first().boundingBox()).y).toBe(before.y - 12);
   await expect(page.locator('aside [data-app-mode-host-search-original]')).toBeHidden();
