@@ -1,0 +1,36 @@
+name: Quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    env:
+      APP_MODE_NONINTERACTIVE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+      - name: Syntax (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tools/check-syntax.ps1
+      - name: Syntax (PowerShell 7)
+        shell: pwsh
+        run: ./tools/check-syntax.ps1
+      - run: npm test
+      - run: npm run test:runtime
+      - run: npm run test:host
+      # The two foreground/tray interaction checks are explicitly skipped in
+      # noninteractive mode. Full local test:all remains the desktop gate.

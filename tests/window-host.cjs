@@ -145,7 +145,7 @@ test('native host preserves default-src sources while allowing the loopback cont
   }
 });
 
-test('native header host preserves sandbox, custom controls, window actions, navigation and resizing', { timeout: 180000 }, async () => {
+test('native header host preserves sandbox, custom controls, window actions, navigation and resizing', { timeout: 180000, skip: process.env.APP_MODE_NONINTERACTIVE === '1' }, async () => {
   const runs = path.join(root, 'test-results', 'runs'); fs.mkdirSync(runs, { recursive: true });
   const scratch = fs.mkdtempSync(path.join(runs, 'native-host-'));
   const config = {

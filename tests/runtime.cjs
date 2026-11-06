@@ -22,7 +22,7 @@ test('native opacity applies to whole synthetic windows and restores safely', { 
   console.log(result.stdout.trim());
 });
 
-test('tray menu actions and profile safety in an isolated configuration', { timeout: 15000 }, () => {
+test('tray menu actions and profile safety in an isolated configuration', { timeout: 15000, skip: process.env.APP_MODE_NONINTERACTIVE === '1' }, () => {
   const result = spawnSync('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'Tray.Tests.ps1'), '-Scratch', path.join(scratch, 'tray')], { encoding: 'utf8', windowsHide: true, timeout: 12000 });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   console.log(result.stdout.trim());

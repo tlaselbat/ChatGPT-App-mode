@@ -50,3 +50,28 @@ Do not run desktop-input host tests alongside live interactions or other headed 
 Report the checks performed, rendered states and viewport sizes inspected, runtime/browser version when relevant to visual comparisons, and live authentication or coverage limits. Describe the tested route class without recording session URLs or private titles. If sign-in or a required live state is unavailable, report it as unverified.
 
 Keep the report proportional to the change. Link diagnostic reports or traces only when useful and after confirming they contain fixture data only.
+
+## CI and targeted performance checks
+
+`.github/workflows/quality.yml` uses Windows Server 2022, Node.js 22, `npm ci`, and `npx playwright install chromium --with-deps`. It validates JavaScript and PowerShell syntax (both Windows PowerShell 5.1 and PowerShell 7), then runs the fixture, runtime and host suites. Dependency installation follows [Playwright's CI guidance](https://playwright.dev/docs/ci); Node 22 remains an LTS line in the [Node release schedule](https://github.com/nodejs/Release).
+
+Hosted jobs set `APP_MODE_NONINTERACTIVE=1`: the tray interaction and full foreground desktop-input host sequence are explicitly skipped. URL/CSP, IPC rejection, isolated server, configuration, injection, scheduling and supported host checks still run. The environment flag never bypasses an ownership or foreground guard. Run `npm run test:all` locally with the variable unset for desktop verification. CI has no production profile or credentials and does not upload browser profiles. A workflow added locally is not evidence of a successful hosted run.
+
+Run `powershell.exe -NoProfile -File tools/check-syntax.ps1` and its `pwsh.exe` equivalent for source syntax. Runtime tests compile the C# launcher and transport in disposable locations.
+
+Opt-in performance harnesses (no production instrumentation):
+
+```powershell
+node tools/measure-remediation.cjs bda2ef0
+node tools/measure-remediation.cjs
+node tools/measure-controls.cjs bda2ef0
+node tools/measure-controls.cjs
+node tools/measure-server.cjs bda2ef0
+node tools/measure-server.cjs
+powershell.exe -NoProfile -File tools/measure-opacity.ps1 -Revision bda2ef0
+powershell.exe -NoProfile -File tools/measure-opacity.ps1
+```
+
+The first harness counts observer deliveries, reconciliation helper executions/time, DOM scans, computed-style calls and title-bar sampler results across idle home/long pages, streaming, sidebar transitions, dialogs, themes, resizing and scrolling. The controls harness counts native writes with deterministic event doubles. The server harness warms up before measuring CPU, tests a normal request behind an incomplete request, and sends repeated `/topmost` status requests against an empty isolated installation. The opacity harness simulates five seconds of empty/disabled/unpinned/pinned/transition/pointer/multiple-window workloads. Native doubles quantify calls, not real OS cost. Results vary with runtime, scheduling and machine load; compare like-for-like environments and retain numeric output only. All browser content is synthetic and no live profiles are attached. See [recorded results and coverage limits](STABILITY_REMEDIATION.md).
+
+For an optional PowerShell 7 server check, set `APP_MODE_MEASURE_SHELL=pwsh.exe` in the harness process. It resolves the actual runtime before launching, so process CPU sampling uses the service PID rather than relying on launcher-specific accounting. This does not alter production shell selection. Compare CPU only within the same shell/runtime and machine conditions.
