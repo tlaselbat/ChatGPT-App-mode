@@ -712,7 +712,9 @@ test('compact rail yields to expanded navigation and opens the native drawer', a
   await page.locator('nav[class~="group/sidebar-rail"]').evaluate(element => element.remove());
   await page.setViewportSize({ width: 390, height: 780 });
   await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
-  await expect(page.locator('#app-mode-compact-sidebar-actions button')).toHaveCount(4);
+  for (const label of ['New chat', 'Search', 'Scheduled', 'Library', 'Plugins', 'Explore', 'Pinned', 'Projects', 'Recents']) {
+    await expect(page.locator(`#app-mode-compact-sidebar-actions [aria-label="${label}"]`)).toHaveCount(1);
+  }
   const rail = page.locator('#app-mode-compact-sidebar');
   await expect(rail).toBeVisible();
   await expect(rail).toHaveCSS('width', '36px');
@@ -1116,6 +1118,57 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(rail).toBeHidden();
   await page.evaluate(async () => { const c = window.__APP_MODE_CONTEXT__; if (c.navigationAdapter.read().state !== 'compact') await c.navigationAdapter.toggle(); c.hostNavigation.visible = false; c.navigationController.schedule(); });
   await expect(rail).toBeVisible();
+});
+
+test('rail section shortcuts expand native navigation to the matching section', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false);
+  const railButton = label => page.locator(`#app-mode-compact-sidebar-actions [aria-label="${label}"]`);
+  for (const label of ['Pinned', 'Projects', 'Recents']) await expect(railButton(label)).toBeVisible();
+  const expected = { pinned: 'false', projects: 'false', recents: 'true' };
+  for (const key of ['pinned', 'projects', 'recents']) {
+    if (await page.locator('body').getAttribute('data-app-mode-navigation-state') !== 'compact') {
+      await page.locator('#app-mode-compact-sidebar').click();
+      await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+    }
+    await railButton({ pinned: 'Pinned', projects: 'Projects', recents: 'Recents' }[key]).click();
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+    const section = page.locator(`[data-app-mode-nav-section="${key}"]`);
+    await expect.poll(() => section.evaluate(el => {
+      const scroll = el.closest('[data-app-mode-nav-scroll]');
+      const r = el.getBoundingClientRect(), s = scroll.getBoundingClientRect();
+      return r.bottom > s.top && r.top < s.bottom;
+    })).toBe(true);
+    // Disclosure preferences stay authoritative, and keyboard focus lands on
+    // the section's own control after the rail hides.
+    const heading = section.locator('[data-app-mode-nav-heading]');
+    await expect(heading).toHaveAttribute('aria-expanded', expected[key]);
+    await expect(heading).toBeFocused();
+  }
+});
+
+test('compact rail keeps its account footer reachable at short window heights', async ({ page }) => {
+  // Open once so the adapter sees the native account control, then collapse.
+  await navigationSectionsFixture(page, true);
+  await page.locator('#app-mode-compact-sidebar').click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  const account = page.locator('[data-app-mode-rail-account]');
+  await expect(account).toBeVisible();
+  await page.setViewportSize({ width: 680, height: 300 });
+  const menu = page.locator('#app-mode-compact-sidebar-actions');
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(account).toBeVisible();
+  // The sticky footer stays inside the rail's bounds while content scrolls.
+  const geometry = await page.evaluate(() => {
+    const a = document.querySelector('[data-app-mode-rail-account]').getBoundingClientRect();
+    const m = document.querySelector('#app-mode-compact-sidebar-actions').getBoundingClientRect();
+    return { accountTop: a.top, accountBottom: a.bottom, menuBottom: m.bottom, viewport: innerHeight };
+  });
+  expect(geometry.accountBottom).toBeLessThanOrEqual(geometry.menuBottom + 2);
+  await menu.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(account).toBeVisible();
+  await menu.evaluate(el => { el.scrollTop = 0; });
+  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="New chat"]')).toBeVisible();
 });
 
 test('reserved native rails keep neutral gutters and scrolled sidebar content below New chat', async ({ page }, testInfo) => {

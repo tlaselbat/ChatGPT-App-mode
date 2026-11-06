@@ -37,7 +37,9 @@
         new RegExp(`^${sidebarAction.getAttribute('aria-label')}$`, 'i');
       if (sidebarAction.getAttribute('aria-busy') !== 'true') {
         sidebarAction.setAttribute('aria-busy', 'true');
-        const action = sidebarAction.id === 'app-mode-compact-sidebar' ? navigationAdapter.toggle() : navigationAdapter.activate(label);
+        const section = sidebarAction.getAttribute('data-app-mode-rail-section');
+        const action = section ? c.runSidebarSection(section) :
+          sidebarAction.id === 'app-mode-compact-sidebar' ? navigationAdapter.toggle() : navigationAdapter.activate(label);
         action.finally(() => sidebarAction.removeAttribute('aria-busy'));
       }
       return;

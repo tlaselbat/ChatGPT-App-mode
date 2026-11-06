@@ -8,7 +8,14 @@ not rerun or extend that verification.
 
 ## Codex-inspired surface
 
-The navigation controller implements a compact 52px activity rail
+The navigation controller implements a compact 52px activity rail mirroring
+the expanded sidebar: the primary actions (New chat, Search, Scheduled,
+Library, Plugins, Explore), a divider-separated Pinned/Projects/Recents
+section group, and an account footer. Section shortcuts expand the native
+sidebar through the same adapter and scroll the recognized section into view
+without touching disclosure state; unrecognized sections leave ordinary
+expansion as the result. The rail scrolls at short window heights while the
+account footer stays anchored via `position: sticky`.
 (`#app-mode-compact-sidebar-actions`) only while native navigation is compact.
 When a rendered docked panel or modal drawer supplies expanded navigation, the
 compact rail is hidden and its shell reservation is removed. The expanded

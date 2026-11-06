@@ -152,6 +152,14 @@ body.faux-chatgpt-app-mode #app-mode-compact-sidebar {
 }
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions {
   top: var(--app-mode-subheader-height); bottom: 0; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent;
+}
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions:hover { scrollbar-color: rgba(120, 120, 120, 0.32) transparent; }
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions::-webkit-scrollbar { width: 4px; }
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions::-webkit-scrollbar-thumb { background: rgba(120, 120, 120, 0.32); border-radius: 999px; }
+body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions [data-app-mode-rail-divider] {
+  flex: 0 0 auto; width: 24px; height: 1px; margin-block: 3px;
+  background: var(--app-mode-control-border);
 }
 /* A rendered native panel or drawer is the full navigation surface. Keep the
    existing toggle as its header control and hide only the redundant actions. */
@@ -168,6 +176,9 @@ body.faux-chatgpt-app-mode #app-mode-compact-sidebar[aria-expanded="true"] svg [
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar[aria-expanded="true"] svg [data-icon-expanded] { display: block; }
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions [data-app-mode-rail-account] {
   margin-top: auto;
+  /* Keep the account footer reachable without hiding scrollable actions. */
+  position: sticky; bottom: 0; flex-shrink: 0;
+  background: var(--app-mode-activity-bg, var(--sidebar-surface-primary, var(--bg-elevated-secondary, light-dark(#f7f8fa, #10141b))));
 }
 /* One primary account entry point: when the expanded sidebar already shows
    the native account row, the rail's mirror steps back. */
@@ -222,6 +233,14 @@ body.faux-chatgpt-app-mode [data-app-mode-workspace] > footer {
 }
 @media (prefers-reduced-motion: reduce) {
   body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] { transition: none; }
+}
+/* Restrained mount fade limited to App Mode-owned elements; the native
+   sidebar keeps its own animation. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes app-mode-nav-fade { from { opacity: 0; } }
+  body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions {
+    animation: app-mode-nav-fade 150ms ease-out;
+  }
 }
 body.faux-chatgpt-app-mode [data-app-mode-sidebar-original] { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-native-sidebar] { visibility: hidden !important; }
