@@ -43,7 +43,8 @@ const test = base.extend({
   page: async ({ context }, use) => {
     const page = await context.newPage();
     await use(page);
-    await page.close();
+    // The persistent context owns cleanup of all its pages. Keep one awaited
+    // teardown path rather than closing this page separately first.
   },
 });
 
