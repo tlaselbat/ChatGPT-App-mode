@@ -331,4 +331,33 @@ Assert (-not [AppModeNative]::Opacity.ContainsKey(123456)) 'Opacity touched a re
 Assert (-not (Invoke-SyntheticPin 'off' 100102 1001).body.enabled) 'Unpin failed.'
 Assert ([AppModeNative]::Opacity[100102] -eq 100) 'Unpin did not immediately restore full opacity.'
 
+# Two requests can toggle a faded window before maintenance observes unpin.
+# The restore must invalidate only that binding's cached alpha and interaction.
+$config.pinnedWindow.inactiveOpacityPercent = 30
+[AppModeNative]::Pointer = 999999
+Assert ((Invoke-SyntheticPin 'on' 100102 1001).body.enabled) 'Rapid-repin setup failed.'
+Update-AppModePinnedOpacity -Config $config -Windows $owned -NowMs 0
+Update-AppModePinnedOpacity -Config $config -Windows $owned -NowMs 480
+Assert ([AppModeNative]::Opacity[100102] -eq 30) 'Rapid-repin setup did not finish fading.'
+$script:appModeInteractionUntil['1001:100102'] = 9999
+$script:appModeInteractionUntil['1001:100101'] = 9999
+Assert (-not (Invoke-SyntheticPin 'off' 100102 1001).body.enabled) 'Rapid unpin failed.'
+Assert (-not $script:appModeOpacityTransitions.ContainsKey('1001:100102')) 'Unpin retained its cached alpha.'
+Assert (-not $script:appModeInteractionUntil.ContainsKey('1001:100102')) 'Unpin retained its interaction hold.'
+Assert ($script:appModeInteractionUntil.ContainsKey('1001:100101')) 'Unpin cleared another window binding.'
+Assert ((Invoke-SyntheticPin 'on' 100102 1001).body.enabled) 'Rapid repin failed.'
+Update-AppModePinnedOpacity -Config $config -Windows $owned -NowMs 500
+Assert ([AppModeNative]::Opacity[100102] -eq 100) 'Repin did not start from restored opacity.'
+Update-AppModePinnedOpacity -Config $config -Windows $owned -NowMs 980
+Assert ([AppModeNative]::Opacity[100102] -eq 30) 'Cached alpha suppressed fading after rapid repin.'
+
+Assert ((Get-AppModeOpacityDelay -Config $config -Windows @()) -eq 250) 'Empty idle scheduling stayed high frequency.'
+$config.pinnedWindow.fadeWhenInactive = $false
+Assert ((Get-AppModeOpacityDelay -Config $config -Windows $owned) -eq 250) 'Disabled opacity scheduling stayed high frequency.'
+$config.pinnedWindow.fadeWhenInactive = $true
+$script:appModeOpacityTransitions.Clear()
+Assert ((Get-AppModeOpacityDelay -Config $config -Windows $owned -NowMs 0) -eq 250) 'Unpinned windows retained high frequency.'
+$script:appModeOpacityTransitions['synthetic'] = @{start=0;duration=300}
+Assert ((Get-AppModeOpacityDelay -Config $config -Windows $owned -NowMs 150) -eq 16) 'Active fade lost animation frames.'
+Assert ((Get-AppModeOpacityDelay -Config $config -Windows $owned -NowMs 300) -eq 50) 'Completed fade retained high frequency.'
 Write-Output 'PASS: reset guards, native arguments, settings/startup, history/privacy, atomic JSON, taskbar migration, monitor bounds, per-window pinning and inactive/hover opacity.'

@@ -117,6 +117,17 @@ test('isolated server rejects untrusted traffic, bounds reads and preserves allo
     assert.match(await request({ headers: 'Content-Length: 0\r\n' }), /400 Response|CONNECTION_CLOSED/);
     assert.match(await request({ body: 'x'.repeat(17000) }), /400 Response|CONNECTION_CLOSED/);
     assert.match(await raw(`POST /session HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nX-Fill: ${'x'.repeat(9000)}`), /400 Response|CONNECTION_CLOSED/);
+    // An incomplete header/body must not monopolize the maintenance thread.
+    for (const incomplete of ['POST /session HTTP/1.1\r\n',
+      `POST /session HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Length: 100\r\n\r\nx`]) {
+      const slow = net.connect(port, '127.0.0.1'); slow.on('error', () => {}); slow.on('data', () => {});
+      await new Promise(resolve => slow.on('connect', resolve)); slow.write(incomplete);
+      await delay(100);
+      try {
+        const started = Date.now(); assert.match(await request(), /200 Response/);
+        assert.ok(Date.now() - started < 1200, 'Normal request waited for slow-client deadline');
+      } finally { slow.destroy(); }
+    }
     const start = Date.now();
     assert.match(await raw('POST /session HTTP/1.1\r\n'), /400 Response/);
     assert.ok(Date.now() - start < 5000, 'Slow client blocked server beyond deadline');

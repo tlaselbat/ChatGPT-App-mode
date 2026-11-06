@@ -133,6 +133,61 @@ function Write-AppModeLog {
 
 # Profile metadata is owned by the host runtime; launchers never rewrite it.
 
+# Accept only explicit -File launches made by the supported installed shells.
+# A strict token grammar deliberately rejects ambiguous quoting/abbreviations.
+function Test-AppModeServerProcess {
+    param($Process, [string]$AppRoot)
+    try {
+        if (-not $Process.ExecutablePath -or -not $Process.CommandLine) { return $false }
+        if ([IO.Path]::GetFileName([string]$Process.ExecutablePath) -notin @('powershell.exe', 'pwsh.exe')) { return $false }
+        $executables = @((Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'))
+        $pwshCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+        if ($pwshCommand) { $executables += $pwshCommand.Source }
+        $actualExe = [IO.Path]::GetFullPath($Process.ExecutablePath)
+        if (-not @($executables | Where-Object { [IO.Path]::GetFullPath($_).Equals($actualExe, [StringComparison]::OrdinalIgnoreCase) }).Count) { return $false }
+        $tokens = @([regex]::Matches($Process.CommandLine, '(?:"[^"\r\n]*"|[^\s"]+)') | ForEach-Object { $_.Value })
+        if (($tokens -join ' ') -cne ([regex]::Replace($Process.CommandLine.Trim(), '\s+(?=(?:[^"]*"[^"]*")*[^"]*$)', ' '))) { return $false }
+        $tokens = @($tokens | ForEach-Object { $_.Trim('"') })
+        if (-not [IO.Path]::IsPathRooted($tokens[0]) -or -not [IO.Path]::GetFullPath($tokens[0]).Equals($actualExe, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+        $seen = @{}
+        for ($i = 1; $i -lt $tokens.Count; $i++) {
+            $flag = $tokens[$i].ToLowerInvariant()
+            if ($seen.ContainsKey($flag)) { return $false }
+            $seen[$flag] = $true
+            switch ($flag) {
+                '-noprofile' { continue }
+                '-noninteractive' { continue }
+                '-executionpolicy' { $i++; if ($tokens[$i] -ne 'Bypass') { return $false }; continue }
+                '-windowstyle' { $i++; if ($tokens[$i] -ne 'Hidden') { return $false }; continue }
+                '-file' {
+                    if ($i -ne $tokens.Count - 2) { return $false }
+                    $scriptPath = $tokens[$i + 1]
+                    return [IO.Path]::IsPathRooted($scriptPath) -and [IO.Path]::GetFullPath($scriptPath).Equals(
+                        [IO.Path]::GetFullPath((Join-Path $AppRoot 'Start-ChatGPT-TopMostServer.ps1')), [StringComparison]::OrdinalIgnoreCase)
+                }
+                default { return $false }
+            }
+        }
+    } catch { return $false }
+    return $false
+}
+
+function Stop-AppModeVerifiedServer {
+    param($Snapshot, [string]$AppRoot)
+    # Refresh CIM identity and hold a Process handle before terminating. Neither
+    # an exited process nor a reused PID may inherit the earlier authorization.
+    try {
+        $process = Get-Process -Id $Snapshot.ProcessId -ErrorAction Stop
+        $null = $process.Handle
+        $fresh = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f [int]$Snapshot.ProcessId) -ErrorAction Stop
+        if (-not $Snapshot.CreationDate -or $fresh.CreationDate -ne $Snapshot.CreationDate -or
+            -not (Test-AppModeServerProcess $fresh $AppRoot) -or $process.HasExited -or
+            [Math]::Abs(($process.StartTime.ToUniversalTime() - ([datetime]$fresh.CreationDate).ToUniversalTime()).TotalMilliseconds) -gt 1) { return $false }
+        Stop-Process -InputObject $process -Force -ErrorAction Stop
+        return $true
+    } catch { return $false }
+}
+
 function Ensure-TopMostServerRunning {
     param(
         [Parameter(Mandatory)][string]$AppRoot,
@@ -150,12 +205,12 @@ function Ensure-TopMostServerRunning {
         return
     }
 
-    $existingServer = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    $servers = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine.IndexOf($serverScript, [StringComparison]::OrdinalIgnoreCase) -ge 0
-        } |
-        Select-Object -First 1
+            Test-AppModeServerProcess $_ $AppRoot
+        })
+    if ($servers.Count -gt 1) { return } # Ambiguous ownership: never terminate.
+    $existingServer = $servers | Select-Object -First 1
 
     if ($existingServer) {
         try {
@@ -166,11 +221,12 @@ function Ensure-TopMostServerRunning {
             $dependencyWriteTime = (Get-Item (Join-Path $AppRoot 'tools\AppMode.Windows.ps1')).LastWriteTime
             $helperWriteTime = (Get-Item (Join-Path $AppRoot 'tools\AppMode.State.ps1')).LastWriteTime
             $sharedWriteTime = (Get-Item (Join-Path $AppRoot 'tools\ChatGPT-AppMode.Helpers.ps1')).LastWriteTime
-            if (-not $ForceRestart -and $serverStartTime -ge $serverWriteTime -and $serverStartTime -ge $dependencyWriteTime -and $serverStartTime -ge $helperWriteTime -and $serverStartTime -ge $sharedWriteTime) {
+            $transportWriteTime = (Get-Item (Join-Path $AppRoot 'tools\AppMode.RequestBuffer.cs')).LastWriteTime
+            if (-not $ForceRestart -and $serverStartTime -ge $serverWriteTime -and $serverStartTime -ge $dependencyWriteTime -and $serverStartTime -ge $helperWriteTime -and $serverStartTime -ge $sharedWriteTime -and $serverStartTime -ge $transportWriteTime) {
                 return
             }
 
-            Stop-Process -Id $existingServer.ProcessId -Force -ErrorAction SilentlyContinue
+            if (-not (Stop-AppModeVerifiedServer $existingServer $AppRoot)) { return }
             Start-Sleep -Milliseconds 300
 
             if ($LogPath) {
@@ -178,21 +234,14 @@ function Ensure-TopMostServerRunning {
             }
         }
         catch {
-            if ($LogPath) {
-                Write-AppModeLog -LogPath $LogPath -Message "Restarting topmost control server after stale-check error: $($_.Exception.Message)"
-            }
-
-            Stop-Process -Id $existingServer.ProcessId -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 300
+            if ($LogPath) { Write-AppModeLog -LogPath $LogPath -Message 'SERVER_IDENTITY_UNVERIFIED' }
+            return # A failed stale check never authorizes termination.
         }
     }
 
-    $pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
-    if (-not $pwsh) {
-        $pwsh = (Get-Command powershell.exe).Source
-    }
-
-    Start-Process -FilePath $pwsh -ArgumentList @(
+    $serverShell = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+    if (-not $serverShell) { $serverShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+    Start-Process -FilePath $serverShell -ArgumentList @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-WindowStyle', 'Hidden',

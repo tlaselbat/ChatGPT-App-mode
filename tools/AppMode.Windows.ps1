@@ -153,10 +153,11 @@ function Get-AppModeOpacityFrame {
 function Update-AppModePinnedOpacity {
     param($Config, [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Windows, [switch]$Restore,
         [double]$NowMs = (Get-AppModeMonotonicMs))
+    if (-not $Windows.Count) { return }
     Initialize-AppModeNativeApi
     $settings = Get-AppModeOpacitySettings $Config
-    $pointer = [AppModeNative]::GetPointerWindow().ToInt64()
-    $buttonsDown = [AppModeNative]::MouseButtonsDown()
+    $pointer = $null
+    $buttonsDown = $false
     foreach ($window in $Windows) {
         $handle = [IntPtr]$window.handle
         $key = '{0}:{1}' -f $window.processId, $window.handle
@@ -171,6 +172,10 @@ function Update-AppModePinnedOpacity {
             $script:appModeOpacityTransitions.Remove($key)
             $script:appModeInteractionUntil.Remove($key)
             continue
+        }
+        if ($null -eq $pointer) {
+            $pointer = [AppModeNative]::GetPointerWindow().ToInt64()
+            $buttonsDown = [AppModeNative]::MouseButtonsDown()
         }
         $state = $script:appModeOpacityTransitions[$key]
         if (-not $state) {
@@ -198,10 +203,24 @@ function Update-AppModePinnedOpacity {
             $state.duration = if ($fade) { 300 } else { 140 }
         }
         $value = Get-AppModeOpacityFrame $state $NowMs
-        if (-not [AppModeNative]::SetOpacity($handle, $value)) {
+        $alpha = [int][Math]::Round($value * 255 / 100)
+        if ($state.ContainsKey('appliedAlpha') -and $state.appliedAlpha -eq $alpha) { continue }
+        if ([AppModeNative]::SetOpacity($handle, $value)) { $state.appliedAlpha = $alpha }
+        else {
             $script:appModeOpacityTransitions.Remove($key)
         }
     }
+}
+
+function Get-AppModeOpacityDelay {
+    param($Config, [AllowEmptyCollection()][object[]]$Windows, [double]$NowMs = (Get-AppModeMonotonicMs))
+    $settings = Get-AppModeOpacitySettings $Config
+    if (-not $Windows.Count -or -not $settings.enabled -or $settings.percent -eq 100) { return 250 }
+    if (-not $script:appModeOpacityTransitions.Count) { return 250 }
+    foreach ($state in $script:appModeOpacityTransitions.Values) {
+        if ($NowMs -lt $state.start + $state.duration) { return 16 }
+    }
+    return 50 # Detect pointer/focus/host Pin changes without caching ownership.
 }
 
 function Test-AppModeNativeHostProcess {

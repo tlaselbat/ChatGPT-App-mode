@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'tools\ChatGPT-AppMode.Helpers.ps1')
 . (Join-Path $PSScriptRoot 'tools\AppMode.Windows.ps1')
+Add-Type -Path (Join-Path $PSScriptRoot 'tools\AppMode.RequestBuffer.cs')
 $ConfigPath = Join-Path $AppRoot 'config.json'
 $LogDir = Join-Path $AppRoot 'logs'
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -94,15 +95,15 @@ function Send-HttpJson {
 }
 
 function Read-HttpRequest {
-    param($Client)
-    $stream = $Client.GetStream()
+    param($Client, $InputStream)
+    $stream = if ($InputStream) { $InputStream } else { $Client.GetStream() }
     $deadline = [DateTime]::UtcNow.AddMilliseconds(2000)
     $bytes = [Collections.Generic.List[byte]]::new()
     # Read headers one byte at a time to avoid accepting unbounded or ambiguous framing.
     while ($true) {
         $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
         if ($remaining -le 0) { throw 'Request timeout.' }
-        $stream.ReadTimeout = [Math]::Max(1, $remaining)
+        if ($stream.CanTimeout) { $stream.ReadTimeout = [Math]::Max(1, $remaining) }
         $value = $stream.ReadByte()
         if ($value -lt 0) { throw 'Incomplete headers.' }
         $bytes.Add([byte]$value)
@@ -132,7 +133,7 @@ function Read-HttpRequest {
     while ($offset -lt $length) {
         $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
         if ($remaining -le 0) { throw 'Request timeout.' }
-        $stream.ReadTimeout = [Math]::Max(1, $remaining)
+        if ($stream.CanTimeout) { $stream.ReadTimeout = [Math]::Max(1, $remaining) }
         $read = $stream.Read($body, $offset, $length - $offset)
         if ($read -le 0) { throw 'Incomplete body.' }
         $offset += $read
@@ -141,10 +142,10 @@ function Read-HttpRequest {
 }
 
 function Handle-Request {
-    param($Client)
+    param($Client, $InputStream)
     $origin = $null
     try {
-        $request = Read-HttpRequest $Client
+        $request = Read-HttpRequest $Client $InputStream
         if ($request.forbidden) {
             if ($request.path -eq '/topmost') { Write-ServerLog 'Pin diagnostic: origin or Host rejected.' }
             Send-HttpJson $Client '{"error":"forbidden"}' 403; return
@@ -201,7 +202,9 @@ function Handle-Request {
             if ([AppModeNative]::GetForegroundWindow().ToInt64() -ne $target.handle) { Write-ServerLog 'Pin diagnostic: target is not foreground.'; Send-HttpJson $Client '{"error":"focus_app_window"}' 409 $origin; return }
             $enabled = if ($action -eq 'toggle') { -not $enabled } else { $action -eq 'on' }
             if (-not [AppModeNative]::SetTopMost([IntPtr]$target.handle, $enabled)) { throw 'Pin operation failed.' }
-            if (-not $enabled) { [AppModeNative]::RestoreOpacity([IntPtr]$target.handle) | Out-Null }
+            # A repin can arrive before the next maintenance tick. Restore and
+            # invalidate together so a previous appliedAlpha cannot hide it.
+            if (-not $enabled) { Update-AppModePinnedOpacity -Config $config -Windows @($target) -Restore }
             Write-ServerLog ("Pin diagnostic: action={0}, enabled={1}." -f $action, $enabled)
         }
         Send-HttpJson $Client (@{ enabled = $enabled; windows = 1; handle = [string]$target.handle; processId = $target.processId } | ConvertTo-Json -Compress) 200 $origin
@@ -222,15 +225,37 @@ try {
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
 $opacityWindows = @()
 $opacityConfig = $null
+$pendingClients = [Collections.ArrayList]::new()
 try {
     $listener.Start()
+    $acceptTask = $listener.AcceptTcpClientAsync()
     Write-ServerLog 'Control server started.'
     $nextMaintenance = [DateTime]::MinValue
     $nextWindowRefresh = [DateTime]::MinValue
     $nextOpacity = [DateTime]::MinValue
     while ($true) {
-        if ($listener.Pending()) { Handle-Request ($listener.AcceptTcpClient()) }
-        else { Start-Sleep -Milliseconds 16 }
+        # Bound concurrent buffering and service maintenance between requests.
+        if ($acceptTask.IsCompleted) {
+            $client = $acceptTask.GetAwaiter().GetResult()
+            $acceptTask = $listener.AcceptTcpClientAsync()
+            if ($pendingClients.Count -ge 16) { $client.Close() }
+            else { [void]$pendingClients.Add([AppModeBufferedRequest]::new($client)) }
+        }
+        foreach ($pending in $pendingClients.ToArray()) {
+            if ($pending.Read.IsCompleted -or $pending.Expired) {
+                try {
+                    if (-not $pending.Expired -and $pending.Read.Status -eq [Threading.Tasks.TaskStatus]::RanToCompletion) {
+                        $inputStream = [IO.MemoryStream]::new([byte[]]$pending.Read.Result)
+                        try { Handle-Request $pending.Client $inputStream } finally { $inputStream.Dispose() }
+                    } else {
+                        # Observe task exceptions without logging request data.
+                        $null = $pending.Read.Exception
+                        Send-HttpJson $pending.Client '{"error":"invalid_request"}' 400
+                    }
+                } catch { } finally { $pending.Dispose(); $pendingClients.Remove($pending) }
+                break
+            }
+        }
         if ([DateTime]::UtcNow -ge $nextWindowRefresh) {
             $nextWindowRefresh = [DateTime]::UtcNow.AddSeconds(1)
             try {
@@ -249,8 +274,8 @@ try {
             }
         }
         if ([DateTime]::UtcNow -ge $nextOpacity) {
-            $nextOpacity = [DateTime]::UtcNow.AddMilliseconds(16)
             try { Update-AppModePinnedOpacity -Config $opacityConfig -Windows $opacityWindows } catch { }
+            $nextOpacity = [DateTime]::UtcNow.AddMilliseconds((Get-AppModeOpacityDelay -Config $opacityConfig -Windows $opacityWindows))
         }
         if ([DateTime]::UtcNow -ge $nextMaintenance) {
             $nextMaintenance = [DateTime]::UtcNow.AddSeconds(3)
@@ -260,8 +285,14 @@ try {
                 Save-AppModeWindowPlacement -Config $config -AppRoot $AppRoot
             } catch { }
         }
+        # Socket acceptance/read completion wakes immediately; maintenance uses
+        # its adaptive deadline rather than a high-frequency network poll.
+        $waitMs = [Math]::Max(1, [Math]::Min(250, [int]($nextOpacity - [DateTime]::UtcNow).TotalMilliseconds))
+        $tasks = @($acceptTask) + @($pendingClients | ForEach-Object { $_.Read })
+        [void][Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]$tasks, $waitMs)
     }
 } finally {
+    foreach ($pending in $pendingClients.ToArray()) { $pending.Dispose() }
     try { Update-AppModePinnedOpacity -Config $opacityConfig -Windows $opacityWindows -Restore } catch { }
     $listener.Stop()
     $mutex.ReleaseMutex()
