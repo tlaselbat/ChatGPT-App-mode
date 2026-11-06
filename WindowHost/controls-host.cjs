@@ -7,7 +7,7 @@ const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close', 'pin']);
 const NAVIGATION_ACTIONS = new Set(['toggle-sidebar', 'open-search']);
-const EMPTY_NAVIGATION = Object.freeze({ state: 'unavailable', toggle: false, search: false, blocked: false });
+const EMPTY_NAVIGATION = Object.freeze({ state: 'unavailable', toggle: false, search: false, blocked: false, identity: false });
 const COMPACT_BREAKPOINT = 480;
 // Native DIP geometry is independent of the remote page's CSS zoom.
 const HEADER_HEIGHT = 40;
@@ -237,20 +237,22 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
           theme = Object.fromEntries(Object.keys(DEFAULT_THEME).map(key => [key, value.theme[key]]));
         }
         const next = value.navigation;
-        if (navigation.state === 'drawer' && next?.state === 'compact' && next.toggle === true && !next.blocked && win.isFocused() && chat.isFocused()) {
+        const focusAction = navigation.state === 'drawer' && next?.state === 'compact' && next.toggle === true ? 'toggle-sidebar' :
+          navigation.blocked && next?.search === true ? 'open-search' : null;
+        if (focusAction && !next.blocked && win.isFocused() && chat.isFocused()) {
           const needsFocus = await chat.mainFrame.executeJavaScript(`(() => {
             const active = document.activeElement;
-            return active === document.body || !active?.getClientRects().length || !!active.closest('[inert], [aria-hidden="true"]');
+            return active === document.body || !active?.getClientRects().length || getComputedStyle(active).visibility === 'hidden' || !!active.closest('[inert], [aria-hidden="true"]');
           })()`);
           if (disposed || current !== generation || win.isDestroyed()) return;
           if (needsFocus === true && current === generation && loaded && win.isFocused() && chat.isFocused()) {
             contents.focus();
-            contents.executeJavaScript(`requestAnimationFrame(() => document.querySelector('[data-action="toggle-sidebar"]:not([hidden]))?.focus())`).catch(() => {});
+            contents.executeJavaScript(`requestAnimationFrame(() => document.querySelector('[data-action="${focusAction}"]:not([hidden]):not(:disabled)')?.focus())`).catch(() => {});
           }
         }
         navigation = next && ['compact', 'docked', 'drawer', 'unavailable'].includes(next.state) &&
           ['toggle', 'search', 'blocked'].every(key => typeof next[key] === 'boolean') ?
-          { state: next.state, toggle: next.toggle, search: next.search, blocked: next.blocked } : EMPTY_NAVIGATION;
+          { state: next.state, toggle: next.toggle, search: next.search, blocked: next.blocked, identity: next.identity === true } : EMPTY_NAVIGATION;
         previous = JSON.stringify(value);
         layout();
       } catch {

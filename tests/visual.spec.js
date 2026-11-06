@@ -106,6 +106,7 @@ async function overlayPixels(page, clip) {
 
 test('trusted titlebar navigation keeps responsive hit regions, focus and native-control independence', async ({ page }, testInfo) => {
   const caption = await captionStripFixture(page);
+  await caption.evaluate(() => window.updateCaptionState({ theme: { background: 'rgb(20, 20, 20)', color: 'rgb(240, 240, 240)', accent: 'rgb(180, 200, 250)' } }));
   const toggle = caption.getByRole('button', { name: 'Open sidebar', exact: true });
   await expect(toggle).toBeHidden();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } }));
@@ -119,11 +120,27 @@ test('trusted titlebar navigation keeps responsive hit regions, focus and native
         box.left >= 0 && box.right <= innerWidth && !boxes.slice(i + 1).some(other => box.left < other.right && box.right > other.left));
     })).toBe(true);
     await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-${width}.png`) });
+    const controls = await caption.locator('.controls').boundingBox();
+    await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
+    await expect(caption.locator('.brand')).toBeHidden();
+    expect(await caption.locator('.controls').boundingBox()).toEqual(controls);
+    expect(await caption.locator('.titlebar-drag').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(36);
+    await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-expanded-${width}.png`) });
+    await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false, identity: false } }));
+    await expect(caption.locator('.brand')).toBeVisible();
   }
   await toggle.focus(); await caption.keyboard.press('Enter');
   await caption.getByRole('button', { name: 'Search', exact: true }).focus(); await caption.keyboard.press('Space');
   await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar', 'open-search']);
-  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false } }));
+  await expect(caption.locator('.brand')).toBeVisible();
+  const searchBefore = await caption.locator('[data-action="open-search"]').boundingBox();
+  const captionsBefore = await caption.locator('.controls').boundingBox();
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
+  await expect(caption.locator('.brand')).toBeHidden();
+  expect((await caption.locator('[data-action="open-search"]').boundingBox()).x).toBeLessThan(searchBefore.x);
+  expect(await caption.locator('.controls').boundingBox()).toEqual(captionsBefore);
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: false } }));
+  await expect(caption.locator('.brand')).toBeVisible();
   await expect(caption.getByRole('button', { name: 'Close sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
   for (const theme of [
     { background: 'rgb(250, 250, 250)', color: 'rgb(20, 20, 20)', accent: 'rgb(0, 80, 190)' },
@@ -810,7 +827,7 @@ test('contextual header stays in its workspace while a modal blocks sidebar resi
   }
 });
 
-async function navigationSectionsFixture(page, native = false) {
+async function navigationSectionsFixture(page, native = false, open = true) {
   const body = `<!doctype html><html><head><style>
     *{box-sizing:border-box}body{margin:0;font:13px system-ui;color:#243247}html{color-scheme:light dark}
     #section-shell{display:flex;height:100vh}main{flex:1;min-width:0}header{height:40px;display:flex;align-items:center}
@@ -824,10 +841,10 @@ async function navigationSectionsFixture(page, native = false) {
     #browser-sidebar-popover{position:fixed;left:0;top:0;width:min(320px,calc(100vw - 52px));bottom:0;z-index:51;background:#e1e4ea}
     [role=menu]{position:fixed;bottom:50px;left:60px;z-index:80;background:Canvas;color:CanvasText;padding:12px}
     @media(prefers-color-scheme:dark){body{color:#d5deef}}
-    </style></head><body><div id="section-shell" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="true"><main><header><button aria-label="Open sidebar" id="section-opener">Sidebar</button><button id="chat-mode">Chat</button><button id="work-mode">Work</button></header><h1>Synthetic workspace</h1></main></div>
+    </style></head><body><div id="section-shell" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="${open}"><main><header><button aria-label="Open sidebar" id="section-opener">Sidebar</button><button id="chat-mode">Chat</button><button id="work-mode">Work</button></header><h1>Synthetic workspace</h1></main></div>
     <script>
     const native = ${JSON.stringify(native)};
-    const state = {open:true, sections:{pinned:false,projects:false,recents:true,collections:true},mode:'chat'};
+    const state = {open:${JSON.stringify(open)}, sections:{pinned:false,projects:false,recents:true,collections:true},mode:'chat'};
     const labels = {pinned:'Pinned',projects:'Projects',recents:'Recents',collections:'Collections'};
     function section(key) {
       const label=labels[key], controlled=native||key==='collections';
@@ -860,8 +877,7 @@ async function navigationSectionsFixture(page, native = false) {
   await page.goto('https://chatgpt.com/');
 }
 
-test('trusted navigation delegates native actions and conditionally condenses only recognized sidebar headers', async ({ page }) => {
-  await navigationSectionsFixture(page, true);
+async function navigationEvaluator(page) {
   const session = await page.context().newCDPSession(page);
   const contexts = [];
   session.on('Runtime.executionContextCreated', ({ context }) => contexts.push(context));
@@ -872,11 +888,26 @@ test('trusted navigation delegates native actions and conditionally condenses on
     if (result.value) contextId = context.id;
   }
   expect(contextId).toBeTruthy();
-  const evaluateNavigation = async callback => {
+  return async callback => {
     const value = await session.send('Runtime.evaluate', { contextId, expression: `(${callback.toString()})()`, awaitPromise: true, returnByValue: true });
     if (value.exceptionDetails) throw new Error('Navigation fixture evaluation failed');
     return value.result.value;
   };
+}
+
+test('trusted navigation delegates native actions and conditionally condenses only recognized sidebar headers', async ({ page }) => {
+  await navigationSectionsFixture(page, true);
+  await page.evaluate(() => {
+    const identity = document.createElement('button'); identity.id = 'native-identity';
+    identity.setAttribute('aria-haspopup', 'menu'); identity.setAttribute('aria-label', 'Application menu'); identity.textContent = 'ChatGPT';
+    document.querySelector('.sidebar-navigation strong').replaceWith(identity);
+    identity.onclick = () => {
+      const menu = document.createElement('div'); menu.setAttribute('role', 'menu');
+      menu.innerHTML = '<button role="menuitem">Synthetic native option</button>';
+      document.body.append(menu); menu.querySelector('button').focus();
+    };
+  });
+  const evaluateNavigation = await navigationEvaluator(page);
   await expect(page.locator('[data-app-mode-nav-header]')).toHaveCSS('height', '40px');
   const before = await page.locator('aside [data-primary]').first().boundingBox();
   await evaluateNavigation(() => {
@@ -898,7 +929,19 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('padding-inline-start', '8px');
   await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
   expect((await page.locator('aside [data-primary]').first().boundingBox()).y).toBe(before.y - 12);
-  await expect(page.locator('[data-app-mode-host-search-original]')).toBeHidden();
+  await expect(page.locator('aside [data-app-mode-host-search-original]')).toBeHidden();
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(true);
+  await page.locator('#native-identity').evaluate(element => element.disabled = true);
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
+  await page.locator('#native-identity').evaluate(element => { element.disabled = false; element.setAttribute('aria-hidden', 'true'); });
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
+  await page.locator('#native-identity').evaluate(element => { element.removeAttribute('aria-hidden'); element.style.visibility = 'hidden'; });
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
+  await page.locator('#native-identity').evaluate(element => element.style.removeProperty('visibility'));
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(true);
+  await page.locator('#native-identity').click();
+  await expect(page.getByRole('menuitem', { name: 'Synthetic native option' })).toBeFocused();
+  await page.getByRole('menu').evaluate(element => element.remove());
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
   await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
   await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
@@ -907,8 +950,12 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-navigation-blocked');
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
+  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]')).toBeVisible();
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(false);
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
   await page.evaluate(() => {
     const unknown = document.createElement('button'); unknown.textContent = 'Native future action';
     unknown.onclick = () => { window.syntheticFutureAction = true; };
@@ -937,6 +984,118 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await page.evaluate(() => document.querySelector('#section-opener').remove());
   await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-host-navigation-owned');
+});
+
+test('trusted navigation retains lazy Search access after launch and reload at responsive widths', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false);
+  for (const width of [390, 480, 680, 937, 1280]) {
+    await page.setViewportSize({ width, height: 850 });
+    await page.reload();
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+    const evaluateNavigation = await navigationEvaluator(page);
+    await evaluateNavigation(() => {
+      const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true;
+      document.addEventListener('click', event => {
+        if (event.target.getAttribute('aria-label') !== 'Search' || event.target.closest('#app-mode-compact-sidebar-actions')) return;
+        const dialog = document.createElement('div'); dialog.id = 'lazy-native-search'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        dialog.innerHTML = '<input aria-label="Lazy native search">'; document.body.append(dialog); dialog.querySelector('input').focus();
+      });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#lazy-native-search')?.remove(); });
+      c.navigationController.schedule();
+    });
+    await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(false);
+    const railSearch = page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]');
+    await expect(railSearch).toBeVisible();
+    await railSearch.focus(); await page.keyboard.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Lazy native search' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('textbox')).toHaveCount(0);
+    if (width >= 700) expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
+    await expect(railSearch).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test('trusted navigation discovers fresh compact Search and restores fallback through native replacement', async ({ page }) => {
+  await page.goto('about:blank');
+  await page.setContent(`<style>body{margin:0}aside{width:260px}header{height:40px}</style>
+    <div data-app-shell-responsive-sidebar data-app-shell-sidebar-open="false">
+    <header><button aria-label="Open sidebar" id="native-toggle">Sidebar</button></header>
+    <nav class="group/sidebar-rail" id="native-rail" style="width:52px"><button aria-label="Search" id="native-search">Search</button></nav>
+    <aside class="app-shell-left-panel" style="display:none"></aside><main>Fixture</main></div>`);
+  await page.evaluate(() => {
+    window.nativeToggles = 0;
+    const mountSearch = () => {
+      document.querySelector('#native-search')?.remove();
+      const button = document.createElement('button'); button.id = 'native-search'; button.setAttribute('aria-label', 'Search');
+      const open = document.querySelector('[data-app-shell-responsive-sidebar]').getAttribute('data-app-shell-sidebar-open') === 'true';
+      document.querySelector(open ? 'aside' : '#native-rail').append(button);
+    };
+    window.mountNativeSearch = mountSearch;
+    document.querySelector('#native-toggle').onclick = () => {
+      window.nativeToggles++;
+      const root = document.querySelector('[data-app-shell-responsive-sidebar]');
+      const open = root.getAttribute('data-app-shell-sidebar-open') !== 'true';
+      root.setAttribute('data-app-shell-sidebar-open', String(open));
+      document.querySelector('aside').style.display = open ? 'block' : 'none';
+      mountSearch();
+    };
+    document.addEventListener('click', event => {
+      if (event.target.id !== 'native-search') return;
+      const dialog = document.createElement('div'); dialog.id = 'search-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      dialog.innerHTML = '<input aria-label="Native search input">'; document.body.append(dialog); dialog.querySelector('input').focus();
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#search-dialog')?.remove(); });
+  });
+  await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
+  await injectOverrides(page);
+  const capability = () => page.evaluate(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search);
+  const rail = page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]');
+  await expect(rail).toBeVisible();
+  await page.evaluate(() => {
+    const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true; c.navigationController.schedule();
+  });
+  await expect.poll(capability).toBe(true);
+  await expect(rail).toBeHidden();
+  expect(await page.evaluate(() => window.nativeToggles)).toBe(0);
+  await page.locator('#native-search').evaluate(element => element.disabled = true);
+  await expect.poll(capability).toBe(false);
+  await expect(rail).toBeVisible();
+  await page.evaluate(() => window.mountNativeSearch());
+  await expect.poll(capability).toBe(true);
+  await expect(rail).toBeHidden();
+  await page.locator('#native-search').evaluate(element => element.remove());
+  await page.locator('aside').evaluate(element => element.innerHTML = '<button aria-label="Search" id="native-search">Hidden stale Search</button>');
+  await expect.poll(capability).toBe(false);
+  await expect(rail).toBeVisible();
+  expect(await page.evaluate(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(false);
+  await rail.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'Native search input' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await page.evaluate(() => window.__APP_MODE_CONTEXT__.navigationAdapter.toggle());
+  await expect.poll(capability).toBe(true);
+  await expect(rail).toBeHidden();
+  await page.evaluate(() => { history.pushState({}, '', '#synthetic-navigation'); document.querySelector('#native-search').remove(); });
+  await expect.poll(capability).toBe(false);
+  await expect(rail).toBeVisible();
+  await page.evaluate(() => window.mountNativeSearch());
+  await expect.poll(capability).toBe(true);
+  expect(await page.evaluate(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
+  await expect(page.getByRole('textbox', { name: 'Native search input' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.locator('#native-search').evaluate(element => element.addEventListener('click', event => event.stopImmediatePropagation(), { once: true }));
+  expect(await page.evaluate(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(false);
+  await expect.poll(capability).toBe(false);
+  await expect(rail).toBeVisible();
+  await expect(rail).not.toHaveAttribute('data-app-mode-host-search-original');
+  await rail.click();
+  await expect(page.getByRole('textbox', { name: 'Native search input' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect.poll(capability).toBe(true);
+  await expect(rail).toBeHidden();
+  await page.evaluate(async () => { const c = window.__APP_MODE_CONTEXT__; if (c.navigationAdapter.read().state !== 'compact') await c.navigationAdapter.toggle(); c.hostNavigation.visible = false; c.navigationController.schedule(); });
+  await expect(rail).toBeVisible();
 });
 
 test('reserved native rails keep neutral gutters and scrolled sidebar content below New chat', async ({ page }, testInfo) => {

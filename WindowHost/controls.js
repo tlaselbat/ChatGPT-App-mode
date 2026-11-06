@@ -22,6 +22,7 @@
     const toggle = document.querySelector('[data-action="toggle-sidebar"]');
     toggle.hidden = !navigation.toggle;
     document.querySelector('[data-action="open-search"]').hidden = !navigation.search;
+    document.querySelector('.brand').hidden = navigation.identity === true;
     const expanded = navigation.state === 'docked' || navigation.state === 'drawer';
     toggle.setAttribute('aria-expanded', String(expanded));
     const sidebarLabel = expanded ? 'Close sidebar' : 'Open sidebar';

@@ -16,7 +16,6 @@
     ready: false,
     visible: false,
     busy: false,
-    searchRoot: null,
     searchControl: null,
     rejectedSearch: new WeakSet(),
     rejectedToggle: null,
@@ -24,12 +23,11 @@
       const model = navigationAdapter.read();
       const toggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false });
       const supported = compactSidebarEnabled && !!model.root && !!toggle && toggle !== this.rejectedToggle;
-      const search = navigationAdapter.find(/^Search$/i, { interactive: false, rendered: model.state !== 'compact' });
-      if (!supported || this.searchRoot !== model.root || (model.state !== 'compact' && !model.blocked)) this.searchRoot = search ? model.root : null;
-      if (search) { this.searchRoot = model.root; this.searchControl = search; }
+      const search = navigationAdapter.find(/^Search$/i);
+      this.searchControl = supported ? search : null;
       return { state: supported ? model.state : 'unavailable', toggle: supported && !model.blocked && model.state !== 'drawer',
-        search: supported && this.searchRoot === model.root && !!this.searchControl && !this.rejectedSearch.has(this.searchControl) &&
-          !model.blocked && model.state !== 'drawer', blocked: model.blocked };
+        search: supported && !!search && !this.rejectedSearch.has(search) &&
+          !model.blocked && model.state !== 'drawer', blocked: model.blocked, identity: !!navigationAdapter.identity(model) };
     },
     publish() {
       const value = JSON.stringify(this.read());
@@ -40,6 +38,7 @@
           !(action === 'toggle-sidebar' ? this.read().toggle : this.read().search)) return false;
       this.busy = true;
       const root = navigationAdapter.read().root;
+      const searchControl = this.searchControl;
       let succeeded = false;
       try {
         if (action === 'toggle-sidebar') {
@@ -48,14 +47,11 @@
           if (!toggled && navigationAdapter.read().root === root) this.rejectedToggle = control;
           return toggled;
         }
-        if (!await navigationAdapter.activate(/^Search$/i)) return false;
-        succeeded = !!await waitForNavigation(() => navigationAdapter.read().root === root &&
-          [...document.querySelectorAll('[role="dialog"] input')].find(input =>
-            input.getClientRects().length && !input.closest('[inert], [aria-hidden="true"]') && document.activeElement === input));
+        succeeded = await navigationAdapter.activate(/^Search$/i);
         return succeeded;
       }
       finally {
-        if (action === 'open-search' && !succeeded && this.searchControl) this.rejectedSearch.add(this.searchControl);
+        if (action === 'open-search' && !succeeded && searchControl) this.rejectedSearch.add(searchControl);
         this.busy = false; navigationController.schedule();
       }
     }
@@ -153,6 +149,13 @@
       target.focus();
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
     } else target?.click();
+    if (label.test('Search')) {
+      const focused = await waitForNavigation(() => navigationAdapter.read().root === root &&
+        [...document.querySelectorAll('[role="dialog"] input')].find(input =>
+          input.getClientRects().length && !input.closest('[inert], [aria-hidden="true"]') && document.activeElement === input));
+      if (focused) hostNavigation.rejectedSearch.delete(target);
+      return !!focused;
+    }
     return true;
   }
 
@@ -160,6 +163,15 @@
   navigationAdapter = {
     find: nativeSidebarControl,
     activate: runSidebarAction,
+    identity(model) {
+      const header = (model.drawer || model.docked)?.querySelector('.sidebar-navigation [class~="h-toolbar"]');
+      return [...(header?.querySelectorAll('[aria-haspopup="menu"]') || [])].find(control =>
+        (/^ChatGPT\b/.test(accessibleName(control)) || /^ChatGPT\b/.test(control.textContent.trim())) &&
+        !control.disabled && control.getAttribute('aria-disabled') !== 'true' &&
+        !control.closest('[hidden], [inert], [aria-hidden="true"]') && control.getClientRects().length &&
+        control.getBoundingClientRect().width > 0 && control.getBoundingClientRect().height > 0 &&
+        getComputedStyle(control).visibility === 'visible');
+    },
     sidebarOverlay(drawer) {
       if (!drawer) return null;
       const candidates = [...drawer.parentElement.children].filter(element =>
@@ -329,8 +341,8 @@
             (control.getAttribute('aria-haspopup') === 'menu' && /^ChatGPT\b/.test(control.textContent.trim())));
           if (hosted && known) {
             own(header, 'data-app-mode-host-nav-header');
-            for (const control of controls) if (/^Search$/i.test(accessibleName(control)) && hostNavigation.searchRoot === model.root &&
-                !hostNavigation.rejectedSearch.has(control)) own(control, 'data-app-mode-host-search-original');
+            for (const control of controls) if (/^Search$/i.test(accessibleName(control)) && hostNavigation.read().search &&
+                hostNavigation.searchControl === control) own(control, 'data-app-mode-host-search-original');
           }
         }
         const account = [...navigation.querySelectorAll('button, [role="button"]')].find(element =>
@@ -448,6 +460,9 @@
     }
     own(document.body, 'data-app-mode-navigation-state', state);
     if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().state !== 'unavailable') own(document.body, 'data-app-mode-host-navigation-owned');
+    if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().search) {
+      own(menu.querySelector('[aria-label="Search"]'), 'data-app-mode-host-search-original');
+    }
     if (model.blocked) {
       own(document.body, 'data-app-mode-navigation-blocked');
       own(toggle, 'inert');

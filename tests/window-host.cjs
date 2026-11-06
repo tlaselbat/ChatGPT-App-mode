@@ -729,7 +729,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.evaluate(() => {
       const root = document.createElement('div'); root.id = 'host-navigation-fixture';
       root.setAttribute('data-app-shell-responsive-sidebar', ''); root.setAttribute('data-app-shell-sidebar-open', 'false');
-      root.innerHTML = '<button aria-label="Open sidebar" id="native-host-toggle">Sidebar</button><aside class="app-shell-left-panel" style="display:none;width:260px"><button aria-label="Search">Search</button></aside><main>Native navigation fixture</main>';
+      root.innerHTML = '<button aria-label="Open sidebar" id="native-host-toggle">Sidebar</button><aside class="app-shell-left-panel" style="display:none;width:260px"><div class="sidebar-navigation"><div class="h-toolbar"><button aria-haspopup="menu" id="native-host-identity">ChatGPT</button><button aria-label="Search">Search</button></div></div></aside><main>Native navigation fixture</main>';
       document.body.append(root);
       const toggle = root.querySelector('#native-host-toggle');
       toggle.onclick = () => {
@@ -745,6 +745,26 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       };
       document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#host-search-fixture')?.remove(); });
     });
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
+    await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.toggle) { off(); resolve(true); } }); })");
+    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), false);
+    await native('Activate');
+    assert.equal(await controlsEval("window.appModeControls.action('open-search')"), false, 'Hidden stale Search must not advertise trusted capability');
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').isVisible(), true);
+    await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').click();
+    await page.getByRole('textbox', { name: 'Native host search' }).waitFor();
+    assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
+    await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.blocked) { off(); resolve(true); } }); })");
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
+    await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.identity && !state.navigation.blocked) { off(); resolve(true); } }); })");
+    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), true);
+    assert.equal(await controlsEval('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.activeElement === document.querySelector("[data-action=open-search]")))))'), true, 'Search dismissal restores focus to the visible trusted entry point');
+    await page.locator('#native-host-identity').evaluate(element => element.hidden = true);
+    await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (!state.navigation.identity && state.navigation.state === 'docked') { off(); resolve(true); } }); })");
+    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), false);
+    await page.locator('#native-host-identity').evaluate(element => element.hidden = false);
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'docked');
@@ -770,6 +790,19 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-navigation'); document.querySelector('[aria-label="Search"]').remove(); });
     await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().search);
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), false);
+    await page.evaluate(() => {
+      const search = document.createElement('button'); search.setAttribute('aria-label', 'Search');
+      search.onclick = () => {
+        const dialog = document.createElement('div'); dialog.id = 'host-search-fixture'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        dialog.innerHTML = '<input aria-label="Recovered native Search">'; document.body.append(dialog); dialog.querySelector('input').focus();
+      };
+      document.querySelector('#host-navigation-fixture .h-toolbar').append(search);
+    });
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search);
+    assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true);
+    assert.equal(await page.getByRole('textbox', { name: 'Recovered native Search' }).evaluate(input => document.activeElement === input), true);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
     await page.evaluate(() => document.querySelector('#native-host-toggle').remove());
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'unavailable');
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), false);

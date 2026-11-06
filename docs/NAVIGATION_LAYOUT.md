@@ -81,11 +81,16 @@ lifecycle, not polling. Unrecognized account controls remain untouched.
 Trusted title-bar Sidebar and Search delegate to this same adapter through the
 host's allowlisted action channel. Native rendered state remains authoritative;
 there is no second open preference. Search delegates to the native dialog and
-checks input focus with a bounded wait. When compact markup unmounts Search,
-its capability is remembered only for the current recognized shell after native
-discovery; a fresh unsupported shell does not advertise a guessed action.
-The existing rail Search remains an entry point before that discovery. Failed
-Search targets release suppression and are not offered again until replaced.
+checks input focus with a bounded wait. Search capability is revalidated against
+currently rendered, enabled native controls on each reconciliation (including
+App Mode's own reversibly suppressed targets); removed or inaccessible targets
+do not retain stale capability. The rail Search remains an entry point before
+discovery and returns whenever trusted delegation is unavailable. Only ready,
+visible host Search suppresses its rail duplicate. Failed Search targets release
+suppression until replaced or a user-invoked fallback confirms native Search input
+focus. The static host identity steps back only while a rendered, accessible native
+ChatGPT dropdown is available in the expanded sidebar; missing or replaced
+dropdowns restore it.
 
 Recognized docked navigation headers use a 28px native dropdown row rather than
 the previous 40px row, recovering 12 CSS pixels above New chat. Only verified
