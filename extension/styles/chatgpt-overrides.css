@@ -28,6 +28,36 @@ body.faux-chatgpt-app-mode #app-mode-navigation-flyout button span { overflow: h
 body.faux-chatgpt-app-mode #app-mode-navigation-flyout > button { flex-shrink: 0; border-top: 1px solid var(--app-mode-border); }
 body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:hover { background: var(--app-mode-hover); }
 body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:focus-visible { outline: 2px solid var(--app-mode-accent); outline-offset: -2px; }
+/* Narrow section shortcuts present the original modal and native controls.
+   Keep its focus trap/scrim; only scope the visible section and geometry. */
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) #browser-sidebar-popover[role="dialog"][data-app-mode-section-flyout] {
+  position: fixed !important; inset: auto !important;
+  left: var(--app-mode-section-flyout-left, 60px) !important; top: var(--app-mode-section-flyout-top, 8px) !important;
+  width: min(280px, calc(100vw - var(--app-mode-section-flyout-left, 60px) - 8px)) !important; min-width: 0 !important;
+  height: auto !important; min-height: 0 !important; max-height: min(68vh, calc(100vh - 16px)) !important;
+  display: flex !important; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--app-mode-border); border-radius: var(--app-mode-radius-small);
+  color: var(--app-mode-text); background: var(--app-mode-composer-bg);
+}
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-section-flyout-container] {
+  display: flex !important; flex-direction: column; flex: 1 1 auto;
+  width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+  height: auto !important; min-height: 0 !important; max-height: inherit;
+}
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-nav-scroll] { overflow-y: auto; min-height: 0; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-nav-primary],
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-section-flyout-hidden] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-modal-sidebar-toggle] { position: relative !important; inset: auto !important; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout][role="dialog"] [data-app-mode-nav-header] { padding-inline-start: 12px; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-section-flyout-current] [data-app-mode-nav-collapsed] { display: block !important; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout] [data-app-mode-section-flyout-current] [data-app-mode-nav-disclosure] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout-actions] { flex-shrink: 0; padding: 8px; border-top: 1px solid var(--app-mode-border); }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout-actions] button {
+  width: 100%; min-height: 36px; padding: 6px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer;
+}
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout-actions] button:hover { background: var(--app-mode-hover); }
+body.faux-chatgpt-app-mode [data-app-mode-section-flyout-actions] button:focus-visible { outline: 2px solid var(--app-mode-accent); outline-offset: -2px; }
 @media (forced-colors: active) {
   body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:focus-visible { outline-color: Highlight; }
 }

@@ -9,7 +9,10 @@
   // discarding per-button listeners, or handle bubbled header clicks itself.
   document.addEventListener("click", (event) => {
     const flyout = navigationController.flyout;
-    if (flyout && !flyout.element.contains(event.target) && !event.target.closest?.('[data-app-mode-rail-section]')) navigationController.closeFlyout();
+    if (flyout?.kind === 'native') {
+      if (event.isTrusted && flyout.openedDisclosure?.contains(event.target)) flyout.openedDisclosure = null;
+      if (flyout.element && (!flyout.element.contains(event.target) || event.target.closest?.('[data-app-mode-modal-sidebar-toggle]'))) navigationController.closeFlyout(true, true);
+    } else if (flyout && !flyout.element.contains(event.target) && !event.target.closest?.('[data-app-mode-rail-section]')) navigationController.closeFlyout();
     const shareItem = event.target instanceof Element ? event.target.closest('[data-app-mode-share-menu-item]') : null;
     if (shareItem) {
       event.preventDefault();
@@ -56,10 +59,15 @@
   // relying on a framework's private roving-focus registry.
   document.addEventListener('keydown', event => {
     const flyout = navigationController.flyout;
-    if (flyout && event.key === 'Escape') {
+    if (flyout?.kind === 'native' && event.key === 'Escape') {
+      if (event.target instanceof Element && event.target.closest('[role="menu"], [role="listbox"]')) return;
+      if (navigationAdapter.read().blocked) { navigationController.closeFlyout(false, true); return; }
       event.preventDefault(); event.stopPropagation(); navigationController.closeFlyout(true); return;
     }
-    if (flyout && flyout.element.contains(event.target) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    if (flyout && flyout.kind !== 'native' && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); navigationController.closeFlyout(true); return;
+    }
+    if (flyout && flyout.kind !== 'native' && flyout.element.contains(event.target) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
       const items = [...flyout.element.querySelectorAll('button')];
       const current = items.indexOf(document.activeElement);
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 :

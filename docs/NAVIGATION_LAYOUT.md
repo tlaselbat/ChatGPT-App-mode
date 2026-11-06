@@ -13,9 +13,10 @@ the expanded sidebar: the primary actions (New chat, Search, Scheduled,
 Library, Plugins, Explore), a divider-separated Pinned/Projects/Recents
 section group, and an account footer. Section shortcuts present a shared
 nonmodal flyout when the compact native panel retains supported destination
-links. Otherwise they expand the native sidebar through the same adapter and
-scroll the recognized section into view without touching disclosure state;
-unrecognized sections leave ordinary expansion as the result. The rail scrolls
+links. Drawer layouts present the selected native section in a compact panel.
+Unsupported docked structures expand the native sidebar through the same
+adapter and scroll the recognized section into view without touching disclosure
+state; unrecognized sections leave ordinary expansion as the result. The rail scrolls
 at short window heights while the account footer stays anchored via `position: sticky`.
 (`#app-mode-compact-sidebar-actions`) only while native navigation is compact.
 When a rendered docked panel or modal drawer supplies expanded navigation, the
@@ -46,34 +47,47 @@ as `light-dark()` tokens on the marker body.
 
 ### Compact section flyouts
 
-App Mode owns one ephemeral flyout inside the ChatGPT content view. Native
-sections, ordering, disclosure preferences, handlers, and routing remain
-authoritative. The adapter reads only titles and existing same-origin anchors
-from a uniquely recognized section in the shell's retained native aside.
+App Mode owns one ephemeral section presentation inside the ChatGPT content
+view. Native sections, ordering, disclosure preferences, handlers, and routing
+remain authoritative. The retained-desktop presentation reads only titles and
+existing same-origin anchors from a uniquely recognized section in the shell's
+retained native aside.
 Conversation anchors may use `/c/<id>` or `/g/<id>/c/<id>`; project anchors
 must use `/g/<id>/project`. It never constructs destinations from identifiers,
 copies native components, reads application storage for history, or transmits
-titles or destinations through host IPC. Recents shows at most eight mounted
-entries; Pinned and Projects show at most twenty. No pagination or history
-cache is maintained.
+titles or destinations through host IPC. In the retained-desktop presentation,
+Recents shows at most eight mounted entries; Pinned and Projects show at most
+twenty. No pagination or history cache is maintained.
 
 Selecting a row revalidates its connected native target, destination, title,
 section, and route, then clicks that original anchor. A failed action falls
-back to native expansion. Each flyout's View all button calls the existing
-section expansion/scroll action without changing disclosures. Missing,
-ambiguous, unmounted, or unsupported content uses that same fallback directly.
+back to native expansion. Each presentation's View all button calls the existing
+section expansion/scroll action. When compact data is unavailable, the native
+drawer becomes a compact section panel: the user's shortcut visibly opens the
+native drawer, shows the selected native section, and adds an App Mode-owned
+View all button. The native nodes, links, project buttons, context menus, and
+pagination remain in their original containers. No hidden open/close cycle,
+data cache, or detached target is used. Unknown structures and docked-only
+unsupported actions retain full native expansion.
 A collapsed disclosure with no mounted links is unavailable, not an empty
 list. An expanded section without entries or unsupported controls can show an
-empty state. Button-driven project navigation remains native.
+empty state. Button-driven Projects work directly inside the narrow panel.
+Recognized closed native disclosures open for the selected panel; dismissal
+restores an untouched disclosure while its original control remains available.
+Explicit native disclosure interaction remains authoritative.
 
-Triggers expose `aria-expanded` and `aria-controls`; the flyout is a named
-nonmodal region containing ordinary buttons. Opening focuses its first action.
+Triggers expose `aria-expanded` and `aria-controls`. The retained-desktop flyout
+is a named nonmodal region containing ordinary buttons. Opening focuses its first action.
 Tab uses ordinary document order; arrows, Home, and End move between actions.
 Escape restores the visible trigger. Repeated activation toggles the flyout,
 and another section replaces it. Outside clicks, navigation, native expansion,
 blocking dialogs, and changed/replaced native sources dismiss it through the
 existing reconciliation lifecycle. Focus is never restored outside a native
-modal or to a hidden trigger. No focus trap, observer, or polling loop is added.
+modal or to a hidden trigger. The narrow section panel retains the native
+modal role, focus trap, scrim, Search, close control, Tab behavior, and Escape
+handling. It restores the rail trigger after native dismissal. View all removes
+the section filter and compact geometry in the same native drawer. No focus
+trap, observer, or polling loop is added.
 
 The fixed flyout sits beside the rail without changing workspace/composer
 geometry. It clamps to the content viewport, scrolls its list independently,
@@ -84,7 +98,10 @@ Authenticated isolated-profile inspection on 2026-11-06 found retained desktop
 Recents anchors that navigate successfully from compact mode, including
 GPT-scoped conversations. Pinned had no mounted links while collapsed;
 Projects used button-driven native rows, so both retained expansion fallback
-in that profile. Narrow compact mode unmounted all three sections. These are
+in that profile during the initial implementation. Narrow compact mode
+unmounted all three sections; the native-backed section panel now mounts and presents
+them on user activation. Authenticated follow-up checks found native Pinned
+links and button-driven Projects inside that panel at 390px and 680px. These are
 frontend/profile observations, not permanent capabilities: every activation
 checks current availability. Synthetic fixtures separately exercise mounted
 anchor variants for all three sections.

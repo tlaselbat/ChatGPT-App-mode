@@ -390,11 +390,25 @@
     sections: new Map(),
     preferences: null,
     flyout: null,
-    closeFlyout(restore = false) {
+    pendingFlyoutFocus: null,
+    closeFlyout(restore = false, keepNative = false) {
       const active = this.flyout;
       if (!active) return;
       this.flyout = null;
-      active.element.remove();
+      if (active.kind === 'native') {
+        active.footer?.remove();
+        if (active.openedDisclosure?.isConnected && active.openedDisclosure.getAttribute('aria-expanded') === 'true' &&
+            !active.openedDisclosure.closest('[inert], [aria-hidden="true"]') && !this.read().blocked) active.openedDisclosure.click();
+        active.element?.removeAttribute('data-app-mode-section-flyout');
+        active.element?.style.removeProperty('--app-mode-section-flyout-top');
+        active.element?.style.removeProperty('--app-mode-section-flyout-left');
+        if (restore) this.pendingFlyoutFocus = { key: active.key, root: active.root, route: active.route };
+        if (!keepNative && active.element === this.read().drawer && !this.read().blocked) {
+          const close = navigationAdapter.find(/^(hide|close) sidebar$/i);
+          if (close && active.element.contains(close)) close.click();
+        }
+        this.schedule();
+      } else active.element.remove();
       active.trigger.setAttribute('aria-expanded', 'false');
       active.trigger.removeAttribute('aria-controls');
       if (restore && active.trigger.isConnected && this.read().state === 'compact' && !this.read().blocked &&
@@ -415,6 +429,35 @@
     reconcileFlyout(model) {
       const active = this.flyout;
       if (!active) return;
+      if (active.kind === 'native') {
+        if (active.root !== model.root || active.route !== location.href || model.blocked ||
+            (active.element && active.element !== model.drawer) || model.state === 'docked') {
+          this.closeFlyout(!model.blocked && active.route === location.href, model.blocked || model.state === 'docked'); return;
+        }
+        if (!model.drawer) return;
+        active.element = model.drawer;
+        const entry = navigationAdapter.sections(model.drawer).find(entry => entry.key === active.key);
+        if (active.section && active.section !== entry?.section) { this.closeFlyout(false, true); return; }
+        if (entry && !active.section) {
+          active.section = entry.section;
+          active.navigation = entry.navigation;
+          if (entry.native && entry.control.getAttribute('aria-expanded') === 'false') {
+            active.openedDisclosure = entry.control; entry.control.click();
+          }
+        }
+        if (!active.footer?.isConnected) {
+          const footer = document.createElement('div'); footer.setAttribute('data-app-mode-section-flyout-actions', '');
+          const all = document.createElement('button'); all.type = 'button';
+          all.textContent = `View all ${active.key === 'recents' ? 'recent chats' : active.key} →`;
+          all.addEventListener('click', () => { this.closeFlyout(false, true); c.runSidebarSection(active.key); });
+          footer.append(all); model.drawer.append(footer); active.footer = footer;
+        }
+        const top = Math.max(8, Math.min(active.top, innerHeight - Math.min(innerHeight * .68, model.drawer.getBoundingClientRect().height) - 8));
+        if (model.drawer.style.getPropertyValue('--app-mode-section-flyout-top') !== `${top}px`) model.drawer.style.setProperty('--app-mode-section-flyout-top', `${top}px`);
+        const left = Math.min(60, Math.max(8, innerWidth - 288));
+        if (model.drawer.style.getPropertyValue('--app-mode-section-flyout-left') !== `${left}px`) model.drawer.style.setProperty('--app-mode-section-flyout-left', `${left}px`);
+        return;
+      }
       const fresh = navigationAdapter.sectionEntries(active.key, model);
       if (!active.trigger.isConnected || active.root !== model.root || active.route !== location.href ||
           !fresh || fresh.section !== active.section || fresh.entries.length !== active.entries.length ||
@@ -429,7 +472,24 @@
       this.closeFlyout();
       const model = this.read();
       const source = navigationAdapter.sectionEntries(key, model);
-      if (!source || innerWidth - trigger.closest('nav').getBoundingClientRect().right < 160) return c.runSidebarSection(key);
+      if (!source || innerWidth - trigger.closest('nav').getBoundingClientRect().right < 160) {
+        this.flyout = { kind: 'native', key, trigger, root: model.root, route: location.href, top: trigger.getBoundingClientRect().top };
+        const active = this.flyout;
+        trigger.setAttribute('aria-expanded', 'true'); trigger.setAttribute('aria-controls', 'browser-sidebar-popover');
+        await c.runSidebarSection(key);
+        if (this.flyout !== active) return;
+        this.reconcileFlyout(this.read());
+        if (!active.section || !active.element) { this.closeFlyout(false, true); return; }
+        const focus = [...active.section.querySelectorAll('a[href], button:not([disabled]), [role="button"][tabindex="0"]')]
+          .find(control => control.getClientRects().length && !control.closest('[inert], [aria-hidden="true"]'));
+        focus?.focus({ preventScroll: true }); this.schedule();
+        requestAnimationFrame(() => {
+          if (this.flyout !== active || !active.section?.isConnected) return;
+          const scroll = active.section.closest('[data-app-mode-nav-scroll]');
+          if (scroll) scroll.scrollTop = 0;
+        });
+        return;
+      }
       this.cancelShortcut?.();
       const element = document.createElement('section');
       element.id = 'app-mode-navigation-flyout';
@@ -567,7 +627,7 @@
       this.owned = next;
     },
     reset() {
-      this.closeFlyout();
+      this.closeFlyout(false, true);
       this.cancelShortcut?.();
       this.reconcileSections(null, () => {});
       this.apply(new Map());
@@ -700,7 +760,8 @@
     // at the page origin and the workspace gets that width back.
     const navRailReserved = nativeRail && nativeRail.getBoundingClientRect().width > 0 &&
       [...nativeRail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1;
-    if (state === 'compact' && !navRailReserved && !model.reservedRail) own(root, 'data-app-mode-compact-sidebar-shell');
+    const sectionPopover = navigationController.flyout?.kind === 'native' && !!model.drawer;
+    if ((state === 'compact' || sectionPopover) && !navRailReserved && !model.reservedRail) own(root, 'data-app-mode-compact-sidebar-shell');
     // The rounded Codex workspace is the single rendered content main inside
     // the shell. Ambiguous structure keeps the native, unmarked layout.
     const contentMains = [...root.querySelectorAll('main')].filter(element =>
@@ -750,6 +811,17 @@
     const label = open ? 'Close sidebar' : 'Open sidebar';
     if (toggle.title !== label) toggle.title = label;
     navigationController.reconcileSections(model.drawer || dockedPanel, own);
+    const flyout = navigationController.flyout;
+    if (flyout?.kind === 'native' && flyout.element === model.drawer) {
+      own(model.drawer, 'data-app-mode-section-flyout');
+      if (flyout.section) {
+        own(flyout.section, 'data-app-mode-section-flyout-current');
+        for (const section of model.drawer.querySelectorAll('section[class~="group/nav-section"]')) {
+          if (section !== flyout.section && !section.contains(flyout.section) && !flyout.section.contains(section)) own(section, 'data-app-mode-section-flyout-hidden');
+        }
+        for (let parent = flyout.navigation; parent && parent !== model.drawer; parent = parent.parentElement) own(parent, 'data-app-mode-section-flyout-container');
+      }
+    }
     const previous = navigationController.state;
     navigationController.apply(next);
     navigationController.state = state;
@@ -757,6 +829,14 @@
     if (previous === 'drawer' && state !== 'drawer' &&
         (document.activeElement === document.body || document.activeElement?.hasAttribute('data-app-mode-sidebar-original'))) {
       toggle.focus({ preventScroll: true });
+    }
+    const restore = navigationController.pendingFlyoutFocus;
+    if (restore && state === 'compact' && !model.blocked) {
+      const target = menu.querySelector(`[data-app-mode-rail-section="${restore.key}"]`);
+      if (restore.root !== root || restore.route !== location.href) navigationController.pendingFlyoutFocus = null;
+      else if (target?.getClientRects().length && !target.closest('[inert], [aria-hidden="true"]')) {
+        navigationController.pendingFlyoutFocus = null; target.focus({ preventScroll: true });
+      }
     }
   }
 

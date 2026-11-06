@@ -853,6 +853,7 @@ async function navigationSectionsFixture(page, native = false, open = true, reta
     a{display:flex;align-items:center;min-height:34px;min-width:0;color:inherit;text-decoration:none}a>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     button{color:inherit;min-height:32px}section{margin:0}.native-scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50}
     #browser-sidebar-popover{position:fixed;left:0;top:0;width:min(320px,calc(100vw - 52px));bottom:0;z-index:51;background:#e1e4ea}
+    #drawer-close::before{content:'';position:absolute;inset:0}
     [role=menu]{position:fixed;bottom:50px;left:60px;z-index:80;background:Canvas;color:CanvasText;padding:12px}
     @media(prefers-color-scheme:dark){body{color:#d5deef}}
     </style></head><body><div id="section-shell" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="${open}"><main><header><button aria-label="Open sidebar" id="section-opener">Sidebar</button><button id="chat-mode">Chat</button><button id="work-mode">Work</button></header><h1>Synthetic workspace</h1></main></div>
@@ -1305,6 +1306,83 @@ test('compact flyouts stay within responsive bounds without moving the workspace
       await page.keyboard.press('Escape');
     }
   }
+});
+
+test('narrow section flyouts present native entries at every supported width', async ({ page }, testInfo) => {
+  test.setTimeout(60000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await navigationSectionsFixture(page, true, false);
+  const drawer = page.locator('#browser-sidebar-popover');
+  for (const theme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+    for (const width of [390, 598, 680]) {
+      await page.setViewportSize({ width, height: 420 });
+      for (const key of ['pinned', 'projects', 'recents']) {
+        const trigger = page.locator(`[data-app-mode-rail-section="${key}"]`);
+        const before = await page.locator('main').boundingBox();
+        await trigger.click();
+        await expect(drawer).toHaveAttribute('data-app-mode-section-flyout', '');
+        await expect(drawer).toHaveAttribute('aria-modal', 'true');
+        await expect(drawer.locator(`[data-section="${key}"] a`).first()).toBeVisible();
+        for (const other of ['pinned', 'projects', 'recents', 'unknown']) if (other !== key) await expect(drawer.locator(`[data-section="${other}"]`)).toBeHidden();
+        await expect(drawer.getByRole('button', { name: 'View all', exact: false })).toBeVisible();
+        await expect.poll(async () => {
+          const box = await drawer.boundingBox();
+          return !!box && box.x >= 8 && box.y >= 8 && box.x + box.width <= width - 7 && box.y + box.height <= 413;
+        }).toBe(true);
+        expect(await page.locator('main').boundingBox()).toEqual(before);
+        if (key === 'recents') await drawer.screenshot({ path: testInfo.outputPath(`native-section-${theme}-${width}.png`) });
+        await page.keyboard.press('Escape');
+        await expect(drawer).toHaveCount(0); await expect(trigger).toBeFocused();
+      }
+    }
+  }
+});
+
+test('narrow section flyouts activate native destinations and View all restores the complete drawer', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false);
+  await page.setViewportSize({ width: 598, height: 700 });
+  const drawer = page.locator('#browser-sidebar-popover');
+  for (const key of ['pinned', 'projects', 'recents']) {
+    await page.locator(`[data-app-mode-rail-section="${key}"]`).click();
+    await expect(drawer.locator(`[data-section="${key}"] a`).first()).toBeVisible();
+    if (key === 'projects') {
+      // Current native Projects may expose handlers on buttons, with no URL
+      // available to the adapter. Those original controls must still work.
+      await page.evaluate(() => {
+        for (const link of document.querySelectorAll('[data-section="projects"] a')) {
+          const button = document.createElement('button'); button.textContent = link.textContent;
+          button.setAttribute('data-native-project', '');
+          button.onclick = () => { history.pushState({}, '', '/g/g-synthetic/project'); document.body.classList.toggle('synthetic-project-route'); };
+          link.replaceWith(button);
+        }
+      });
+      await drawer.locator('[data-native-project]').first().click();
+    } else await drawer.locator(`[data-section="${key}"] a`).first().click();
+    await expect(page).toHaveURL(key === 'projects' ? /\/g\/g-synthetic\/project$/ : new RegExp(`/c/synthetic-${key}-0$`));
+    await expect(drawer).toHaveCount(0);
+  }
+  await page.locator('[data-app-mode-rail-section="pinned"]').click();
+  await drawer.getByRole('button', { name: 'View all pinned' }).click();
+  await expect(drawer).not.toHaveAttribute('data-app-mode-section-flyout');
+  for (const key of ['pinned', 'projects', 'recents']) await expect(drawer.locator(`[data-section="${key}"]`)).toBeVisible();
+  await expect(drawer.locator('[data-native-section="pinned"]')).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Escape');
+  await page.locator('[data-app-mode-rail-section="recents"]').click();
+  await drawer.locator('#native-account').click();
+  await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(drawer).toHaveAttribute('data-app-mode-section-flyout', '');
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+  await page.locator('[data-app-mode-rail-section="recents"]').click();
+  await page.locator('.native-scrim').click({ position: { x: 580, y: 500 } });
+  await expect(drawer).toHaveCount(0);
+  await page.locator('[data-app-mode-rail-section="recents"]').click();
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await expect(page.locator('[data-app-mode-section-flyout]')).toHaveCount(0);
+  await expect(page.locator('[data-app-mode-section-flyout-actions]')).toHaveCount(0);
 });
 
 test('rail section shortcuts expand native navigation to the matching section', async ({ page }) => {
