@@ -13,8 +13,10 @@ The navigation controller implements a compact 52px activity rail
 When a rendered docked panel or modal drawer supplies expanded navigation, the
 compact rail is hidden and its shell reservation is removed. The expanded
 sidebar therefore begins at the page origin and the workspace reclaims the
-52px width. The existing App Mode toggle remains the docked sidebar header
-control; the native drawer keeps its own close control inside its focus trap.
+52px width. In Electron, the trusted title-bar toggle delegates to the existing native
+adapter, and the page toggle remains mounted as a reversible hostless/fullscreen
+fallback. The native drawer keeps its own close control inside its focus trap;
+title-bar navigation is suppressed during that drawer or another blocking modal.
 
 The responsive docked width is keyed to the site's own
 `data-app-shell-sidebar-open="true"` attribute, not our state marker. It
@@ -76,8 +78,23 @@ trigger; it does not override focus placed on another usable control or modal.
 This uses a bounded mount observer and the existing shortcut cancellation
 lifecycle, not polling. Unrecognized account controls remain untouched.
 
-The sidebar change does not alter `WindowHost/`, the application title bar, caption
-hit testing, Pin ownership, composer, homepage activity, or native chat rendering.
+Trusted title-bar Sidebar and Search delegate to this same adapter through the
+host's allowlisted action channel. Native rendered state remains authoritative;
+there is no second open preference. Search delegates to the native dialog and
+checks input focus with a bounded wait. When compact markup unmounts Search,
+its capability is remembered only for the current recognized shell after native
+discovery; a fresh unsupported shell does not advertise a guessed action.
+The existing rail Search remains an entry point before that discovery. Failed
+Search targets release suppression and are not offered again until replaced.
+
+Recognized docked navigation headers use a 28px native dropdown row rather than
+the previous 40px row, recovering 12 CSS pixels above New chat. Only verified
+host-owned navigation hides the duplicate page toggle and native Search trigger;
+the original ChatGPT dropdown stays in place with its native handler and anchor.
+Unknown interactive header content retains the original height. Drawer headers
+retain their 40px close/menu row, and unavailable/hidden host chrome restores the
+page layout. These rules do not change Pin ownership, composer, homepage activity,
+conversation rendering, or contextual-header geometry.
 Visual tests distinguish native authoritative state from adapter-owned fallback
 state and cover replacement, keyboard activation, navigation, account forwarding,
 scroll retention, themes, drawer dismissal, and viewport-equivalent zoom geometry.

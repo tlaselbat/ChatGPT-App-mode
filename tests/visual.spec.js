@@ -53,9 +53,12 @@ async function captionStripFixture(page) {
   await caption.addInitScript(() => {
     let publish;
     const state = { pinned: false, compact: false, maximized: false };
+    window.syntheticCaptionActions = [];
+    window.updateCaptionState = next => { Object.assign(state, next); publish(state); };
     window.appModeControls = {
       onState(callback) { publish = callback; publish(state); },
       action(action) {
+        window.syntheticCaptionActions.push(action);
         if (action === 'pin') { state.pinned = !state.pinned; publish(state); }
       },
     };
@@ -100,6 +103,44 @@ async function overlayPixels(page, clip) {
     return Array.from(context.getImageData(0, 0, image.width, image.height).data);
   }, `data:image/png;base64,${buffer.toString('base64')}`);
 }
+
+test('trusted titlebar navigation keeps responsive hit regions, focus and native-control independence', async ({ page }, testInfo) => {
+  const caption = await captionStripFixture(page);
+  const toggle = caption.getByRole('button', { name: 'Open sidebar', exact: true });
+  await expect(toggle).toBeHidden();
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } }));
+  for (const width of [390, 480, 680, 937, 1280]) {
+    await caption.setViewportSize({ width, height: 40 });
+    await caption.evaluate(width => window.updateCaptionState({ compact: width <= 480 }), width);
+    expect(await caption.locator('.titlebar-drag').evaluate(e => e.getBoundingClientRect().width)).toBeGreaterThanOrEqual(36);
+    expect(await caption.evaluate(() => {
+      const boxes = [...document.querySelectorAll('button:not([hidden])')].map(e => e.getBoundingClientRect());
+      return document.documentElement.scrollWidth <= innerWidth && boxes.every((box, i) =>
+        box.left >= 0 && box.right <= innerWidth && !boxes.slice(i + 1).some(other => box.left < other.right && box.right > other.left));
+    })).toBe(true);
+    await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-${width}.png`) });
+  }
+  await toggle.focus(); await caption.keyboard.press('Enter');
+  await caption.getByRole('button', { name: 'Search', exact: true }).focus(); await caption.keyboard.press('Space');
+  await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar', 'open-search']);
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false } }));
+  await expect(caption.getByRole('button', { name: 'Close sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  for (const theme of [
+    { background: 'rgb(250, 250, 250)', color: 'rgb(20, 20, 20)', accent: 'rgb(0, 80, 190)' },
+    { background: 'rgb(20, 20, 20)', color: 'rgb(240, 240, 240)', accent: 'rgb(180, 200, 250)' },
+  ]) {
+    await caption.evaluate(theme => window.updateCaptionState({ theme }), theme);
+    const search = caption.getByRole('button', { name: 'Search', exact: true });
+    await search.focus();
+    await expect(search).toHaveCSS('color', theme.color);
+    await expect(search).toHaveCSS('outline-color', theme.accent);
+  }
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'unavailable', toggle: false, search: false, blocked: false } }));
+  await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeHidden();
+  await caption.getByRole('button', { name: 'Always on top' }).click();
+  await expect(caption.getByRole('button', { name: 'Always on top' })).toHaveAttribute('aria-pressed', 'true');
+  await caption.close();
+});
 
 test('sidebar overlay preserves native color and alpha with a clear header and blocked input', async ({ page }, testInfo) => {
   for (const scheme of ['light', 'dark']) {
@@ -818,6 +859,85 @@ async function navigationSectionsFixture(page, native = false) {
   await page.setViewportSize({ width: 1280, height: 850 });
   await page.goto('https://chatgpt.com/');
 }
+
+test('trusted navigation delegates native actions and conditionally condenses only recognized sidebar headers', async ({ page }) => {
+  await navigationSectionsFixture(page, true);
+  const session = await page.context().newCDPSession(page);
+  const contexts = [];
+  session.on('Runtime.executionContextCreated', ({ context }) => contexts.push(context));
+  await session.send('Runtime.enable');
+  let contextId;
+  for (const context of contexts) {
+    const { result } = await session.send('Runtime.evaluate', { contextId: context.id, expression: '!!window.__APP_MODE_CONTEXT__', returnByValue: true });
+    if (result.value) contextId = context.id;
+  }
+  expect(contextId).toBeTruthy();
+  const evaluateNavigation = async callback => {
+    const value = await session.send('Runtime.evaluate', { contextId, expression: `(${callback.toString()})()`, awaitPromise: true, returnByValue: true });
+    if (value.exceptionDetails) throw new Error('Navigation fixture evaluation failed');
+    return value.result.value;
+  };
+  await expect(page.locator('[data-app-mode-nav-header]')).toHaveCSS('height', '40px');
+  const before = await page.locator('aside [data-primary]').first().boundingBox();
+  await evaluateNavigation(() => {
+    const c = window.__APP_MODE_CONTEXT__;
+    c.hostNavigation.ready = true; c.hostNavigation.visible = true;
+    document.addEventListener('click', event => {
+      if (event.target.getAttribute('aria-label') !== 'Search') return;
+      const dialog = document.createElement('div'); dialog.id = 'native-search-test';
+      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      dialog.innerHTML = '<input aria-label="Search conversations">'; document.body.append(dialog);
+      dialog.querySelector('input').focus();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') document.getElementById('native-search-test')?.remove();
+    });
+    c.navigationController.schedule();
+  });
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('padding-inline-start', '8px');
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
+  expect((await page.locator('aside [data-primary]').first().boundingBox()).y).toBe(before.y - 12);
+  await expect(page.locator('[data-app-mode-host-search-original]')).toBeHidden();
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
+  await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-navigation-blocked');
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await page.evaluate(() => {
+    const unknown = document.createElement('button'); unknown.textContent = 'Native future action';
+    unknown.onclick = () => { window.syntheticFutureAction = true; };
+    document.querySelector('[data-app-mode-nav-header]').append(unknown);
+  });
+  await expect(page.locator('[data-app-mode-nav-header]')).toHaveCSS('height', '40px');
+  await page.getByRole('button', { name: 'Native future action' }).click();
+  expect(await page.evaluate(() => window.syntheticFutureAction)).toBe(true);
+  await evaluateNavigation(() => { window.__APP_MODE_CONTEXT__.hostNavigation.visible = false; window.__APP_MODE_CONTEXT__.navigationController.schedule(); });
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await evaluateNavigation(() => {
+    window.__APP_MODE_CONTEXT__.hostNavigation.visible = true;
+    document.querySelector('[aria-label="Search"]').remove();
+    window.__APP_MODE_CONTEXT__.navigationController.schedule();
+  });
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(false);
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(false);
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('document.body.remove()'))).toBe(false);
+  await page.setViewportSize({ width: 390, height: 850 });
+  await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toBeVisible();
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(false);
+  await page.locator('[data-app-mode-modal-sidebar-toggle]').click();
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  await page.evaluate(() => document.querySelector('#section-opener').remove());
+  await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-host-navigation-owned');
+});
 
 test('reserved native rails keep neutral gutters and scrolled sidebar content below New chat', async ({ page }, testInfo) => {
   await page.emulateMedia({colorScheme:'dark', reducedMotion:'reduce'});

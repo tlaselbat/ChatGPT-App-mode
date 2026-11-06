@@ -220,11 +220,11 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await page.evaluate(() => typeof require), 'undefined');
     assert.equal(await page.evaluate(() => typeof window.appModeControls), 'undefined');
     assert.equal(await controlsEval('typeof require'), 'undefined');
-    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => {
+    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button:not([hidden])')).map(button => {
       const rect=button.getBoundingClientRect(), style=getComputedStyle(button);
       return {width:rect.width,height:rect.height,center:rect.y+rect.height/2,radius:style.borderRadius,drag:style.webkitAppRegion};
     })`), Array(4).fill({width:32,height:28,center:20,radius:'8px',drag:'no-drag'}));
-    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button')).map(button => ({
+    assert.deepEqual(await controlsEval(`Array.from(document.querySelectorAll('button:not([hidden])')).map(button => ({
       label:button.getAttribute('aria-label'),tabIndex:button.tabIndex,
     }))`), [
       {label:'Always on top',tabIndex:0},{label:'Minimize',tabIndex:0},{label:'Maximize',tabIndex:0},{label:'Close',tabIndex:0},
@@ -305,9 +305,12 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const event={sender:contents,senderFrame:contents.mainFrame};
       const prefs=contents.getLastWebPreferences();
       const results={sandbox:prefs.sandbox,contextIsolation:prefs.contextIsolation,nodeIntegration:prefs.nodeIntegration,
-        accepted:['minimize','maximize','restore','close'].every(action=>validateControlRequest(event,[action],context)),
-        malformed:[[],['unknown'],[null],[{}],[1],['close','extra'],[['close']]].every(args=>!validateControlRequest(event,args,context)),
-        remoteRejected:!validateControlRequest({sender:win.webContents,senderFrame:win.webContents.mainFrame},['close'],context),
+        accepted:['minimize','maximize','restore','close','pin','toggle-sidebar','open-search'].every(action=>validateControlRequest(event,[action],context)),
+        malformed:[[],['unknown'],[null],[{}],[1],['close','extra'],[['close']],['open-search',{selector:'input'}],['toggle-sidebar','document.body.remove()'],['https://chatgpt.com/']].every(args=>!validateControlRequest(event,args,context)),
+        remoteRejected:['close','toggle-sidebar','open-search'].every(action=>{
+          const remote=win.contentView.children.find(child=>child!==view).webContents;
+          return !validateControlRequest({sender:remote,senderFrame:remote.mainFrame},[action],context);
+        }),
         subframeRejected:!validateControlRequest({...event,senderFrame:{url:contents.getURL()}},['close'],context),
         staleUrlRejected:!validateControlRequest(event,['close'],{...context,controlsUrl:contents.getURL()+'#untrusted'}),
         destroyedWindowRejected:!validateControlRequest(event,['close'],{...context,win:{isDestroyed:()=>true}}),
@@ -629,7 +632,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       assert.equal(surface.chatBounds.height,surface.height-40);
       assert.equal(surface.zoom,1,'Title bar stays at native scale at every page zoom');
       assert.equal(await controlsEval(`(() => {
-        const controls = [...document.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+        const controls = [...document.querySelectorAll('button:not([hidden])')].map(button => button.getBoundingClientRect());
         return getComputedStyle(document.body).backgroundImage === 'none' &&
           document.documentElement.scrollWidth === innerWidth &&
           controls.every(box => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= 40) &&
@@ -723,6 +726,54 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
     await page.locator('header').evaluate(header => header.remove());
     assert.equal(await controlsEval("window.appModeControls.action('pin')"), true, 'Window controls survive missing native page headers');
+    await page.evaluate(() => {
+      const root = document.createElement('div'); root.id = 'host-navigation-fixture';
+      root.setAttribute('data-app-shell-responsive-sidebar', ''); root.setAttribute('data-app-shell-sidebar-open', 'false');
+      root.innerHTML = '<button aria-label="Open sidebar" id="native-host-toggle">Sidebar</button><aside class="app-shell-left-panel" style="display:none;width:260px"><button aria-label="Search">Search</button></aside><main>Native navigation fixture</main>';
+      document.body.append(root);
+      const toggle = root.querySelector('#native-host-toggle');
+      toggle.onclick = () => {
+        const open = root.getAttribute('data-app-shell-sidebar-open') !== 'true';
+        root.setAttribute('data-app-shell-sidebar-open', String(open));
+        root.querySelector('aside').style.display = open ? 'block' : 'none';
+        toggle.setAttribute('aria-label', open ? 'Close sidebar' : 'Open sidebar');
+      };
+      root.querySelector('[aria-label="Search"]').onclick = () => {
+        const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        dialog.id = 'host-search-fixture'; dialog.innerHTML = '<input aria-label="Native host search">';
+        document.body.append(dialog); dialog.querySelector('input').focus();
+      };
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#host-search-fixture')?.remove(); });
+    });
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'docked');
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions').isVisible(), false);
+    assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true);
+    assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), false);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
+    for (const width of [390, 480, 680, 937, 1280]) {
+      await electron.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setContentSize(width, 800), width);
+      await page.waitForFunction(width => innerWidth === width, width);
+      assert.equal(await controlsEval(`(() => {
+        const boxes = [...document.querySelectorAll('button:not([hidden])')].map(button => button.getBoundingClientRect());
+        return boxes.every(box => box.width >= 28 && box.left >= 0 && box.right <= innerWidth) &&
+          boxes.every((box, index) => !boxes.slice(index + 1).some(other => box.left < other.right && box.right > other.left)) &&
+          document.querySelector('.titlebar-drag').getBoundingClientRect().width >= 36;
+      })()`), true);
+    }
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
+    await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-navigation'); document.querySelector('[aria-label="Search"]').remove(); });
+    await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().search);
+    assert.equal(await controlsEval("window.appModeControls.action('open-search')"), false);
+    await page.evaluate(() => document.querySelector('#native-host-toggle').remove());
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'unavailable');
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), false);
+    assert.equal(await controlsEval("window.appModeControls.action('pin')"), true);
     // Initial maximized state and separate control ownership use a second
     // fixture window in the same process, with no production profile access.
     const originalId=await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].id);

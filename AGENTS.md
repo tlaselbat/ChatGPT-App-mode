@@ -29,12 +29,15 @@ See [Architecture](docs/ARCHITECTURE.md),
   services. Playwright Chromium is a separate fixture-testing environment.
 - Preserve two separate header levels: a full-width Electron-owned 40 DIP
   title bar above the ChatGPT view and its native contextual header. The host
-  owns identity, dragging, Pin, and caption controls; page zoom never scales it.
+  owns navigation affordances, identity, dragging, Pin, and caption controls;
+  delegate navigation through the existing native adapter, never independent
+  sidebar state or recreated menus. Page zoom never scales the title bar.
 - In fullscreen hide the title bar and give ChatGPT the full content bounds.
   Do not add a CSS title-bar spacer or caption exclusion inside the page.
-- Preserve the permanent 52px activity rail and responsive native docked/drawer
-  sidebar. Native disclosures and expansion preferences remain authoritative;
-  supported fallback disclosures must remain accessible and reversible.
+- Preserve the 52px activity rail in compact state and the responsive native
+  docked/drawer sidebar; expanded navigation hides the rail without a gutter.
+  Native disclosures and expansion preferences remain authoritative; supported
+  fallback disclosures must remain accessible and reversible.
 - Preserve native links, independent sidebar scrolling, account access,
   keyboard focus, drawer dismissal, composer, and conversation rendering.
 - ChatGPT's native appearance, accent, and supported contrast tokens own colors.

@@ -110,7 +110,7 @@ function createWindow(args) {
   win.contentView.addChildView(chatView);
   const chat = chatView.webContents;
   guardNavigation(chat);
-  installWindowControls(win, chatView, { isChatGptUrl });
+  const controls = installWindowControls(win, chatView, { isChatGptUrl });
   chat.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
   chat.on('did-finish-load', async () => {
     if (!isChatGptUrl(chat.getURL())) return;
@@ -130,6 +130,7 @@ function createWindow(args) {
       await chat.insertCSS(css + '\n' + hostCss);
       await chat.executeJavaScript(script);
       await chat.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
+      await controls.pageReady();
     } catch { /* The trusted controls remain available if page selectors change. */ }
   });
   let shown = false;

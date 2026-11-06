@@ -6,6 +6,8 @@ const { randomUUID } = require('node:crypto');
 const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close', 'pin']);
+const NAVIGATION_ACTIONS = new Set(['toggle-sidebar', 'open-search']);
+const EMPTY_NAVIGATION = Object.freeze({ state: 'unavailable', toggle: false, search: false, blocked: false });
 const COMPACT_BREAKPOINT = 480;
 // Native DIP geometry is independent of the remote page's CSS zoom.
 const HEADER_HEIGHT = 40;
@@ -25,7 +27,7 @@ function trustedControlSender(event, { win, view, controlsUrl }) {
 }
 
 function validateControlRequest(event, args, context) {
-  return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string' && ACTIONS.has(args[0]) && trustedControlSender(event, context);
+  return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string' && (ACTIONS.has(args[0]) || NAVIGATION_ACTIONS.has(args[0])) && trustedControlSender(event, context);
 }
 
 // An isolated, unprivileged world observes visual styling only. Its pending
@@ -79,13 +81,16 @@ function observeVisualTheme(previous) {
       probe.style.background = 'var(--app-mode-accent, var(--app-color-icon-accent, currentColor))';
       theme.accent = getComputedStyle(probe).backgroundColor;
       probe.style.background = 'var(--app-mode-titlebar-bg, var(--color-surface-secondary, Canvas))';
-      const result = { theme, width: innerWidth, height: innerHeight, scale: devicePixelRatio };
+      let navigation = null;
+      const status = document.body.getAttribute('data-app-mode-host-navigation');
+      if (status && status.length <= 256) { try { navigation = JSON.parse(status); } catch {} }
+      const result = { theme, navigation, width: innerWidth, height: innerHeight, scale: devicePixelRatio };
       if (JSON.stringify(result) !== previous) finish(result);
     }
     // Themes are inherited through html/body/header classes and styles; head
     // changes also cover custom stylesheets. Child changes catch header rerenders.
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
-      attributeFilter: ['class', 'style', 'data-theme'] });
+      attributeFilter: ['class', 'style', 'data-theme', 'data-app-mode-host-navigation'] });
     window.addEventListener('resize', sample);
     window.visualViewport?.addEventListener('resize', sample);
     window.addEventListener('pagehide', unload, { once: true });
@@ -113,11 +118,24 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   let loaded = false;
   let theme = DEFAULT_THEME;
   let generation = 0;
+  let navigation = EMPTY_NAVIGATION;
+  let pageReady = false;
+  let navigationPending = false;
+  let ownership = null;
+  function syncOwnership() {
+    const visible = loaded && !disposed && !win.isDestroyed() && !win.isFullScreen();
+    if (!pageReady || chat.isDestroyed() || !isChatGptUrl(chat.getURL()) || ownership === visible) return;
+    ownership = visible;
+    chat.mainFrame.executeJavaScript(`(() => {
+      const c = window.__APP_MODE_CONTEXT__;
+      if (c?.hostNavigation) { c.hostNavigation.visible = ${JSON.stringify(visible)}; c.navigationController.schedule(); }
+    })()`).catch(() => {});
+  }
   const context = { win, view, controlsUrl };
   // Compact identity follows the native title bar's available width.
   const chat = chatView.webContents;
   const compact = () => win.getContentBounds().width <= COMPACT_BREAKPOINT;
-  const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), pinned: win.isAlwaysOnTop(), theme });
+  const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), pinned: win.isAlwaysOnTop(), theme, navigation: pageReady ? navigation : EMPTY_NAVIGATION });
   function publish() {
     if (!disposed && loaded && !win.isDestroyed() && !contents.isDestroyed()) contents.send(STATE_CHANNEL, state());
   }
@@ -130,10 +148,31 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
     view.setBounds({ x: 0, y: 0, width, height: bar });
     chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
     view.setVisible(!fullscreen);
+    syncOwnership();
     publish();
   }
-  contents.ipc.handle(ACTION_CHANNEL, (event, ...args) => {
+  contents.ipc.handle(ACTION_CHANNEL, async (event, ...args) => {
     if (disposed || !loaded || !validateControlRequest(event, args, context)) return false;
+    const action = args[0];
+    if (NAVIGATION_ACTIONS.has(action)) {
+      if (!pageReady || navigationPending || chat.isDestroyed() || !isChatGptUrl(chat.getURL()) ||
+          !win.contentView.children.includes(chatView)) return false;
+      const current = generation;
+      const frame = chat.mainFrame;
+      navigationPending = true;
+      try {
+        chat.focus();
+        let timer;
+        try {
+          const result = await Promise.race([
+            frame.executeJavaScript(`window.__APP_MODE_CONTEXT__?.hostNavigation?.run(${JSON.stringify(action)})`),
+            new Promise(resolve => { timer = setTimeout(() => resolve(false), 6000); }),
+          ]);
+          return !disposed && current === generation && result === true;
+        } finally { clearTimeout(timer); }
+      } catch { return false; }
+      finally { if (current === generation) navigationPending = false; }
+    }
     // Native caption buttons do not leave browser accelerators or the page's
     // pin shortcut focused in a separate UI. Focus before minimize, so this
     // never restores a window that has just been minimized.
@@ -163,6 +202,9 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   // did-finish-load. Exact current URL/main-frame checks reject any committed
   // replacement, and loaded only gates initial controls initialization.
   contents.on('did-finish-load', () => { loaded = contents.getURL() === controlsUrl; layout(); });
+  const controlsUnavailable = () => { loaded = false; syncOwnership(); };
+  contents.on('render-process-gone', controlsUnavailable);
+  contents.on('destroyed', controlsUnavailable);
   const nativeEvents = ['maximize', 'unmaximize', 'restore', 'resize', 'enter-full-screen', 'leave-full-screen', 'always-on-top-changed'];
   for (const name of nativeEvents) win.on(name, layout);
   screen.on('display-metrics-changed', layout);
@@ -176,7 +218,9 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   };
   chat.on('before-input-event', afterInput);
   chat.on('zoom-changed', afterZoom);
-  const navigating = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) generation++; };
+  const navigating = (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) { generation++; pageReady = false; navigationPending = false; ownership = null; navigation = EMPTY_NAVIGATION; publish(); }
+  };
   chat.on('did-start-navigation', navigating);
   async function observeTheme() {
     const current = ++generation;
@@ -192,6 +236,21 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
         if (value.theme && Object.keys(DEFAULT_THEME).every(key => validColor(value.theme[key]))) {
           theme = Object.fromEntries(Object.keys(DEFAULT_THEME).map(key => [key, value.theme[key]]));
         }
+        const next = value.navigation;
+        if (navigation.state === 'drawer' && next?.state === 'compact' && next.toggle === true && !next.blocked && win.isFocused() && chat.isFocused()) {
+          const needsFocus = await chat.mainFrame.executeJavaScript(`(() => {
+            const active = document.activeElement;
+            return active === document.body || !active?.getClientRects().length || !!active.closest('[inert], [aria-hidden="true"]');
+          })()`);
+          if (disposed || current !== generation || win.isDestroyed()) return;
+          if (needsFocus === true && current === generation && loaded && win.isFocused() && chat.isFocused()) {
+            contents.focus();
+            contents.executeJavaScript(`requestAnimationFrame(() => document.querySelector('[data-action="toggle-sidebar"]:not([hidden]))?.focus())`).catch(() => {});
+          }
+        }
+        navigation = next && ['compact', 'docked', 'drawer', 'unavailable'].includes(next.state) &&
+          ['toggle', 'search', 'blocked'].every(key => typeof next[key] === 'boolean') ?
+          { state: next.state, toggle: next.toggle, search: next.search, blocked: next.blocked } : EMPTY_NAVIGATION;
         previous = JSON.stringify(value);
         layout();
       } catch {
@@ -218,7 +277,21 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   });
   layout();
   contents.loadURL(controlsUrl).catch(() => {});
-  return view;
+  return { view, async pageReady() {
+    if (disposed || chat.isDestroyed() || !isChatGptUrl(chat.getURL())) return;
+    const current = generation;
+    const ready = await chat.mainFrame.executeJavaScript(`(() => {
+      const navigation = window.__APP_MODE_CONTEXT__?.hostNavigation;
+      if (!navigation) return false;
+      navigation.ready = true;
+      navigation.publish();
+      return true;
+    })()`);
+    if (disposed || current !== generation) return;
+    pageReady = ready === true;
+    syncOwnership();
+    publish();
+  } };
 }
 
 module.exports = { installWindowControls, validateControlRequest, ACTION_CHANNEL, STATE_CHANNEL };

@@ -3,13 +3,63 @@
   const c = window.__APP_MODE_CONTEXT__;
   if (!c || !c.initialized || c.reinjection) return;
   with (c) {
-  c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true } = {}) {
+  c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true, rendered = true } = {}) {
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
       !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar') &&
+      !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
       (!interactive || !element.closest('[aria-hidden="true"], [inert]')) &&
-      (element.hasAttribute('data-app-mode-sidebar-original') || element.getClientRects().length) &&
+      (!rendered || element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original') || element.getClientRects().length) &&
       label.test(accessibleName(element) || element.textContent.trim()));
   }
+
+  c.hostNavigation = {
+    ready: false,
+    visible: false,
+    busy: false,
+    searchRoot: null,
+    searchControl: null,
+    rejectedSearch: new WeakSet(),
+    rejectedToggle: null,
+    read() {
+      const model = navigationAdapter.read();
+      const toggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false });
+      const supported = compactSidebarEnabled && !!model.root && !!toggle && toggle !== this.rejectedToggle;
+      const search = navigationAdapter.find(/^Search$/i, { interactive: false, rendered: model.state !== 'compact' });
+      if (!supported || this.searchRoot !== model.root || (model.state !== 'compact' && !model.blocked)) this.searchRoot = search ? model.root : null;
+      if (search) { this.searchRoot = model.root; this.searchControl = search; }
+      return { state: supported ? model.state : 'unavailable', toggle: supported && !model.blocked && model.state !== 'drawer',
+        search: supported && this.searchRoot === model.root && !!this.searchControl && !this.rejectedSearch.has(this.searchControl) &&
+          !model.blocked && model.state !== 'drawer', blocked: model.blocked };
+    },
+    publish() {
+      const value = JSON.stringify(this.read());
+      if (document.body?.getAttribute('data-app-mode-host-navigation') !== value) document.body?.setAttribute('data-app-mode-host-navigation', value);
+    },
+    async run(action) {
+      if (!this.ready || !this.visible || this.busy || !['toggle-sidebar', 'open-search'].includes(action) ||
+          !(action === 'toggle-sidebar' ? this.read().toggle : this.read().search)) return false;
+      this.busy = true;
+      const root = navigationAdapter.read().root;
+      let succeeded = false;
+      try {
+        if (action === 'toggle-sidebar') {
+          const control = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i);
+          const toggled = await navigationAdapter.toggle();
+          if (!toggled && navigationAdapter.read().root === root) this.rejectedToggle = control;
+          return toggled;
+        }
+        if (!await navigationAdapter.activate(/^Search$/i)) return false;
+        succeeded = !!await waitForNavigation(() => navigationAdapter.read().root === root &&
+          [...document.querySelectorAll('[role="dialog"] input')].find(input =>
+            input.getClientRects().length && !input.closest('[inert], [aria-hidden="true"]') && document.activeElement === input));
+        return succeeded;
+      }
+      finally {
+        if (action === 'open-search' && !succeeded && this.searchControl) this.rejectedSearch.add(this.searchControl);
+        this.busy = false; navigationController.schedule();
+      }
+    }
+  };
 
   c.waitForNavigation = function waitForNavigation(predicate, timeoutMs = 2500) {
     return new Promise(resolve => {
@@ -269,7 +319,20 @@
           }
         }
         const header = navigation.querySelector('[class~="h-toolbar"]');
-        if (header && !header.contains(section)) own(header, 'data-app-mode-nav-header');
+        if (header && !header.contains(section)) {
+          own(header, 'data-app-mode-nav-header');
+          const model = navigationAdapter.read();
+          const hosted = hostNavigation.ready && hostNavigation.visible && model.state === 'docked' && hostNavigation.read().state !== 'unavailable';
+          const controls = [...header.querySelectorAll('button, a, [role="button"], input, select, textarea, summary, [tabindex], [contenteditable="true"]')];
+          const known = controls.length > 0 && controls.every(control =>
+            /^(open|show|hide|close) sidebar$|^Search$/i.test(accessibleName(control)) ||
+            (control.getAttribute('aria-haspopup') === 'menu' && /^ChatGPT\b/.test(control.textContent.trim())));
+          if (hosted && known) {
+            own(header, 'data-app-mode-host-nav-header');
+            for (const control of controls) if (/^Search$/i.test(accessibleName(control)) && hostNavigation.searchRoot === model.root &&
+                !hostNavigation.rejectedSearch.has(control)) own(control, 'data-app-mode-host-search-original');
+          }
+        }
         const account = [...navigation.querySelectorAll('button, [role="button"]')].find(element =>
           !element.closest('section') && /account|profile|user menu/i.test(accessibleName(element)));
         const accountRow = account?.closest('[class~="h-toolbar"]');
@@ -287,7 +350,7 @@
     schedule() {
       if (this.queued) return;
       this.queued = true;
-      requestAnimationFrame(() => { this.queued = false; ensureCompactSidebar(); ensureHomeLayout(); });
+      requestAnimationFrame(() => { this.queued = false; ensureCompactSidebar(); ensureHomeLayout(); hostNavigation.publish(); });
     },
     read: () => navigationAdapter.read(),
     apply(next) {
@@ -319,7 +382,7 @@
     const nativeToggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false }) ||
       model.drawer?.querySelector('button[aria-label="Hide sidebar" i], button[aria-label="Close sidebar" i]');
     const retainBlockedLayout = model.blocked && navigationController.root === root && navigationController.state !== null;
-    if (!compactSidebarEnabled || !root || (!nativeToggle && !retainBlockedLayout)) {
+    if (!compactSidebarEnabled || !root || (nativeToggle && nativeToggle === hostNavigation.rejectedToggle) || (!nativeToggle && !retainBlockedLayout)) {
       navigationController.reset();
       setCompatibility('sidebar', !compactSidebarEnabled ? 'disabled' : 'unsupported');
       return;
@@ -384,6 +447,7 @@
       action.toggleAttribute('data-app-mode-rail-active', selected);
     }
     own(document.body, 'data-app-mode-navigation-state', state);
+    if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().state !== 'unavailable') own(document.body, 'data-app-mode-host-navigation-owned');
     if (model.blocked) {
       own(document.body, 'data-app-mode-navigation-blocked');
       own(toggle, 'inert');

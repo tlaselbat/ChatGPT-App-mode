@@ -79,6 +79,12 @@ body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-a
   padding-inline-start: var(--app-mode-rail-width);
 }
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
+body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] #app-mode-compact-sidebar { display: none; }
+body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] [data-app-mode-host-nav-header] {
+  height: 28px; min-height: 28px; padding-inline-start: 8px;
+}
+body.faux-chatgpt-app-mode [data-app-mode-host-nav-header] :is(button, a, [role="button"]) { min-height: 28px; height: 28px; }
+body.faux-chatgpt-app-mode [data-app-mode-host-search-original] { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-account-row] { min-height: 48px; height: auto; padding-block: 6px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-primary] { gap: 4px; margin-block: 8px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-primary] :is(a, button) {

@@ -6,13 +6,27 @@
   for (const button of document.querySelectorAll('button[data-action]')) {
     button.addEventListener('click', () => {
       const action = button.dataset.action === 'maximize' && maximized ? 'restore' : button.dataset.action;
-      bridge.action(action);
+      const navigation = ['toggle-sidebar', 'open-search'].includes(action);
+      if (navigation && button.disabled) return;
+      if (navigation) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+      Promise.resolve(bridge.action(action)).catch(() => {}).finally(() => {
+        if (navigation) { button.disabled = false; button.removeAttribute('aria-busy'); }
+      });
     });
   }
 
   bridge.onState((state) => {
     if (!state || typeof state !== 'object') return;
     document.body.dataset.compact = String(Boolean(state.compact));
+    const navigation = state.navigation || {};
+    const toggle = document.querySelector('[data-action="toggle-sidebar"]');
+    toggle.hidden = !navigation.toggle;
+    document.querySelector('[data-action="open-search"]').hidden = !navigation.search;
+    const expanded = navigation.state === 'docked' || navigation.state === 'drawer';
+    toggle.setAttribute('aria-expanded', String(expanded));
+    const sidebarLabel = expanded ? 'Close sidebar' : 'Open sidebar';
+    toggle.setAttribute('aria-label', sidebarLabel);
+    toggle.title = sidebarLabel;
     document.querySelector('[data-action="pin"]')?.setAttribute('aria-pressed', String(Boolean(state.pinned)));
     maximized = Boolean(state.maximized);
     maximizeButton.dataset.restored = String(maximized);
