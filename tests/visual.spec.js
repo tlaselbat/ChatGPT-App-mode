@@ -841,7 +841,7 @@ test('contextual header stays in its workspace while a modal blocks sidebar resi
   }
 });
 
-async function navigationSectionsFixture(page, native = false, open = true) {
+async function navigationSectionsFixture(page, native = false, open = true, retained = false) {
   const body = `<!doctype html><html><head><style>
     *{box-sizing:border-box}body{margin:0;font:13px system-ui;color:#243247}html{color-scheme:light dark}
     #section-shell{display:flex;height:100vh}main{flex:1;min-width:0}header{height:40px;display:flex;align-items:center}
@@ -871,8 +871,8 @@ async function navigationSectionsFixture(page, native = false, open = true) {
     }
     function render() {
       document.querySelector('aside')?.remove();document.querySelector('#section-portal')?.remove();
-      if(!state.open)return;
-      if(innerWidth>=700){const aside=document.createElement('aside');aside.className='app-shell-left-panel';aside.innerHTML='<div style="min-width:340px;width:340px;max-width:100%;height:100%">'+navigation(false)+'</div>';document.querySelector('#section-shell').prepend(aside)}
+      if(!state.open&&!${JSON.stringify(retained)})return;
+      if(innerWidth>=700||!state.open){const aside=document.createElement('aside');aside.className='app-shell-left-panel';if(!state.open){aside.style.cssText='width:52px;flex-basis:52px';aside.inert=true;aside.setAttribute('aria-hidden','true')}aside.innerHTML='<div style="min-width:340px;width:340px;max-width:100%;height:100%">'+navigation(false)+'</div>';document.querySelector('#section-shell').prepend(aside)}
       else{const portal=document.createElement('div');portal.id='section-portal';portal.innerHTML='<div class="native-scrim codex-dialog-overlay" aria-hidden="true"></div><div id="browser-sidebar-popover" role="dialog" aria-modal="true">'+navigation(true)+'</div>';document.body.append(portal)}
     }
     function toggle(){state.open=!state.open;document.querySelector('#section-shell').setAttribute('data-app-shell-sidebar-open',String(state.open));render()}
@@ -1118,6 +1118,113 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(rail).toBeHidden();
   await page.evaluate(async () => { const c = window.__APP_MODE_CONTEXT__; if (c.navigationAdapter.read().state !== 'compact') await c.navigationAdapter.toggle(); c.hostNavigation.visible = false; c.navigationController.schedule(); });
   await expect(rail).toBeVisible();
+});
+
+test('compact flyouts delegate mounted native entries and preserve nonmodal keyboard behavior', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true);
+  const trigger = key => page.locator(`[data-app-mode-rail-section="${key}"]`);
+  const flyout = page.locator('#app-mode-navigation-flyout');
+  for (const key of ['pinned', 'projects', 'recents']) {
+    await trigger(key).click();
+    await expect(flyout).toBeVisible();
+    await expect(flyout.locator('[data-app-mode-flyout-list] button')).toHaveCount(key === 'recents' ? 8 : 3);
+    await expect(trigger(key)).toHaveAttribute('aria-expanded', 'true');
+    await expect(flyout).toHaveAttribute('role', 'region');
+    await expect(flyout.locator('button').first()).toBeFocused();
+  }
+  await page.keyboard.press('ArrowDown');
+  await expect(flyout.locator('button').nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(flyout.getByRole('button', { name: 'View all recent chats' })).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(flyout.locator('button').first()).toBeFocused();
+  expect(await flyout.locator('button').first().evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
+  await page.keyboard.press('Escape');
+  await expect(flyout).toHaveCount(0); await expect(trigger('recents')).toBeFocused();
+  await page.keyboard.press('Enter'); await expect(flyout).toBeVisible();
+  await trigger('recents').click(); await expect(flyout).toHaveCount(0);
+  await trigger('pinned').click(); await page.locator('h1').click(); await expect(flyout).toHaveCount(0);
+  for (const [key, route] of [['pinned', /\/c\/synthetic-pinned-0$/], ['projects', /\/g\/g-synthetic\/project$/], ['recents', /\/c\/synthetic-recents-0$/]]) {
+    await trigger(key).click(); await flyout.locator('button').first().click();
+    await expect(page).toHaveURL(route); await expect(flyout).toHaveCount(0);
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+  }
+  for (const key of ['pinned', 'projects', 'recents']) {
+    await trigger(key).click(); await flyout.locator(':scope > button').click();
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+    await expect(page.locator(`[data-native-section="${key}"]`)).toBeFocused();
+    await page.locator('#app-mode-compact-sidebar').click();
+  }
+});
+
+test('compact flyouts invalidate native references and recover through section fallback', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true);
+  const trigger = page.locator('[data-app-mode-rail-section="recents"]');
+  const flyout = page.locator('#app-mode-navigation-flyout');
+  await trigger.click();
+  await page.evaluate(() => document.querySelector('[data-section="recents"] a').remove());
+  await expect(flyout).toHaveCount(0); await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.evaluate(() => window.syntheticSidebarRender());
+  await expect(flyout).toHaveCount(0);
+  await trigger.click();
+  await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-external'); document.querySelector('h1').textContent = 'Synthetic route change'; });
+  await expect(flyout).toHaveCount(0);
+  await trigger.click();
+  await page.evaluate(() => { const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.textContent = 'Synthetic modal'; document.body.append(dialog); });
+  await expect(flyout).toHaveCount(0);
+  await page.evaluate(() => document.querySelector('[role="dialog"]').remove());
+  // A replaced destination between presentation and activation cannot run.
+  await trigger.click();
+  await page.evaluate(() => { const button = document.querySelector('#app-mode-navigation-flyout button'); document.querySelector('[data-section="recents"] a').setAttribute('href', '/c/synthetic-replaced'); button.click(); });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await expect(page).toHaveURL(/\/c\/synthetic-external$/);
+  await page.locator('#app-mode-compact-sidebar').click();
+  // A supported empty expanded section has an honest empty state.
+  await page.evaluate(() => document.querySelectorAll('[data-section="recents"] a').forEach(el => el.remove()));
+  await trigger.click(); await expect(flyout).toContainText('No available entries');
+  await page.keyboard.press('Escape');
+  // Unsupported destinations and missing sections retain native expansion.
+  await page.evaluate(() => { window.syntheticSidebarRender(); document.querySelectorAll('[data-section="recents"] a').forEach(el => el.href = 'https://example.invalid/'); });
+  await trigger.click(); await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await page.locator('#app-mode-compact-sidebar').click();
+  await trigger.click(); await expect(flyout).toBeVisible();
+  await page.keyboard.press('Escape');
+  // Authenticated Recents can link to conversations inside a GPT namespace.
+  await page.evaluate(() => document.querySelector('[data-section="recents"] a').setAttribute('href', '/g/g-synthetic/c/synthetic-nested'));
+  await trigger.click(); await flyout.locator('button').first().click();
+  await expect(page).toHaveURL(/\/g\/g-synthetic\/c\/synthetic-nested$/);
+  await page.evaluate(() => document.querySelector('[data-section="recents"]').remove());
+  await trigger.click(); await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await page.locator('#app-mode-compact-sidebar').click();
+  // A native action that does not navigate exposes the usable full sidebar.
+  await page.evaluate(() => document.querySelector('[data-section="recents"] a').addEventListener('click', event => { event.preventDefault(); event.stopImmediatePropagation(); }));
+  await trigger.click(); await flyout.locator('button').first().click();
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+});
+
+test('compact flyouts stay within responsive bounds without moving the workspace', async ({ page }, testInfo) => {
+  await navigationSectionsFixture(page, true, false, true);
+  for (const theme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: theme });
+    for (const width of [390, 598, 680, 1081, 1280]) {
+      await page.setViewportSize({ width, height: 420 });
+      const trigger = page.locator('[data-app-mode-rail-section="recents"]');
+      await expect(trigger).toBeVisible();
+      const before = await page.locator('main').boundingBox();
+      await trigger.click();
+      const flyout = page.locator('#app-mode-navigation-flyout');
+      await expect(flyout).toBeVisible();
+      const box = await flyout.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(52); expect(box.x + box.width).toBeLessThanOrEqual(width - 7);
+      expect(box.y).toBeGreaterThanOrEqual(7); expect(box.y + box.height).toBeLessThanOrEqual(413);
+      expect(await page.locator('main').boundingBox()).toEqual(before);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(await flyout.locator('[data-app-mode-flyout-list]').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      await flyout.screenshot({ path: testInfo.outputPath(`flyout-${theme}-${width}.png`) });
+      await page.keyboard.press('Escape');
+    }
+  }
 });
 
 test('rail section shortcuts expand native navigation to the matching section', async ({ page }) => {

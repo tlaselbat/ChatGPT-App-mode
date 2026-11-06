@@ -9,8 +9,31 @@ body.faux-chatgpt-app-mode {
   background: var(--app-mode-shell-bg);
 }
 
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout {
+  position: fixed; z-index: 45; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 4px; padding: 8px;
+  color: var(--app-mode-text); background: var(--app-mode-composer-bg);
+  border: 1px solid var(--app-mode-border); border-radius: var(--app-mode-radius-small);
+  overflow: hidden;
+}
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout > strong { padding: 6px 8px; }
+body.faux-chatgpt-app-mode [data-app-mode-flyout-list] { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px;
+  padding: 6px 8px; border: 0; border-radius: 6px; font: inherit;
+  color: inherit; background: transparent; text-align: start; cursor: pointer;
+}
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout button svg { flex-shrink: 0; }
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout > button { flex-shrink: 0; border-top: 1px solid var(--app-mode-border); }
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:hover { background: var(--app-mode-hover); }
+body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:focus-visible { outline: 2px solid var(--app-mode-accent); outline-offset: -2px; }
+@media (forced-colors: active) {
+  body.faux-chatgpt-app-mode #app-mode-navigation-flyout button:focus-visible { outline-color: Highlight; }
+}
+
 body.faux-chatgpt-app-mode,
-body.faux-chatgpt-app-mode :is([data-theme], [data-app-shell-responsive-sidebar], [data-app-mode-workspace], [data-app-mode-workspace-surface], [data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation, #app-mode-compact-sidebar, #app-mode-compact-sidebar-actions, [data-app-mode-home-card]) {
+body.faux-chatgpt-app-mode :is([data-theme], [data-app-shell-responsive-sidebar], [data-app-mode-workspace], [data-app-mode-workspace-surface], [data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation, #app-mode-compact-sidebar, #app-mode-compact-sidebar-actions, #app-mode-navigation-flyout, [data-app-mode-home-card]) {
   /* Resolve native semantic colors at recognized theme/component boundaries.
      Neutral light/dark colors are only fallbacks for unavailable site tokens. */
   --app-mode-shell-bg: var(--color-surface-secondary, var(--main-surface-secondary, light-dark(#f4f4f4, #171717)));
@@ -483,7 +506,7 @@ body.faux-chatgpt-app-mode :is([data-app-mode-docked-sidebar], #browser-sidebar-
 /* Scope native-control styling to the header that actually hosts our toolbar.
    If ChatGPT changes its header structure, conversation/menu buttons are untouched. */
 body.faux-chatgpt-app-mode,
-body.faux-chatgpt-app-mode :is([data-theme], [data-app-shell-responsive-sidebar], [data-app-mode-workspace], [data-app-mode-workspace-surface], [data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation, #app-mode-compact-sidebar, #app-mode-compact-sidebar-actions, [data-app-mode-home-card]) {
+body.faux-chatgpt-app-mode :is([data-theme], [data-app-shell-responsive-sidebar], [data-app-mode-workspace], [data-app-mode-workspace-surface], [data-app-mode-docked-sidebar], #browser-sidebar-popover, .sidebar-navigation, #app-mode-compact-sidebar, #app-mode-compact-sidebar-actions, #app-mode-navigation-flyout, [data-app-mode-home-card]) {
   /* Custom themes may recolor the app without updating ChatGPT's tokens.
      Inherit the rendered text color and let the actual app surface show through. */
   --app-mode-control-color: inherit;

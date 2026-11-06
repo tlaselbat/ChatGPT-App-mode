@@ -5,7 +5,7 @@
   with (c) {
   c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true, rendered = true } = {}) {
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
-      !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar') &&
+      !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar, #app-mode-navigation-flyout') &&
       !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
       (!interactive || !element.closest('[aria-hidden="true"], [inert]')) &&
       (!rendered || element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original') || element.getClientRects().length) &&
@@ -284,6 +284,35 @@
         return [{ section, heading, content: children[1], key, label, navigation, native: false }];
       });
     },
+    // Compact desktop panels may be inert/offscreen but retain native links.
+    // Never open a panel to populate a flyout, or read unrelated page links.
+    sectionEntries(key, model = this.read()) {
+      if (model.state !== 'compact' || model.blocked || !model.root) return null;
+      const panels = [...model.root.querySelectorAll('aside.app-shell-left-panel')]
+        .filter(panel => !panel.closest('[role="dialog"]'));
+      if (panels.length !== 1) return null;
+      const sections = this.sections(panels[0]).filter(section => section.key === key);
+      if (sections.length !== 1) return null;
+      const section = sections[0];
+      const candidates = [...section.content.querySelectorAll('a[href]')].filter(target =>
+        target.closest('section') === section.section);
+      const entries = [];
+      for (const target of candidates) {
+        let url;
+        try { url = new URL(target.getAttribute('href'), location.href); } catch { return null; }
+        const supported = url.origin === location.origin && !url.search && !url.hash &&
+          (key === 'projects' ? /^\/g\/[^/]+\/project\/?$/.test(url.pathname) : /^\/(?:g\/[^/]+\/)?c\/[^/]+\/?$/.test(url.pathname));
+        const label = (accessibleName(target) || target.textContent).trim();
+        if (!supported) continue; // Exclude project children and "See more" actions.
+        if (!label || target.hasAttribute('download') || (target.target && target.target !== '_self') ||
+            target.getAttribute('aria-disabled') === 'true' || target.querySelector('[aria-haspopup]')) return null;
+        entries.push({ target, href: target.getAttribute('href'), label });
+      }
+      // A collapsed disclosure with no links does not establish an empty list.
+      if (!entries.length && (candidates.length || section.content.querySelector('button, [role="button"]') ||
+          section.control?.getAttribute('aria-expanded') !== 'true')) return null;
+      return { section: section.section, entries: entries.slice(0, key === 'recents' ? 8 : 20) };
+    },
     async toggle() {
       const model = this.read();
       if (model.blocked) return false;
@@ -335,6 +364,87 @@
     queued: false,
     sections: new Map(),
     preferences: null,
+    flyout: null,
+    closeFlyout(restore = false) {
+      const active = this.flyout;
+      if (!active) return;
+      this.flyout = null;
+      active.element.remove();
+      active.trigger.setAttribute('aria-expanded', 'false');
+      active.trigger.removeAttribute('aria-controls');
+      if (restore && active.trigger.isConnected && this.read().state === 'compact' && !this.read().blocked &&
+          active.trigger.getClientRects().length && !active.trigger.closest('[inert], [aria-hidden="true"]')) active.trigger.focus({ preventScroll: true });
+    },
+    positionFlyout() {
+      const active = this.flyout;
+      if (!active) return;
+      const box = active.trigger.getBoundingClientRect();
+      const right = active.trigger.closest('nav').getBoundingClientRect().right;
+      const width = Math.max(0, Math.min(280, innerWidth - right - 16));
+      const height = Math.max(0, Math.min(innerHeight * .68, innerHeight - 16));
+      for (const [name, value] of Object.entries({ width: `${width}px`, maxHeight: `${height}px`,
+        left: `${right + 8}px` })) if (active.element.style[name] !== value) active.element.style[name] = value;
+      const top = Math.max(8, Math.min(box.top, innerHeight - active.element.getBoundingClientRect().height - 8));
+      if (active.element.style.top !== `${top}px`) active.element.style.top = `${top}px`;
+    },
+    reconcileFlyout(model) {
+      const active = this.flyout;
+      if (!active) return;
+      const fresh = navigationAdapter.sectionEntries(active.key, model);
+      if (!active.trigger.isConnected || active.root !== model.root || active.route !== location.href ||
+          !fresh || fresh.section !== active.section || fresh.entries.length !== active.entries.length ||
+          fresh.entries.some((entry, index) => entry.target !== active.entries[index].target ||
+            entry.href !== active.entries[index].href || entry.label !== active.entries[index].label)) {
+        this.closeFlyout(active.element.contains(document.activeElement)); return;
+      }
+      this.positionFlyout();
+    },
+    async openSection(key, trigger) {
+      if (this.flyout?.key === key) { this.closeFlyout(true); return; }
+      this.closeFlyout();
+      const model = this.read();
+      const source = navigationAdapter.sectionEntries(key, model);
+      if (!source || innerWidth - trigger.closest('nav').getBoundingClientRect().right < 160) return c.runSidebarSection(key);
+      this.cancelShortcut?.();
+      const element = document.createElement('section');
+      element.id = 'app-mode-navigation-flyout';
+      element.setAttribute('role', 'region');
+      element.setAttribute('aria-label', `${trigger.getAttribute('aria-label')} navigation`);
+      const heading = document.createElement('strong');
+      heading.textContent = trigger.getAttribute('aria-label');
+      element.append(heading);
+      const list = document.createElement('div'); list.setAttribute('data-app-mode-flyout-list', '');
+      element.append(list);
+      const active = { ...source, element, key, trigger, root: model.root, route: location.href };
+      this.flyout = active;
+      for (const entry of source.entries) {
+        const button = document.createElement('button'); button.type = 'button';
+        button.title = entry.label;
+        // Copy only App Mode's verified icon artwork, never native components.
+        button.innerHTML = (key === 'projects' ? trigger : document.querySelector('[data-app-mode-rail-section="recents"]')).innerHTML;
+        const title = document.createElement('span'); title.textContent = entry.label; button.append(title);
+        button.addEventListener('click', async () => {
+          const fresh = navigationAdapter.sectionEntries(key);
+          const valid = this.flyout === active && active.route === location.href && fresh?.section === active.section &&
+            fresh.entries.some(item => item.target === entry.target && item.href === entry.href && item.label === entry.label) && entry.target.isConnected;
+          this.closeFlyout();
+          if (!valid) { if (!this.read().blocked) await c.runSidebarSection(key); return; }
+          entry.target.click();
+          const navigated = await c.waitForNavigation(() => location.href !== active.route ||
+            location.href === new URL(entry.href, active.route).href, 1500);
+          if (!navigated && this.read().root === active.root && !this.read().blocked) await c.runSidebarSection(key);
+        });
+        list.append(button);
+      }
+      if (!source.entries.length) { const empty = document.createElement('p'); empty.textContent = 'No available entries'; list.append(empty); }
+      const all = document.createElement('button'); all.type = 'button';
+      all.textContent = `View all ${key === 'recents' ? 'recent chats' : key} →`;
+      all.addEventListener('click', () => { this.closeFlyout(); c.runSidebarSection(key); });
+      element.append(all);
+      trigger.setAttribute('aria-expanded', 'true'); trigger.setAttribute('aria-controls', element.id);
+      document.body.append(element); this.positionFlyout();
+      element.querySelector('button').focus({ preventScroll: true });
+    },
     sectionPreferences() {
       if (this.preferences) return this.preferences;
       this.preferences = {};
@@ -432,6 +542,7 @@
       this.owned = next;
     },
     reset() {
+      this.closeFlyout();
       this.cancelShortcut?.();
       this.reconcileSections(null, () => {});
       this.apply(new Map());
@@ -444,6 +555,7 @@
 
   c.ensureCompactSidebar = function ensureCompactSidebar() {
     const model = navigationController.read();
+    navigationController.reconcileFlyout(model);
     const { root, rail: nativeRail, docked: dockedPanel, state } = model;
     // Do not replace navigation when the adapter cannot identify an entry point.
     const nativeToggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false }) ||
@@ -504,6 +616,7 @@
       for (const [label, key, icon] of sections) {
         const action = document.createElement('button'); action.type = 'button';
         action.setAttribute('data-app-mode-sidebar-action', ''); action.setAttribute('data-app-mode-rail-section', key);
+        action.setAttribute('aria-expanded', 'false');
         action.setAttribute('aria-label', label); action.title = label;
         action.innerHTML = icon;
         menu.append(action);

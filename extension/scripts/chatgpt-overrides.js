@@ -8,6 +8,8 @@
   // Delegate in the capture phase: React may clone/replace the header nodes,
   // discarding per-button listeners, or handle bubbled header clicks itself.
   document.addEventListener("click", (event) => {
+    const flyout = navigationController.flyout;
+    if (flyout && !flyout.element.contains(event.target) && !event.target.closest?.('[data-app-mode-rail-section]')) navigationController.closeFlyout();
     const shareItem = event.target instanceof Element ? event.target.closest('[data-app-mode-share-menu-item]') : null;
     if (shareItem) {
       event.preventDefault();
@@ -38,7 +40,7 @@
       if (sidebarAction.getAttribute('aria-busy') !== 'true') {
         sidebarAction.setAttribute('aria-busy', 'true');
         const section = sidebarAction.getAttribute('data-app-mode-rail-section');
-        const action = section ? c.runSidebarSection(section) :
+        const action = section ? navigationController.openSection(section, sidebarAction) :
           sidebarAction.id === 'app-mode-compact-sidebar' ? navigationAdapter.toggle() : navigationAdapter.activate(label);
         action.finally(() => sidebarAction.removeAttribute('aria-busy'));
       }
@@ -53,6 +55,17 @@
   // Include the added entry in the site's menu keyboard navigation without
   // relying on a framework's private roving-focus registry.
   document.addEventListener('keydown', event => {
+    const flyout = navigationController.flyout;
+    if (flyout && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); navigationController.closeFlyout(true); return;
+    }
+    if (flyout && flyout.element.contains(event.target) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      const items = [...flyout.element.querySelectorAll('button')];
+      const current = items.indexOf(document.activeElement);
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 :
+        (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      event.preventDefault(); event.stopPropagation(); items[index].focus(); return;
+    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
     const menu = event.target instanceof Element ? event.target.closest('[role="menu"]') : null;
     if (!menu?.querySelector('[data-app-mode-share-menu-item]')) return;
@@ -82,7 +95,7 @@
   observer.observe(document.documentElement, {
     childList: true,
     attributes: true,
-    attributeFilter: ["class", "style", "hidden", "aria-hidden", "inert", "aria-expanded", "aria-label", "aria-controls", "aria-haspopup", "data-testid", "id", "data-state", "disabled", "aria-disabled", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
+    attributeFilter: ["class", "style", "hidden", "href", "aria-hidden", "inert", "aria-expanded", "aria-label", "aria-controls", "aria-haspopup", "data-testid", "id", "data-state", "disabled", "aria-disabled", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
     subtree: true
   });
 
