@@ -65,7 +65,12 @@ Assert-Rejected { Assert-AppModeBrowserStopped $config } 'Exact profile in an ex
 Remove-Item Function:\Get-CimInstance
 
 $windowArgs = @(Get-AppModeWindowArgs -Config $config)
-Assert ($windowArgs[0] -eq '--window-size=1100,700') 'Configured dimensions missing.'
+# Launch dimensions remain configured unless the current work area is smaller.
+# Hosted desktops need not be wide enough for the 1100px fixture preference.
+$launchArea = [Windows.Forms.Screen]::FromRectangle([Drawing.Rectangle]::new(80, 40, 1100, 700)).WorkingArea
+$expectedSize = '--window-size={0},{1}' -f [Math]::Min(1100, $launchArea.Width), [Math]::Min(700, $launchArea.Height)
+Assert ($windowArgs[0] -eq $expectedSize) 'Configured dimensions were not preserved within monitor limits.'
+Assert ($config.window.width -eq 1100 -and $config.window.height -eq 700) 'Monitor clamping changed saved preferences.'
 foreach ($url in @('https://chatgpt.com.evil.test/c/synthetic', 'https://chatgpt.com:444/c/synthetic', 'https://x@chatgpt.com/c/synthetic', 'https://chatgpt.com/c/synthetic?token=synthetic', "'https://chatgpt.com/c/synthetic'", 'https://chatgpt.com/g/synthetic" --user-data-dir=synthetic')) {
     Assert (-not (Test-RestorableChatGptUrl $url)) 'Unsafe restore URL accepted.'
     $unsafeConfig = [pscustomobject]@{url=$url; restoreLastUrl=$false}
@@ -74,6 +79,9 @@ foreach ($url in @('https://chatgpt.com.evil.test/c/synthetic', 'https://chatgpt
 $area = [pscustomobject]@{Left=-1920; Top=0; Width=1920; Height=1080; Right=0; Bottom=1080}
 $bounds = Get-SafeWindowBounds -Bounds ([pscustomobject]@{x=99999;y=-99999;width=3000;height=1600}) -WorkingArea $area
 Assert ($bounds.x -eq -1920 -and $bounds.y -eq 0 -and $bounds.width -eq 1920 -and $bounds.height -eq 1080) 'Window bounds were not clamped to the monitor.'
+$smallArea = [pscustomobject]@{Left=0; Top=0; Width=1024; Height=728; Right=1024; Bottom=728}
+$smallBounds = Get-SafeWindowBounds -Bounds ([pscustomobject]@{x=80;y=40;width=1100;height=700}) -WorkingArea $smallArea
+Assert ($smallBounds.x -eq 0 -and $smallBounds.y -eq 28 -and $smallBounds.width -eq 1024 -and $smallBounds.height -eq 700) 'Configured dimensions did not clamp correctly on a small work area.'
 $defaults = [pscustomobject]@{window=[pscustomobject]@{width=1280;height=900}; restoreLastUrl=$true; privacy=[pscustomobject]@{showChatTitles=$true; retentionDays=30}}
 $existing = [pscustomobject]@{window=[pscustomobject]@{width=850};restoreLastUrl=$false;custom='preserve';privacy=[pscustomobject]@{showChatTitles=$false}}
 $merged = Merge-AppModeConfig $defaults $existing
