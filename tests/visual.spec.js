@@ -1132,7 +1132,7 @@ test('responsive navigation ignores retained desktop controls after narrowing an
       <header><button aria-label="Open sidebar" id="desktop-toggle">Sidebar</button><button aria-label="Search" id="desktop-search">Search</button></header>
       <section class="group/nav-section"><div><div class="group/nav-section-title"><button class="group/section-toggle" aria-expanded="true">Recents</button></div>
       <div><a href="https://chatgpt.com/c/synthetic-retained">Synthetic retained chat</a></div></div></section>
-    </div></aside><main><header class="mobile"><button aria-label="Open sidebar" id="mobile-toggle">Sidebar</button></header><p>Synthetic workspace</p></main></div>`;
+    </div></aside><main><header class="mobile"><div style="display:inline-flex"><div style="display:inline-flex"><button aria-label="Open sidebar" id="mobile-toggle">Sidebar</button></div></div></header><p>Synthetic workspace</p></main></div>`;
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"enabled":false}' }));
   await page.goto('https://chatgpt.com/');
@@ -1155,7 +1155,13 @@ test('responsive navigation ignores retained desktop controls after narrowing an
       drawer.setAttribute('role', 'dialog'); drawer.setAttribute('aria-modal', 'true');
       drawer.innerHTML = '<button aria-label="Close sidebar">Close</button><button aria-label="Search">Search</button>';
       drawer.querySelector('[aria-label="Close sidebar"]').onclick = () => { drawer.remove(); root.setAttribute('data-app-shell-sidebar-open', 'false'); };
-      drawer.querySelector('[aria-label="Search"]').onclick = search;
+      // Native drawer controls may mount after the dialog shell.
+      drawer.querySelector('[aria-label="Search"]').remove();
+      setTimeout(() => {
+        if (!drawer.isConnected) return;
+        const button = document.createElement('button'); button.setAttribute('aria-label', 'Search'); button.textContent = 'Search';
+        button.onclick = search; drawer.append(button);
+      }, 150);
       document.body.append(drawer); drawer.querySelector('button').focus();
     };
     document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#responsive-search')?.remove(); });
@@ -1167,6 +1173,17 @@ test('responsive navigation ignores retained desktop controls after narrowing an
     await page.setViewportSize({ width, height: 700 });
     await expect(page.locator('#app-mode-navigation-flyout')).toHaveCount(0);
     await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.navigationAdapter.find(/^(open|show|hide|close) sidebar$/i)?.id)).toBe(width <= 700 ? 'mobile-toggle' : 'desktop-toggle');
+    // Discovery runs inside mount observers. It must not mutate suppression
+    // attributes and repeatedly wake those observers while controls load.
+    expect(await evaluateNavigation(() => {
+      const observer = new MutationObserver(() => {});
+      observer.observe(document.body, { attributes: true, subtree: true });
+      for (let i = 0; i < 20; i++) {
+        window.__APP_MODE_CONTEXT__.nativeSidebarControl(/^(open|show|hide|close) sidebar$/i);
+        window.__APP_MODE_CONTEXT__.nativeSidebarControl(/^Search$/i);
+      }
+      const writes = observer.takeRecords().length; observer.disconnect(); return writes;
+    })).toBe(0);
     expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width <= 700 ? 'drawer' : 'docked');
     if (width <= 700) {

@@ -91,8 +91,10 @@ anchor variants for all three sections.
 
 Desktop-to-narrow transitions can also retain a desktop panel beneath a
 native `display: none` wrapper. Connected links in that zero-width panel do
-not back a flyout. Native action discovery temporarily removes only App Mode's
-own suppression while measuring a candidate, then restores it synchronously.
+not back a flyout. Native action discovery is read-only. A control suppressed
+by App Mode uses its native wrapper's geometry; zero-width panels and hidden
+wrappers remain unavailable. Discovery never removes suppression to measure
+a target, avoiding forced layout churn and self-triggering mount observers.
 It therefore chooses the rendered mobile opener rather than a retained,
 breakpoint-hidden desktop toggle. Resizing must not turn that stale desktop
 control into a rejected capability or remove usable navigation.

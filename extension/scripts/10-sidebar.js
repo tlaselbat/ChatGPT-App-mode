@@ -5,22 +5,25 @@
   with (c) {
   c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true, rendered = true } = {}) {
     const renderedControl = element => {
-      // Our suppression must not be mistaken for native unavailability, but
-      // an owned marker is not proof that a breakpoint-hidden target works.
-      // Measure the native layout synchronously with only our hiding removed.
-      const hidden = ['data-app-mode-sidebar-original', 'data-app-mode-host-search-original']
-        .filter(attribute => element.hasAttribute(attribute)).map(attribute => [element, attribute]);
-      const rail = element.closest('[data-app-mode-native-sidebar]');
-      if (rail) hidden.push([rail, 'data-app-mode-native-sidebar']);
-      for (const [node, attribute] of hidden) node.removeAttribute(attribute);
-      try {
-        const box = element.getBoundingClientRect();
-        // Keep supported programmatic actions such as the native account
-        // trigger, which can be visibility:hidden while retaining geometry.
-        return box.width > 0 && box.height > 0;
-      } finally {
-        for (const [node, attribute] of hidden) node.setAttribute(attribute, '');
+      // Discovery must be read-only: changing suppression attributes here
+      // forces layout and can retrigger observers waiting for native controls.
+      // An owned display:none control uses its native wrapper's geometry;
+      // a breakpoint-hidden wrapper or zero-width panel stays unavailable.
+      const panel = element.closest('aside.app-shell-left-panel');
+      if (panel && panel.getBoundingClientRect().width <= 0) return false;
+      if (element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original')) {
+        // Suppression can collapse several shrink-wrapped ancestors too.
+        // Walk to a real box without crossing a native display:none branch.
+        for (let source = element.parentElement; source; source = source.parentElement) {
+          if (getComputedStyle(source).display === 'none' && !source.hasAttribute('data-app-mode-native-sidebar')) return false;
+          const box = source.getBoundingClientRect();
+          if (box.width > 0 && box.height > 0) return true;
+        }
+        return false;
       }
+      const box = element.getBoundingClientRect();
+      // Native account forwarding can use a visibility:hidden trigger.
+      return !!box && box.width > 0 && box.height > 0;
     };
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
       !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar, #app-mode-navigation-flyout') &&
