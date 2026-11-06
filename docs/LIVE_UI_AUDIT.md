@@ -1,9 +1,9 @@
 # Verification evidence and live coverage limits
 
-## Accepted baseline and evidence scope
+## Historical baseline and evidence scope
 
-The accepted implementation is the unified-header and Codex-inspired sidebar
-baseline at `33c496d`. The preceding implementation task reported 34/34 visual,
+The historical unified-header and Codex-inspired sidebar
+baseline was at `33c496d`. The preceding implementation task reported 34/34 visual,
 5/5 runtime, and 7/7 native-host checks passing. These are prior working-tree
 results associated with that implementation, not new test runs or a clean-checkout
 certification performed during documentation reconciliation.

@@ -269,11 +269,10 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('location.href'),originalControlsUrl,'Trusted controls must block remote navigation');
     assert.equal(await controlsEval("window.appModeControls.action('restore')"),true,'Blocked navigation must leave trusted controls functional');
     assert.equal(await page.evaluate(() => navigator.windowControlsOverlay?.visible || false), false);
-    // The unified bar: the site's subheader is the drag surface; interactive
-    // descendants opt out, and the host strip still drags on its left edge.
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
+    // Only trusted application chrome owns window dragging.
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'none');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
-    assert.equal(await page.locator('[aria-label="Share"]').evaluate(el => getComputedStyle(el).webkitAppRegion), 'no-drag');
+    assert.equal(await page.locator('[aria-label="Share"]').evaluate(el => getComputedStyle(el).webkitAppRegion), 'none');
     const geometry = await page.evaluate(() => {
       const pin = document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect();
       return { right: pin.right, safeRight: innerWidth, y: pin.y };
@@ -499,7 +498,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const rects = [...document.querySelectorAll('header button')].map(el => el.getBoundingClientRect());
         return {
           height: header.height,
-          bounded: rects.every(r => r.left >= header.left && r.right <= innerWidth - 184 && r.top >= header.top - 1 && r.bottom <= header.bottom + 1),
+          bounded: rects.every(r => r.left >= header.left && r.right <= innerWidth && r.top >= header.top - 1 && r.bottom <= header.bottom + 1),
           overlaps: rects.some((a, i) => rects.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
           overflow: document.documentElement.scrollWidth > innerWidth,
         };
@@ -533,8 +532,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.evaluate(html => { document.querySelector('header').innerHTML = html; }, fs.readFileSync(path.join(__dirname, 'fixtures/fixed-layer-header.html'),'utf8'));
     await page.waitForSelector('.real-mode-grid[data-app-mode-header-tabs]');
     const zoomSamples = [];
-    for (const zoom of [1,1.25,1.5]) for (const width of [390,448,560,680,690,1024,1280]) {
-      if(width/zoom<390)continue; // Minimum supported logical viewport; zoom does not expand the window.
+    for (const zoom of [1,1.25,1.5]) for (const width of [390,480,680,1280]) {
       const expectedWidth = await electron.evaluate(({BrowserWindow},{zoom,width}) => {
         const win=BrowserWindow.getAllWindows()[0]; win.setBounds({width,height:700});
         win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents.setZoomFactor(zoom);
@@ -551,7 +549,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
           centerErrorCss:tabs.x+tabs.width/2-innerWidth/2,controlsCss:controls.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),
           centering:document.querySelector('header').getAttribute('data-app-mode-header-centering'),
           groups:document.querySelectorAll('[data-app-mode-header-tabs]').length,
-          bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth-184 && r.top>=0 && r.bottom<=header.bottom+1),
+          bounded:controls.every(r=>r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=header.bottom+1),
           overlap:controls.some((a,i)=>controls.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           minimum:Math.min(...controls.map(r=>r.width))};
       });
@@ -565,16 +563,42 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const chat=win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com'));
         return {bounds:view.getBounds(),chatBounds:chat.getBounds(),zoom:view.webContents.getZoomFactor(),width:win.getContentBounds().width,height:win.getContentBounds().height};
       });
-      // The app-owned caption strip is right-anchored over the page's own
-      // 40px subheader; the remote page view fills the whole window beneath it.
-      assert.ok(Math.abs(surface.bounds.width-Math.round(184*zoom))<=2, `strip width: ${JSON.stringify(surface)}`);
-      assert.equal(surface.bounds.x,surface.width-surface.bounds.width);
-      assert.ok(Math.abs(surface.bounds.height-40*zoom)<=1);
-      assert.equal(surface.chatBounds.y,0);
-      assert.equal(surface.chatBounds.height,surface.height);
-      assert.equal(surface.zoom,zoom,'Controls and header must share a physical centerline at page zoom');
+      assert.equal(surface.bounds.width,surface.width);
+      assert.equal(surface.bounds.x,0);
+      assert.equal(surface.bounds.height,40);
+      assert.equal(surface.chatBounds.y,40);
+      assert.equal(surface.chatBounds.height,surface.height-40);
+      assert.equal(surface.zoom,1,'Title bar stays at native scale at every page zoom');
+      assert.equal(await controlsEval(`(() => {
+        const controls = [...document.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+        return getComputedStyle(document.body).backgroundImage === 'none' &&
+          document.documentElement.scrollWidth === innerWidth &&
+          controls.every(box => box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= 40) &&
+          controls.every((box, index) => !controls.slice(index + 1).some(other => box.right > other.left && box.left < other.right));
+      })()`), true, 'Flat title bar keeps every native action accessible at all page zoom levels');
     }
     fs.writeFileSync(path.join(scratch,'header-zoom-geometry.json'),JSON.stringify(zoomSamples,null,2));
+    // Fullscreen releases the complete content rectangle, then restores both views.
+    for (const fullscreen of [true, false]) {
+      await electron.evaluate(({BrowserWindow}, value) => BrowserWindow.getAllWindows()[0].setFullScreen(value), fullscreen);
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const geometry = await electron.evaluate(({BrowserWindow}) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          const controls = win.contentView.children.find(view => view.webContents?.getURL().endsWith('/controls.html'));
+          const chat = win.contentView.children.find(view => view.webContents?.getURL().startsWith('https://chatgpt.com'));
+          return { fullscreen: win.isFullScreen(), visible: controls.getVisible(), bar: controls.getBounds(), chat: chat.getBounds(), content: win.getContentBounds() };
+        });
+        if (geometry.fullscreen === fullscreen && geometry.chat.y === (fullscreen ? 0 : 40)) {
+          assert.equal(geometry.visible, !fullscreen);
+          assert.equal(geometry.bar.width, geometry.content.width);
+          assert.equal(geometry.chat.height, geometry.content.height - (fullscreen ? 0 : 40));
+          break;
+        }
+        assert.ok(attempt < 49, 'Fullscreen view bounds did not settle');
+        await page.waitForTimeout(100);
+      }
+    }
+
     // Conversation headers expose five page actions plus three host actions.
     // Exercise that denser variant separately from the home mode-switch header.
     await page.evaluate(html=>{document.querySelector('header').innerHTML=html;},fs.readFileSync(path.join(__dirname,'fixtures/full-header.html'),'utf8'));
@@ -591,8 +615,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       window.syntheticHeaderActions=[];
       for(const button of document.querySelectorAll('.fixture-leading button,.fixture-actions button'))button.addEventListener('click',()=>window.syntheticHeaderActions.push(button.getAttribute('aria-label')));
     });
-    for(const zoom of [1,1.25,1.5])for(const width of [390,448,560,690,1024,1280]) {
-      if(width/zoom<390)continue;
+    for(const zoom of [1,1.25,1.5])for(const width of [390,480,680,1280]) {
       await electron.evaluate(({BrowserWindow},{zoom,width})=>{
         const win=BrowserWindow.getAllWindows()[0];win.setBounds({width,height:700});
         win.contentView.children.find(child=>child.webContents?.getURL().startsWith('https://chatgpt.com')).webContents.setZoomFactor(zoom);
@@ -613,10 +636,10 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         const titleText=header.querySelector('.fixture-title .title')?.getBoundingClientRect();
         const siteRects=buttons.filter(button=>button.id!=='chatgpt-app-mode-pin-toggle').map(button=>button.getBoundingClientRect());
         return {count:buttons.length,height:bounds.height,aligned:rects.every(rect=>Math.abs(rect.y+rect.height/2-20)<=1),
-          bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth-184&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
+          bounded:rects.every(rect=>rect.left>=0&&rect.right<=innerWidth&&rect.top>=bounds.top-1&&rect.bottom<=bounds.bottom+1),
           overlap:rects.some((a,index)=>rects.slice(index+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
           order:siteRects.every(rect=>rect.right<=(pin?.left??innerWidth)+6),
-          actionsRight:actions?actions.right>=bounds.right-188-30:true,
+          actionsRight:actions?actions.right>=bounds.right-30:true,
           spacersGone:![...header.querySelectorAll('.fixture-sidebar-spacer,.fixture-title-offset')].some(element=>element.getClientRects().length),
           titleBetween:!!titleBox&&!!leadingBox&&!!actionsBox&&titleBox.left>=leadingBox.right-1&&titleBox.right<=actionsBox.left+1,
           titleReadable:!!titleText&&titleText.width>8&&titleText.right<=innerWidth+1,
@@ -632,13 +655,15 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         fs.copyFileSync(path.join(scratch,'native-header-desktop.png'),path.join(scratch,`header-full-${width}.png`));
       }
     }
-    assert.equal(await page.evaluate(()=>window.syntheticHeaderActions.length),52);
+    assert.equal(await page.evaluate(()=>window.syntheticHeaderActions.length),48);
     await chatEval('chat.setZoomFactor(1)');
     await page.evaluate(() => { const h = document.querySelector('header'); h.replaceWith(h.cloneNode(true)); history.pushState({}, '', '/c/synthetic-rerender'); });
     await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     assert.equal(await page.locator('#chatgpt-app-mode-pin-toggle').count(), 1);
-    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'drag');
+    assert.equal(await page.locator('header').evaluate(el => getComputedStyle(el).webkitAppRegion), 'none');
     assert.equal(await controlsEval('getComputedStyle(document.querySelector(".titlebar")).webkitAppRegion'), 'drag');
+    await page.locator('header').evaluate(header => header.remove());
+    assert.equal(await controlsEval("window.appModeControls.action('pin')"), true, 'Window controls survive missing native page headers');
     // Initial maximized state and separate control ownership use a second
     // fixture window in the same process, with no production profile access.
     const originalId=await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].id);

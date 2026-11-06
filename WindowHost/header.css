@@ -1,33 +1,6 @@
-/* Normalize the site's header in place into the shared 40px caption row.
-   Original ChatGPT nodes retain their handlers; the trusted caption view
-   overlays the reserved right-hand band of this same row. */
-/* The unified Codex bar: this row IS the window chrome, so it supplies the
-   drag surface; interactive descendants opt out. The right padding reserves
-   the host caption strip so actions/Pin never slide under it. */
+/* Contextual-header compatibility only. Native window chrome is a separate view.
+   Keep the hostless page Pin mounted, but show only the trusted host Pin here. */
 body.faux-chatgpt-app-mode { --app-mode-page-pin-display: none; }
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
-  -webkit-app-region: drag;
-  padding-right: 188px !important;
-}
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a, input, textarea, select, [role="button"], [role="tab"], [role="radio"], [contenteditable="true"]),
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolbar,
-body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] {
-  -webkit-app-region: no-drag;
-}
-/* The host caption strip overlays the right side of this row. Electron's
-   native hit test can resolve HTCAPTION from this view's drag region even
-   beneath the strip's own no-drag buttons, so carve the reserved band out
-   of the page's drag surface explicitly. */
-body.faux-chatgpt-app-mode [data-app-mode-header-layout]::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 188px;
-  height: 100%;
-  pointer-events: none;
-  -webkit-app-region: no-drag;
-}
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   pointer-events: auto;
   box-sizing: border-box;
@@ -41,10 +14,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: 5px 188px 5px 12px !important;
-  width: calc(100% + var(--app-mode-header-bleed, 0px)) !important;
-  margin-left: calc(-1 * var(--app-mode-header-bleed, 0px)) !important;
-  padding-left: max(12px, var(--app-mode-header-bleed, 0px)) !important;
+  padding: 5px 12px !important;
 }
 
 /* Known sidebar controls sort before sibling new-chat controls. These optional
@@ -75,13 +45,6 @@ body.faux-chatgpt-app-mode [data-app-mode-header-tab-path] {
 body.faux-chatgpt-app-mode [data-app-mode-header-tab-path]:not([data-app-mode-header-tabs]) { padding: 0 !important; }
 body.faux-chatgpt-app-mode [data-app-mode-header-mode-branch] { order: 1; }
 body.faux-chatgpt-app-mode [data-app-mode-header-spacer] { display: none !important; }
-/* Site top rows render taller than the 40px action row; cap them so their
-   buttons share the same centerline as the window controls above. */
-body.faux-chatgpt-app-mode [data-app-mode-header-strip] {
-  height: 40px !important;
-  max-height: 40px !important;
-  box-sizing: border-box;
-}
 /* Rows nested inside the managed bar must fit its content area instead of
    the full strip height, or their controls sit below the shared center.
    :has() matches re-rendered nodes before paint, unlike attribute tagging. */
@@ -224,9 +187,9 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-toolb
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-control-branch="actions"] ~ .chatgpt-app-mode-toolbar {
   margin-inline-start: 0;
 }
-/* When centering would meet the caption strip, use the full shared row.
+/* When centering would meet contextual actions, use the remaining row.
    Empty sidebar offsets and decorative identity must not consume the scarce
-   space needed by native controls. Keep the 188px caption exclusion intact. */
+   space needed by native controls. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] {
   padding-left: 4px !important;
   gap: 2px;

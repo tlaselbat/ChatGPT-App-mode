@@ -49,6 +49,11 @@
         own(hero, 'data-app-mode-home-hero');
         own(title, 'data-app-mode-home-title');
         own(composer, 'data-app-mode-home-composer');
+        // Responsive site wrappers can shrink the home region to its content.
+        // Only the validated welcome/composer path may fill the workspace.
+        for (let node = layout.parentElement; node && node !== form.closest('main'); node = node.parentElement) {
+          if (getComputedStyle(node).display !== 'contents') own(node, 'data-app-mode-home-layout-path');
+        }
         for (let node = layout.parentElement; node && node !== form.closest('main'); node = node.parentElement) {
           if (getComputedStyle(node).scrollbarGutter !== 'auto') { own(node, 'data-app-mode-home-scroll'); break; }
         }

@@ -16,13 +16,15 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
   height: 40px;
   -webkit-app-region: drag;
 }
-/* Small drag region left of the caption buttons; the page's own subheader
-   provides the main drag surface in the unified bar. */
-.titlebar-drag { flex: 1 1 auto; }
-/* The brand name lives in the page's own row now — the strip is captions only. */
+/* Identity and free title-bar space provide the native drag surface. */
+.titlebar-drag { flex: 1 1 auto; min-width: 0; }
 .brand {
-  display: none;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding-inline: 12px; color: var(--app-mode-control-color);
+  font: 600 12px/1.2 "Segoe UI", sans-serif;
 }
+.brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-compact="true"] .brand-mark { display: none; }
 .brand-mark {
   display: grid;
   place-items: center;
@@ -35,6 +37,7 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
 }
 .controls {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   height: 40px;

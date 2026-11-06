@@ -49,7 +49,7 @@ const test = base.extend({
 
 async function captionStripFixture(page) {
   const caption = await page.context().newPage();
-  await caption.setViewportSize({ width: 184, height: 40 });
+  await caption.setViewportSize({ width: 390, height: 40 });
   await caption.addInitScript(() => {
     let publish;
     const state = { pinned: false, compact: false, maximized: false };
@@ -668,7 +668,7 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   await expect(rail).toHaveCount(0);
 });
 
-test('header stays viewport-wide while a modal blocks sidebar resizing', async ({ page }) => {
+test('contextual header stays in its workspace while a modal blocks sidebar resizing', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.setContent(fixture);
   await page.evaluate(() => document.body.classList.add('faux-chatgpt-app-mode'));
@@ -683,7 +683,7 @@ test('header stays viewport-wide while a modal blocks sidebar resizing', async (
   });
   for (const width of [1280, 680, 1024]) {
     await page.setViewportSize({ width, height: 800 });
-    await expect.poll(() => page.locator('header').evaluate(element => Math.abs(element.getBoundingClientRect().left))).toBeLessThanOrEqual(1);
+    await expect.poll(() => page.locator('header').evaluate(element => Math.abs(element.getBoundingClientRect().left - 340))).toBeLessThanOrEqual(1);
     await expect.poll(() => page.locator('header').evaluate(element => Math.abs(element.getBoundingClientRect().right - innerWidth))).toBeLessThanOrEqual(1);
   }
 });
@@ -973,6 +973,26 @@ test('home composition stays stable across the mobile breakpoint and preserves t
   await page.locator('.suggestions').evaluate(element => { element.innerHTML = '<button type="button">Unknown native action</button>'; });
   await expect(disclosure).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Unknown native action' })).toBeVisible();
+  // Newer native wrappers leave suggestions beside the composer through
+  // display:contents. Keep them above the dock without moving React nodes.
+  await page.evaluate(() => {
+    const layout = document.querySelector('.layout');
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'height:50%;max-height:500px';
+    layout.before(wrapper); wrapper.append(layout);
+    const suggestions = document.createElement('section');
+    suggestions.id = 'native-trailing-suggestions';
+    suggestions.style.cssText = 'height:92px;flex:0 0 92px';
+    suggestions.textContent = 'Synthetic native suggestions';
+    document.querySelector('.contents').append(suggestions);
+  });
+  await expect(page.locator('[data-app-mode-home-layout-path]')).toHaveCount(1);
+  const dock = await page.locator('[data-app-mode-home-composer]').boundingBox();
+  const suggestions = await page.locator('#native-trailing-suggestions').boundingBox();
+  expect(suggestions.y + suggestions.height).toBeLessThanOrEqual(dock.y);
+  expect(dock.y + dock.height).toBeGreaterThanOrEqual(850 - 32);
+  await expect(editor).toHaveText('Synthetic unsent draft');
+  await page.locator('#native-trailing-suggestions').evaluate(element => element.remove());
   await page.evaluate(() => { history.pushState({}, '', '/c/synthetic-home-exit'); document.querySelector('h1').remove(); });
   await expect(page.locator('[data-app-mode-home-layout], [data-app-mode-home-form], [data-app-mode-home-composer]')).toHaveCount(0);
   await expect(editor).toHaveText('Synthetic unsent draft');
@@ -1062,7 +1082,7 @@ test('header layout detects the current fixed-layer mode switch with nested tabs
   await expect(page.locator('#other-grid')).not.toHaveAttribute('data-app-mode-header-tabs', '');
 });
 
-test('header layout ignores overlays, reconciles changed branches, and follows scrolling strips', async ({ page }) => {
+test('header compatibility ignores unrelated overlays and scrolling strips and reconciles changed branches', async ({ page }) => {
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
   await page.goto('https://chatgpt.com/c/header-layout-fixture');
@@ -1118,7 +1138,8 @@ test('header layout ignores overlays, reconciles changed branches, and follows s
     document.body.append(strip);
     window.scrollTo(0, 300);
   });
-  await expect(page.locator('#scroll-strip')).toHaveAttribute('data-app-mode-header-strip', '');
+  await expect(page.locator('#scroll-strip')).not.toHaveAttribute('data-app-mode-header-strip', '');
+  await expect(page.locator('#scroll-strip')).toHaveCSS('height', '48px');
 
   await page.evaluate(() => {
     const tabs = document.querySelector('#replacement-mode-branch [role="tablist"]');
@@ -1352,7 +1373,7 @@ test('standardized action row normalizes the site header in place without moving
   // the action group is right-aligned; Pin belongs to the separate host strip.
   expect(geometry.sidebar.left).toBeLessThanOrEqual(geometry.newChat.left);
   expect(geometry.options.right).toBeLessThanOrEqual(geometry.header.right);
-  expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 188 - 24);
+  expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 24);
   expect(geometry.pin.width).toBe(0);
   expect(geometry.pin.height).toBe(0);
   // The layout contract never moves nodes out of the site's own containers:
@@ -1693,13 +1714,13 @@ test('current theme tokens keep conversation surfaces coherent and native thread
         expect(Math.abs(title.y + title.height / 2 - row.y - row.height / 2)).toBeLessThanOrEqual(1);
         await link.focus(); await expect(link).toHaveCSS('outline-style', 'solid');
       }
-      if (width > 480) expect(await page.locator('header').evaluate(e => getComputedStyle(e, '::before').left)).toBe('64px');
+      expect(await page.locator('header').evaluate(e => getComputedStyle(e, '::before').content)).toBe('none');
       await page.screenshot({ path: testInfo.outputPath(`conversation-${theme}-${width}-${expanded ? 'expanded' : 'compact'}.png`) });
     }
   }
 });
 
-test('workspace radius follows the visible surface below the unified header', async ({ page }, testInfo) => {
+test('workspace radius follows the visible surface below the contextual header', async ({ page }, testInfo) => {
   await page.setContent(`<style>
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%}
     html{color-scheme:light;--main-surface-primary:#fafafa;--sidebar-surface-primary:#203040}

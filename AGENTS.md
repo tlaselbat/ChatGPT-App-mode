@@ -27,12 +27,11 @@ See [Architecture](docs/ARCHITECTURE.md),
 - Electron is the only supported desktop host. PowerShell and shared tools
   handle launching, configuration, tray/taskbar integration, and loopback
   services. Playwright Chromium is a separate fixture-testing environment.
-- Preserve the unified 40 CSS-pixel header: Electron owns the caption controls
-  and visible Pin; ChatGPT owns Chat/Work and contextual actions. The trusted
-  caption strip overlays the page row, not a second stacked header.
-- Preserve the caption-band no-drag exclusion and interactive-control
-  exclusions. Follow the documented strip/exclusion geometry; do not add
-  speculative workspace top spacers or change hit testing without verification.
+- Preserve two separate header levels: a full-width Electron-owned 40 DIP
+  title bar above the ChatGPT view and its native contextual header. The host
+  owns identity, dragging, Pin, and caption controls; page zoom never scales it.
+- In fullscreen hide the title bar and give ChatGPT the full content bounds.
+  Do not add a CSS title-bar spacer or caption exclusion inside the page.
 - Preserve the permanent 52px activity rail and responsive native docked/drawer
   sidebar. Native disclosures and expansion preferences remain authoritative;
   supported fallback disclosures must remain accessible and reversible.

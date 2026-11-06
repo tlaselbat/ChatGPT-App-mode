@@ -78,7 +78,7 @@ trigger; it does not override focus placed on another usable control or modal.
 This uses a bounded mount observer and the existing shortcut cancellation
 lifecycle, not polling. Unrecognized account controls remain untouched.
 
-The sidebar change does not alter `WindowHost/`, the unified title bar, caption
+The sidebar change does not alter `WindowHost/`, the application title bar, caption
 hit testing, Pin ownership, composer, homepage activity, or native chat rendering.
 Visual tests distinguish native authoritative state from adapter-owned fallback
 state and cover replacement, keyboard activation, navigation, account forwarding,
@@ -88,8 +88,8 @@ from actual native browser zoom verification.
 
 ## Ownership and scope
 
-The [unified header architecture](ARCHITECTURE.md#native-header-host)
-separates the trusted caption strip from native page actions within one row.
+The [two-level header architecture](ARCHITECTURE.md#native-header-host)
+places trusted application chrome above the page view and its native contextual actions.
 The navigation controller in the shared page override owns the permanent
 activity rail and the geometry applied to recognized native sidebar containers. A home-only layout controller owns the welcome/composer wrapper
 geometry on the blank home route. ChatGPT retains its conversation layout,
@@ -116,7 +116,7 @@ frontend, not a public API. Unknown markup must restore native navigation.
    exactly once; retain the native desktop column's layout space when present.
    Keep the activity rail mounted in all states; suppress duplicate native
    controls only when a working replacement exists. Keep native scrolling intact.
-4. Share the unified header height, rail width, and responsive sizing through
+4. Share the contextual header height, rail width, and responsive sizing through
    CSS variables. The docked panel and native drawer begin below the header.
    Apply the flag-keyed docked width only while open; preserve native drawer sizing.
 5. Normalize toggle labels, expanded state, focus styling, and duplicate

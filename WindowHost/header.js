@@ -20,15 +20,9 @@
     const remembered = legacyModeButtons.get(element);
     return remembered?.length === 2 && buttons[0] === remembered[0] && buttons[1] === remembered[1] && element.querySelectorAll('button').length === 2;
   };
-  function updateHeaderBleed(header) {
-    const bleed = Math.max(0, header.getBoundingClientRect().left - parseFloat(getComputedStyle(header).marginLeft || '0'));
-    const value = `${bleed}px`;
-    if (header.style.getPropertyValue('--app-mode-header-bleed') !== value) header.style.setProperty('--app-mode-header-bleed', value);
-  }
   function layout() {
     queued = false;
-    // The trusted caption strip overlays the right side of the shared row;
-    // this pass normalizes the site's own controls in the remaining space.
+    // Compatibility for recognized native contextual headers only.
     // The toolbar fallback mounts outside any header;
     // never treat its fallback host as the row.
     const toolbarHost = document.querySelector('.chatgpt-app-mode-toolbar')?.parentElement;
@@ -42,7 +36,6 @@
       // beneath its viewport-wide scrim.
       const retainedHeader = [...marked.keys()].find(element => element.hasAttribute('data-app-mode-header-layout') && element.isConnected);
       if (retainedHeader && retainedHeader.style.getPropertyValue('--app-mode-switch-offset') !== '0px') retainedHeader.style.setProperty('--app-mode-switch-offset', '0px');
-      if (retainedHeader) updateHeaderBleed(retainedHeader);
       return;
     }
     const next = new Map();
@@ -112,20 +105,6 @@
       for (const stale of header.querySelectorAll('[data-app-mode-header-tabs]')) {
         if (stale !== tabs) stale.removeAttribute('data-app-mode-header-tabs');
       }
-      // The site's own top rows (sidebar strip, conversation header) render
-      // slightly taller than the 48px header strip, drifting their buttons
-      // off the shared centerline. Cap every control-bearing row in the band.
-      const probes = new Set();
-      for (let x = 24; x < innerWidth; x += 96) for (const element of document.elementsFromPoint(x, 2)) probes.add(element);
-      for (const element of probes) {
-        const box = element.getBoundingClientRect();
-        if (box.top > 1 || box.height < 40 || box.height > 64) continue;
-        if (!visible(element) || !element.querySelector('button, a, [role="button"]')) continue;
-        mark(element, 'data-app-mode-header-strip');
-      }
-      // Nested rows inside the managed bar are handled purely in CSS via
-      // :has() so re-renders stay capped; per-node tagging leaves a frame
-      // where the replaced node renders at the site's taller height.
       if (tabs) {
         mark(tabs, 'data-app-mode-header-tabs');
         for (let element = tabs; element && element !== header; element = element.parentElement) {
@@ -207,11 +186,6 @@
       }
     }
     marked = next;
-    if (header) {
-      // Extend the managed row over the navigation column without moving site
-      // controls. Subtract our existing margin so repeated passes stay stable.
-      updateHeaderBleed(header);
-    }
     if (header && visible(header)) {
       const tabs = header.querySelector('[data-app-mode-header-tabs]');
       if (tabs) {
@@ -230,9 +204,7 @@
         const left = center - box.width / 2;
         const right = left + box.width;
         const controls = [...header.querySelectorAll('button, a[href], [role="button"]')].filter(element => !tabs.contains(element) && visible(element));
-        // The trusted caption view overlays the page; it cannot appear in
-        // querySelectorAll. Reserve its band when deciding whether centering fits.
-        const availableRight = Math.min(innerWidth - 188, header.getBoundingClientRect().right - 188);
+        const availableRight = header.getBoundingClientRect().right;
         const fits = left >= regionLeft && right <= availableRight && controls.every(element => {
           const bounds = element.getBoundingClientRect();
           return bounds.right <= left - 6 || bounds.left >= right + 6;

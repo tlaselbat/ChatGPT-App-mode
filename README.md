@@ -1,6 +1,6 @@
 # ChatGPT App Mode
 
-Windows launcher for ChatGPT built on a pinned Electron window host. A unified 40px header combines ChatGPT's native Chat/Work and contextual controls with the host-owned Pin and caption strip, preserving native window dragging and resizing. See [header ownership and hit testing](docs/ARCHITECTURE.md#native-header-host) for the isolated-view layout and [known limitations](docs/KNOWN_LIMITATIONS.md) for Windows Snap coverage.
+Windows launcher for ChatGPT built on a pinned Electron window host. A dedicated 40 DIP Electron title bar owns identity, dragging, Pin, and caption controls above ChatGPT's native contextual header. Page zoom affects only ChatGPT content. See [header ownership and view bounds](docs/ARCHITECTURE.md#native-header-host) for the isolated-view layout and [known limitations](docs/KNOWN_LIMITATIONS.md) for Windows Snap coverage.
 
 ## Install and configure
 
@@ -24,7 +24,7 @@ The tray menu keeps **Open ChatGPT**, **New chat**, and **Open pinned mini windo
 
 Privacy settings independently control last-page restore, the three-entry recent list, conversation titles, and retention (30 days by default). **Clear saved history** removes local session metadata and legacy URL-bearing logs; it does not delete ChatGPT conversations or the host profile. Open pages may save history again after navigation. Changes to recording/title preferences apply to the local metadata immediately; default dimensions require relaunching App Mode.
 
-See [Pin ownership and fallback](docs/ARCHITECTURE.md#pin-ownership-and-fallback) for the host and standalone presentations and their verification. **Alt+Shift+P** remains the page shortcut in the focused App Mode window. If the page fallback or shortcut cannot reach the loopback control service, use **Restart control server** in the tray/settings window; that recovery path is distinct from the caption strip's validated host action channel.
+See [Pin ownership and fallback](docs/ARCHITECTURE.md#pin-ownership-and-fallback) for the host and standalone presentations and their verification. **Alt+Shift+P** remains the page shortcut in the focused App Mode window. If the page fallback or shortcut cannot reach the loopback control service, use **Restart control server** in the tray/settings window; that recovery path is distinct from the title bar's validated host action channel.
 
 After updating override source, fully close and reopen App Mode so the host re-injects it; restarting the control server alone does not reload injected content.
 

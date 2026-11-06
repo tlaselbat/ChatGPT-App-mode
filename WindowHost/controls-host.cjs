@@ -1,4 +1,4 @@
-const { BrowserWindow, WebContentsView, session } = require('electron');
+const { BrowserWindow, WebContentsView, session, screen } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
@@ -7,10 +7,8 @@ const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close', 'pin']);
 const COMPACT_BREAKPOINT = 480;
-// Unified Codex-style bar: the page's own subheader supplies the 40px row;
-// this view is only the right-anchored caption strip overlaying it.
+// Native DIP geometry is independent of the remote page's CSS zoom.
 const HEADER_HEIGHT = 40;
-const CAPTION_STRIP_WIDTH = 184;
 const DEFAULT_THEME = Object.freeze({ color: 'rgb(221, 221, 221)', border: 'rgba(221, 221, 221, 0.24)',
   background: '#1c1f26', hover: '#2a2f3a', hoverBorder: '#4f5d7a', pressed: '#3a4050' });
 
@@ -114,24 +112,21 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   let theme = DEFAULT_THEME;
   let generation = 0;
   const context = { win, view, controlsUrl };
-  // Match the remote page's CSS breakpoint rather than the title bar view's
-  // own viewport. Both surfaces share the page's zoom factor.
+  // Compact identity follows the native title bar's available width.
   const chat = chatView.webContents;
-  const compact = () => win.getContentBounds().width / chat.getZoomFactor() <= COMPACT_BREAKPOINT;
+  const compact = () => win.getContentBounds().width <= COMPACT_BREAKPOINT;
   const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), pinned: win.isAlwaysOnTop(), theme });
   function publish() {
     if (!disposed && loaded && !win.isDestroyed() && !contents.isDestroyed()) contents.send(STATE_CHANNEL, state());
   }
   function layout() {
     if (disposed || win.isDestroyed() || contents.isDestroyed()) return;
-    const zoom = chat.getZoomFactor();
     const { width, height } = win.getContentBounds();
-    contents.setZoomFactor(zoom);
+    contents.setZoomFactor(1);
     const fullscreen = win.isFullScreen();
-    const bar = fullscreen ? 0 : Math.round(HEADER_HEIGHT * zoom);
-    const strip = Math.round(CAPTION_STRIP_WIDTH * zoom);
-    view.setBounds({ x: Math.max(0, width - strip), y: 0, width: Math.min(strip, width), height: bar });
-    chatView.setBounds({ x: 0, y: 0, width, height });
+    const bar = fullscreen ? 0 : Math.min(HEADER_HEIGHT, height);
+    view.setBounds({ x: 0, y: 0, width, height: bar });
+    chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
     view.setVisible(!fullscreen);
     publish();
   }
@@ -168,6 +163,8 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   contents.on('did-finish-load', () => { loaded = contents.getURL() === controlsUrl; layout(); });
   const nativeEvents = ['maximize', 'unmaximize', 'restore', 'resize', 'enter-full-screen', 'leave-full-screen', 'always-on-top-changed'];
   for (const name of nativeEvents) win.on(name, layout);
+  screen.on('display-metrics-changed', layout);
+  win.on('move', layout);
   // Keyboard zoom handling occurs in another host listener; defer until it
   // has applied the new factor. Renderer viewport events cover programmatic zoom.
   const afterZoom = () => setImmediate(layout);
@@ -203,6 +200,12 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
     disposed = true;
     generation++;
     for (const name of nativeEvents) win.removeListener(name, layout);
+    screen.removeListener('display-metrics-changed', layout);
+    win.removeListener('move', layout);
+    chat.removeListener('before-input-event', afterInput);
+    chat.removeListener('zoom-changed', afterZoom);
+    chat.removeListener('did-start-navigation', navigating);
+    chat.removeListener('did-finish-load', observeTheme);
     if (!contents.isDestroyed()) {
       contents.ipc.removeHandler(ACTION_CHANNEL);
       contents.ipc.removeHandler(STATE_CHANNEL);

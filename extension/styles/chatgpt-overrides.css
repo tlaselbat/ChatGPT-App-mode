@@ -195,7 +195,13 @@ body.faux-chatgpt-app-mode [data-app-mode-sidebar-overlay] {
 
 /* A single centered home composition across the site's 640px breakpoint.
    Native editor controls still wrap; no React nodes or handlers are moved. */
+body.faux-chatgpt-app-mode [data-app-mode-home-layout-path] {
+  display: flex !important; flex-direction: column !important; flex: 1 1 auto !important;
+  height: 100% !important; min-height: 0 !important; max-height: none !important;
+  padding-block: 0 !important; margin-block: 0 !important;
+}
 body.faux-chatgpt-app-mode [data-app-mode-home-layout] {
+  flex: 1 1 auto !important; height: 100% !important; max-height: none !important; margin-block: 0 !important;
   display: flex !important; flex-direction: column !important; justify-content: flex-start !important;
   padding: 16px 0 !important; min-height: 0 !important; overflow-y: auto;
 }
@@ -221,6 +227,8 @@ body.faux-chatgpt-app-mode [data-app-mode-home-title] {
   text-align: center; text-wrap: balance; letter-spacing: -.025em; margin: 0 auto !important; max-width: 768px;
 }
 body.faux-chatgpt-app-mode [data-app-mode-home-composer] {
+  /* Native display:contents wrappers can leave suggestions as a sibling. */
+  order: 1 !important;
   position: relative !important; inset: auto !important; flex: 0 0 auto !important;
   height: auto !important; min-height: 0 !important; padding: 0 !important; margin: auto 0 0 !important;
   background: transparent !important;
@@ -316,31 +324,11 @@ body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar] {
   padding-block: var(--app-mode-gap) !important;
   padding-inline: var(--app-mode-gap) !important;
 }
-/* Always-on-Top is owned by the host caption strip in the unified bar; hide
+/* Always-on-Top is owned by the host title bar; hide
    the site-injected twin so there is one primary entry point. The rail's
    forwarding path stays untouched for hosts that disable the strip. */
 body.faux-chatgpt-app-mode #chatgpt-app-mode-pin-toggle {
   display: var(--app-mode-page-pin-display, grid) !important;
-}
-/* Application identity at the left of the unified row, independent of the
-   sidebar state. Decorative text; native controls follow it in the flex row. */
-body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before {
-  content: 'ChatGPT';
-  order: -10;
-  flex: 0 0 auto;
-  font: 600 12px/1.2 "Segoe UI", sans-serif;
-  letter-spacing: .01em;
-  color: var(--app-mode-control-color);
-  opacity: .9;
-  padding-inline-start: 4px;
-  -webkit-app-region: drag;
-}
-body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout]::before {
-  position: absolute; left: 64px; top: 50%; transform: translateY(-50%);
-  padding-inline-start: 0;
-}
-@media (max-width: 480px) {
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout]::before { content: none; }
 }
 /* Conversation composers retain their native elevated surface and geometry.
    Only the recognized blank-home card above needs an App Mode surface. */
