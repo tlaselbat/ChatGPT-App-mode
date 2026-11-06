@@ -68,6 +68,7 @@ button:focus-visible { outline: 2px solid var(--app-mode-control-color); outline
 button[data-action="pin"][aria-pressed="true"] { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, #4f5d7a); }
 button:disabled { opacity: .4; cursor: default; }
 svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+button[data-action="pin"] svg { stroke: none; }
 .restore-icon, button[data-restored="true"] .maximize-icon { display: none; }
 button[data-restored="true"] .restore-icon { display: block; }
 
