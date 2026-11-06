@@ -838,7 +838,7 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
   const measurements = [];
   for (const scheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: scheme });
-    for (const zoom of [1, 1.25, 1.5]) for (const width of [390, 489, 680, 893, 1024, 1280]) {
+    for (const zoom of [1, 1.25, 1.5]) for (const width of [390, 480, 680, 864, 893, 1024, 1280]) {
       const cssWidth = Math.round(width / zoom);
       await page.setViewportSize({ width: cssWidth, height: Math.round(850 / zoom) });
       await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', cssWidth < 700 ? 'drawer' : 'docked');
@@ -868,7 +868,7 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
         expect(geometry.sidebar.width).toBeGreaterThanOrEqual(cssWidth >= 1200 ? 288 : cssWidth >= 900 ? 260 : 240);
       }
       measurements.push({ scheme, effectiveZoom: zoom, windowWidth: width, ...geometry });
-      if (zoom === 1 && [390, 893, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath('sidebar-' + scheme + '-' + width + '.png') });
+      if (zoom === 1 && [390, 480, 680, 864, 893, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath('sidebar-' + scheme + '-' + width + '.png') });
     }
   }
   await page.emulateMedia({ colorScheme: 'light' });
@@ -943,7 +943,7 @@ test('home composition stays stable across the mobile breakpoint and preserves t
   }
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
-    for (const width of [390, 640, 1280]) {
+    for (const width of [390, 480, 640, 680, 864, 1280]) {
       await page.setViewportSize({ width, height: 850 });
       const card = await page.locator('.card').boundingBox();
       expect(card.x).toBeGreaterThanOrEqual(12);
@@ -1018,7 +1018,8 @@ test('sidebar boundary stays below the subheader throughout opening and closing'
       const header = getComputedStyle(document.querySelector('header'));
       return { background: plate.backgroundColor, rowBackground: header.backgroundColor, width: plate.width, height: plate.height, pointerEvents: plate.pointerEvents };
     });
-    expect(corner.background).toBe(corner.rowBackground);
+    expect(corner.background).toBe(scheme === 'dark' ? 'rgb(13, 13, 14)' : 'rgb(244, 244, 244)');
+    expect(corner.rowBackground).toBe(scheme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(255, 255, 255)');
     expect(corner.width).toBe('52px');expect(corner.height).toBe('40px');expect(corner.pointerEvents).toBe('none');
   }
   const samples = await page.evaluate(() => new Promise(resolve => {
@@ -1609,14 +1610,15 @@ test('App Mode unifies shell surfaces and preserves elevated composers across th
 
   const surfaces = await page.evaluate(() => {
     const style = getComputedStyle(document.body);
+    const resolve = token => { const probe = document.createElement('span'); probe.style.backgroundColor = `var(${token})`; document.body.append(probe); const value = getComputedStyle(probe).backgroundColor; probe.remove(); return value; };
     return {
-      shell: style.getPropertyValue('--app-mode-shell-bg').trim(),
-      sidebar: style.getPropertyValue('--app-mode-sidebar-bg').trim(),
-      workspace: style.getPropertyValue('--app-mode-workspace-bg').trim(),
-      composer: style.getPropertyValue('--app-mode-composer-bg').trim(),
+      shell: resolve('--app-mode-shell-bg'),
+      sidebar: resolve('--app-mode-sidebar-bg'),
+      workspace: resolve('--app-mode-workspace-bg'),
+      composer: resolve('--app-mode-composer-bg'),
       text: style.getPropertyValue('--app-mode-text').trim(),
-      border: style.getPropertyValue('--app-mode-border').trim(),
-      controls: style.getPropertyValue('--app-mode-control-bg').trim(),
+      border: resolve('--app-mode-border'),
+      controls: resolve('--app-mode-control-bg'),
     };
   });
   expect(surfaces).toEqual({ shell: 'rgb(23, 24, 26)', sidebar: 'rgb(25, 26, 28)', workspace: 'rgb(31, 32, 34)', composer: 'rgb(48, 49, 52)', text: 'rgb(238, 239, 240)', border: 'rgb(80, 81, 84)', controls: 'rgb(23, 24, 26)' });
@@ -1644,8 +1646,8 @@ test('App Mode unifies shell surfaces and preserves elevated composers across th
     document.documentElement.style.setProperty('--sidebar-surface-secondary', 'rgb(232, 232, 232)');
     document.documentElement.style.setProperty('--app-color-icon-accent', 'rgb(64, 201, 119)');
   });
-  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-workspace-bg').trim())).toBe('rgb(250, 250, 250)');
-  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-control-bg').trim())).toBe('rgb(242, 242, 242)');
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-workspace-bg').trim())).toContain('rgb(250, 250, 250)');
+  await expect.poll(() => page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--app-mode-control-bg').trim())).toContain('rgb(242, 242, 242)');
   await expect.poll(() => activeNav.evaluate(element => getComputedStyle(element).boxShadow)).toContain('rgb(64, 201, 119)');
   await expect(activePin).toHaveCSS('color', 'rgb(64, 201, 119)');
   await page.evaluate(() => {
@@ -1696,13 +1698,15 @@ test('current theme tokens keep conversation surfaces coherent and native thread
       const root = document.documentElement; root.style.colorScheme = theme;
       for (const [key, value] of Object.entries(values)) root.style.setProperty(key === 'text' ? '--color-text-primary' : '--color-' + (key === 'surface' ? key : 'surface-' + key), value);
     }, theme);
-    for (const [width, expanded] of [[1280, true], [1280, false], [390, false]]) {
+    for (const [width, expanded] of [390, 480, 680, 864, 1280].flatMap(width => width >= 680 ? [[width, true], [width, false]] : [[width, false]])) {
       await page.setViewportSize({ width, height: 800 });
       await page.locator('aside').evaluate((e, expanded) => e.style.display = expanded ? '' : 'none', expanded);
       await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       const colors = await page.evaluate(() => ['main', 'footer', 'header', '#app-mode-compact-sidebar-actions'].map(s => getComputedStyle(document.querySelector(s)).backgroundColor));
-      expect(colors[0]).toBe(colors[1]); expect(colors[2]).toBe(colors[3]);
-      expect(colors[0]).toBe(theme === 'dark' ? 'rgb(30, 30, 46)' : 'rgb(255, 255, 255)');
+      expect(colors[0]).toBe(colors[1]); expect(colors[2]).toBe(colors[0]);
+      expect(colors[0]).toBe(theme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(255, 255, 255)');
+      expect(colors[3]).toBe(theme === 'dark' ? 'rgb(13, 13, 14)' : 'rgb(242, 243, 245)');
+      await expect(page.locator('.composer')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(42, 42, 44)' : 'rgb(247, 248, 250)');
       await expect(page.getByRole('textbox')).toHaveValue('An unsent draft');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (expanded) {
@@ -1720,74 +1724,49 @@ test('current theme tokens keep conversation surfaces coherent and native thread
   }
 });
 
-test('workspace radius follows the visible surface below the contextual header', async ({ page }, testInfo) => {
+test('workspace boundary includes the contextual header with continuous corners and unclipped menus', async ({ page }, testInfo) => {
+  // Pixel samples describe settled geometry; sidebar transitions have separate coverage.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setContent(`<style>
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%}
-    html{color-scheme:light;--main-surface-primary:#fafafa;--sidebar-surface-primary:#203040}
-    body{background:#203040}.shell{height:100%;margin-left:52px}
-    [data-app-shell-responsive-sidebar]{display:flex;height:100%}
+    html{color-scheme:light;--main-surface-primary:#fafafa;--main-surface-secondary:#eee}
+    .shell{height:100%;margin-left:52px}[data-app-shell-responsive-sidebar]{display:flex;height:100%}
     main{position:relative;display:flex;flex:1;flex-direction:column;min-width:0;height:100%}
-    header{height:40px;min-height:40px;flex:none;background:#fafafa}
-    .surface{position:relative;flex:1;min-height:0;overflow:hidden;background:#fafafa}
-    .composer{position:absolute;bottom:24px;left:20%;width:60%;height:56px;border-radius:20px;background:#ddd}
+    header{height:40px;min-height:40px;flex:none;position:relative}
+    .surface{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--main-surface-primary)}
+    .composer{position:absolute;bottom:24px;left:10%;width:80%;height:56px;border-radius:20px;background:var(--color-surface-elevated)}
+    #menu{position:absolute;top:40px;right:-4px;width:100px;height:100px;background:Canvas;z-index:100;display:none}
   </style><body><div class="shell"><div data-app-shell-responsive-sidebar>
-    <main><header></header><div class="surface"><div class="composer"></div></div></main>
+    <main><header><button id="action" onclick="document.querySelector('#menu').style.display='block'">Options</button><div role="menu" id="menu"><button>Native action</button></div></header>
+    <div class="surface"><div class="composer"></div></div></main>
   </div><button aria-label="Open sidebar">Open sidebar</button></div></body>`);
   await page.addStyleTag({ path: path.join(extensionPath, 'styles/chatgpt-overrides.css') });
   await injectOverrides(page);
-  const main = page.locator('main');
-  const surface = page.locator('.surface');
-  await expect(main).toHaveAttribute('data-app-mode-workspace', '');
+  const main = page.locator('main'), surface = page.locator('.surface');
   await expect(surface).toHaveAttribute('data-app-mode-workspace-surface', '');
-  await expect(main).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(surface).toHaveCSS('border-radius', '14px');
-  await expect(surface).toHaveCSS('background-color', 'rgb(250, 250, 250)');
-  await expect(page.locator('.composer')).toHaveCSS('border-radius', '20px');
-
-  // Preserve a rendered before image of the original ownership failure: the
-  // parent paints beneath the header and the visible content surface is square.
-  await page.evaluate(() => {
-    document.documentElement.style.colorScheme = 'dark';
-    document.body.style.background = '#141421';
-    document.documentElement.style.setProperty('--main-surface-primary', '#1e1e2e');
-    document.documentElement.style.setProperty('--main-surface-secondary', '#141421');
-    document.querySelector('header').style.background = '#1e1e2e';
-    document.querySelector('main').style.setProperty('background', '#1e1e2e', 'important');
-    document.querySelector('.surface').style.setProperty('border-radius', '0', 'important');
-  });
-  await page.screenshot({ path: testInfo.outputPath('workspace-surface-before.png') });
-  await page.evaluate(() => {
-    document.querySelector('main').style.removeProperty('background');
-    document.querySelector('.surface').style.removeProperty('border-radius');
-  });
-  await expect(surface).toHaveCSS('background-color', 'rgb(30, 30, 46)');
-  const box = await surface.boundingBox();
-  const screenshot = await page.screenshot({ path: testInfo.outputPath('workspace-surface-after.png') });
-  const pixels = await page.evaluate(async base64 => {
-    const image = new Image(); image.src = `data:image/png;base64,${base64}`;
-    await image.decode(); const canvas = document.createElement('canvas');
-    canvas.width = image.width; canvas.height = image.height;
-    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
-    const sample = (x, y) => [...context.getImageData(Math.round(x), Math.round(y), 1, 1).data].slice(0, 3);
-    const r = document.querySelector('.surface').getBoundingClientRect();
-    return {
-      corners: [sample(r.left+1,r.top+1),sample(r.right-2,r.top+1),sample(r.left+1,r.bottom-2),sample(r.right-2,r.bottom-2)],
-      panel: sample(r.left+16,r.top+1),
-    };
-  }, screenshot.toString('base64'));
-  expect(box.y).toBe(40);
-  expect(pixels.corners).toEqual(Array(4).fill([20, 20, 33]));
-  expect(pixels.panel).toEqual([30, 30, 46]);
-  await page.evaluate(() => {
-    document.documentElement.style.colorScheme = 'light';
-    document.body.style.background = '#203040';
-    document.documentElement.style.setProperty('--main-surface-primary', '#fafafa');
-    document.documentElement.style.setProperty('--main-surface-secondary', '#203040');
-    document.querySelector('header').style.background = '#fafafa';
-  });
-  await expect(surface).toHaveCSS('border-radius', '14px');
-  await expect(surface).toHaveCSS('background-color', 'rgb(250, 250, 250)');
-
+  for (const theme of ['light', 'dark']) for (const width of [390, 480, 680, 864, 1280]) {
+    await page.setViewportSize({width,height:700});
+    await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
+    await expect(main).toHaveCSS('background-color', theme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(250, 250, 250)');
+    await expect(surface).toHaveCSS('border-radius', '0px 0px 14px 14px');
+    await expect(page.locator('header')).toHaveCSS('border-radius', '14px 14px 0px 0px');
+    await expect(main).toHaveCSS('overflow', 'visible');
+    const screenshot = await page.screenshot({path:testInfo.outputPath(`boundary-${theme}-${width}.png`),animations:'disabled'});
+    const pixels = await page.evaluate(async base64 => {
+      const img = new Image(); img.src = `data:image/png;base64,${base64}`; await img.decode();
+      const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+      const c=canvas.getContext('2d');c.drawImage(img,0,0);
+      const sample=(x,y)=>[...c.getImageData(Math.round(x),Math.round(y),1,1).data].slice(0,3);
+      const r=document.querySelector('main').getBoundingClientRect(), seam=document.querySelector('.surface').getBoundingClientRect().top;
+      return {corners:[sample(r.left+1,r.top+1),sample(r.right-2,r.top+1),sample(r.left+1,r.bottom-2),sample(r.right-2,r.bottom-2)],
+        seam:[sample(r.left+1,seam-1),sample(r.left+1,seam+1)]};
+    }, screenshot.toString('base64'));
+    expect(pixels.corners).toEqual(Array(4).fill(theme==='dark'?[13,13,14]:[238,238,238]));
+    expect(pixels.seam).toEqual(Array(2).fill(theme==='dark'?[15,15,17]:[250,250,250]));
+    await page.locator('#action').click();
+    expect(await page.locator('#menu').evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.right-1,r.top+20));})).toBe(true);
+    await page.locator('#menu').evaluate(el=>el.style.display='none');
+  }
   await surface.evaluate(element => element.replaceWith(element.cloneNode(true)));
   await expect(page.locator('.surface')).toHaveAttribute('data-app-mode-workspace-surface', '');
 });

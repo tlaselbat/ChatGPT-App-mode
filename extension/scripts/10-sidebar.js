@@ -416,10 +416,9 @@
     if (contentMains.length === 1) {
       const workspace = contentMains[0];
       own(workspace, 'data-app-mode-workspace');
-      // ChatGPT's shared title row overlaps the top of main. Its visible
-      // conversation surface starts below that row and paints independently,
-      // so put the rounded background on that surface when the geometry is
-      // unambiguous. Avoid hashed site classes and leave unknown layouts native.
+      // Recognize the clipped content surface adjoining the contextual row.
+      // Both share the main's paint; only the content's lower corners round.
+      // Use unambiguous geometry and leave unknown layouts native.
       const box = workspace.getBoundingClientRect();
       const headers = [...workspace.children].filter(element =>
         element.matches('header, [role="banner"]') && element.getClientRects().length &&

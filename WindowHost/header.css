@@ -14,7 +14,7 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   position: sticky;
   top: 0;
   z-index: 30;
-  padding: 5px 12px !important;
+  padding: 5px 8px !important;
 }
 
 /* Known sidebar controls sort before sibling new-chat controls. These optional
@@ -193,9 +193,6 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-c
 body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] {
   padding-left: 4px !important;
   gap: 2px;
-}
-body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] {
-  padding-left: 52px !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"]::before { content: none; }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] [data-app-mode-header-mode-branch] {

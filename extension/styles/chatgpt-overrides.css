@@ -6,18 +6,19 @@
 body.faux-chatgpt-app-mode {
   --app-mode-subheader-height: 40px;
   --app-mode-rail-width: 52px;
-  /* Current ChatGPT uses --color-surface tokens. Retain the older names only
-     as compatibility fallbacks; otherwise custom themes become a gray shell
-     around a differently colored native conversation footer and composer. */
-  --app-mode-shell-bg: var(--color-surface-secondary, var(--main-surface-secondary, var(--sidebar-surface-primary, light-dark(#f4f4f4, #171717))));
+  /* Resolve light/custom site surfaces once on the body. Dark chrome uses a
+     single neutral palette; native accent/text tokens remain authoritative. */
+  --app-mode-shell-bg: light-dark(var(--color-surface-secondary, var(--main-surface-secondary, #f4f4f4)), #0d0d0e);
   --app-mode-activity-bg: var(--app-mode-shell-bg);
-  --app-mode-sidebar-bg: var(--color-surface-secondary, var(--sidebar-surface-primary, var(--main-surface-secondary, light-dark(#f4f4f4, #171717))));
-  --app-mode-workspace-bg: var(--color-surface, var(--main-surface-primary, var(--sidebar-surface-secondary, light-dark(#ffffff, #212121))));
-  --app-mode-composer-bg: var(--color-surface-elevated, var(--bg-elevated-primary, light-dark(#ffffff, #303030)));
+  --app-mode-titlebar-bg: var(--app-mode-shell-bg);
+  --app-mode-sidebar-bg: light-dark(var(--color-surface-secondary, var(--sidebar-surface-primary, #f4f4f4)), #131315);
+  --app-mode-workspace-bg: light-dark(var(--color-surface, var(--main-surface-primary, #ffffff)), #0f0f11);
+  --app-mode-composer-bg: light-dark(var(--color-surface-elevated, var(--bg-elevated-primary, #ffffff)), #2a2a2c);
+  background: var(--app-mode-shell-bg);
   --app-mode-text: var(--color-text-primary, var(--text-primary, currentColor));
-  --app-mode-border: var(--color-border-primary-outline, var(--border-light, color-mix(in srgb, currentColor 14%, transparent)));
-  --app-mode-hover: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 8%, transparent));
-  --app-mode-selected: var(--sidebar-surface-secondary, color-mix(in srgb, currentColor 12%, transparent));
+  --app-mode-border: light-dark(var(--color-border-primary-outline, var(--border-light, color-mix(in srgb, currentColor 14%, transparent))), color-mix(in srgb, #fff 14%, var(--app-mode-shell-bg)));
+  --app-mode-hover: light-dark(color-mix(in srgb, currentColor 8%, var(--app-mode-shell-bg)), #202022);
+  --app-mode-selected: color-mix(in srgb, var(--app-color-icon-accent, currentColor) 12%, var(--app-mode-shell-bg));
   --app-mode-accent: var(--app-color-icon-accent, currentColor);
   --app-mode-sidebar-width: clamp(240px, 28vw, 256px);
   --app-mode-radius-small: 10px;
@@ -166,19 +167,25 @@ body.faux-chatgpt-app-mode [data-app-mode-workspace] {
   min-width: 0 !important;
   min-height: 0 !important;
 }
-/* The native 40px header overlaps the top of main, so rounding main alone
-   rounds a hidden edge. When its clipped content surface begins immediately
-   below that row, transfer the painted panel to the surface itself. */
-body.faux-chatgpt-app-mode [data-app-mode-workspace]:has(> [data-app-mode-workspace-surface]) {
-  background: transparent !important;
+/* The main owns one continuous boundary, including the contextual header.
+   Coordinate native surface tokens only inside that recognized workspace;
+   keep native message/composer geometry, typography and accent tokens intact. */
+body.faux-chatgpt-app-mode [data-app-mode-workspace] {
+  --color-surface: var(--app-mode-workspace-bg);
+  --main-surface-primary: var(--app-mode-workspace-bg);
+  --color-surface-elevated: var(--app-mode-composer-bg);
+  --bg-elevated-primary: var(--app-mode-composer-bg);
 }
-body.faux-chatgpt-app-mode [data-app-mode-workspace-surface] {
+body.faux-chatgpt-app-mode [data-app-mode-workspace] > :is(header, [role="banner"], #page-header, #conversation-header) {
+  --app-mode-control-bg: var(--app-mode-workspace-bg);
+  background: var(--app-mode-workspace-bg);
+  border-radius: var(--app-mode-radius-workspace) var(--app-mode-radius-workspace) 0 0;
+}
+body.faux-chatgpt-app-mode [data-app-mode-workspace-surface],
+body.faux-chatgpt-app-mode [data-app-mode-workspace] > footer {
   background: var(--app-mode-workspace-bg) !important;
-  border-radius: var(--app-mode-radius-workspace);
+  border-radius: 0 0 var(--app-mode-radius-workspace) var(--app-mode-radius-workspace);
 }
-/* The subheader keeps its native position inside the workspace column.
-   A top inset was tried and reverted: on the live site the header is not
-   the panel's first child, so any pull offset pushes it off-screen. */
 @media (prefers-reduced-motion: reduce) {
   body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] { transition: none; }
 }
@@ -415,7 +422,7 @@ body.faux-chatgpt-app-mode {
   --app-mode-control-border: var(--app-mode-border);
   --app-mode-control-bg: var(--app-mode-shell-bg);
   --app-mode-control-hover: var(--app-mode-hover);
-  --app-mode-control-hover-border: color-mix(in srgb, currentColor 24%, transparent);
+  --app-mode-control-hover-border: var(--app-mode-border);
   --app-mode-control-pressed: color-mix(in srgb, currentColor 14%, var(--app-mode-control-bg));
   --app-mode-active-color: var(--app-mode-accent);
   --app-mode-active-bg: var(--app-mode-selected);
@@ -427,9 +434,10 @@ body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [r
   align-items: center;
   column-gap: 6px;
   min-height: 40px;
-  padding-inline: 12px;
-  /* Follow the rendered theme even when custom surface tokens are stale. */
+  padding-inline: 8px;
+  /* The contextual strip shares its workspace surface without a seam. */
   background: var(--app-mode-control-bg);
+  border-bottom-color: var(--app-mode-control-bg);
 }
 
 body.faux-chatgpt-app-mode :where(#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]):has(.chatgpt-app-mode-toolbar) button,

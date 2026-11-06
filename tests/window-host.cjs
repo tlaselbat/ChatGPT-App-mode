@@ -236,6 +236,22 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       return {focused:document.activeElement===button,outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth};
     })()`), {focused:true,outlineStyle:'solid',outlineWidth:'2px'});
     await waitControlLabel('Maximize');
+    // Contextual controls may use the workspace fill; trusted application
+    // chrome must continue sampling the independent shell/title-bar token.
+    await page.locator('header').evaluate(header => {
+      header.style.setProperty('--app-mode-control-bg', 'rgb(15, 15, 17)');
+      header.style.setProperty('--app-mode-control-hover', 'rgb(60, 61, 62)');
+    });
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-control-hover").trim()') === 'rgb(60, 61, 62)') break;
+      await page.waitForTimeout(50);
+    }
+    assert.equal(await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-control-hover").trim()'), 'rgb(60, 61, 62)');
+    assert.equal(await controlsEval('getComputedStyle(document.body).backgroundColor'), 'rgb(13, 13, 14)');
+    await page.locator('header').evaluate(header => {
+      header.style.removeProperty('--app-mode-control-bg'); header.style.removeProperty('--app-mode-control-hover');
+    });
+
     assert.notEqual(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
     const security = await electron.evaluate(({ BrowserWindow }, modulePath) => {
       const {validateControlRequest}=process.mainModule.require(modulePath);

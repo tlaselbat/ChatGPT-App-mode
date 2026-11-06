@@ -34,7 +34,7 @@ function validateControlRequest(event, args, context) {
 function observeVisualTheme(previous) {
   return new Promise(resolve => {
     const probe = document.createElement('span');
-    probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;border:1px solid var(--app-mode-control-border);background:var(--app-mode-control-bg);';
+    probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;border:1px solid var(--app-mode-control-border);background:var(--app-mode-titlebar-bg, var(--app-mode-control-bg));';
     let header;
     let toolbar;
     let frame;
@@ -76,7 +76,7 @@ function observeVisualTheme(previous) {
       probe.style.borderColor = 'var(--app-mode-control-border)';
       probe.style.background = 'var(--app-mode-control-pressed)';
       theme.pressed = getComputedStyle(probe).backgroundColor;
-      probe.style.background = 'var(--app-mode-control-bg)';
+      probe.style.background = 'var(--app-mode-titlebar-bg, var(--app-mode-control-bg))';
       const result = { theme, width: innerWidth, height: innerHeight, scale: devicePixelRatio };
       if (JSON.stringify(result) !== previous) finish(result);
     }
