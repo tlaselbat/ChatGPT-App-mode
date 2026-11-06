@@ -158,6 +158,14 @@ body.faux-chatgpt-app-mode [data-app-mode-compact-sidebar-shell] {
   transition: margin-left 180ms ease, width 180ms ease;
 }
 
+/* A native rail can already reserve width, so the offset marker is absent
+   when collapsed. Paint only the recognized shell and workspace ancestors;
+   never recolor message, code, sidebar-content, or composer descendants. */
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-shell-responsive-sidebar]:has([data-app-mode-workspace]),
+body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-shell-responsive-sidebar] :has([data-app-mode-workspace]) {
+  background: var(--app-mode-shell-bg) !important;
+}
+
 /* The Codex workspace is a rounded panel on the shell surface, inset by one
    gap. Menus, popovers, and dialogs stay unclipped: no overflow override. */
 body.faux-chatgpt-app-mode [data-app-mode-workspace] {

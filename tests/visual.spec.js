@@ -502,6 +502,49 @@ test('expanded-sidebar offsets collapse so the conversation title stays between 
   }
 });
 
+test('native title buttons stay left aligned when sidebar spacers precede the leading group', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setContent(`<style>*{box-sizing:border-box}html{color-scheme:dark}body{margin:0;color:#ddd}
+    .shell{display:flex;height:700px;margin-left:52px}aside{width:0;flex:none}.expanded aside{width:240px}
+    main{flex:1;min-width:0}header{height:40px;display:flex}.leading{display:flex;justify-content:flex-end;margin-left:auto;min-width:0}
+    #native-title{max-width:100%;min-width:0}#native-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mode{position:absolute;left:50%;transform:translateX(-50%);display:flex}
+    </style><div class="shell"><aside></aside><main data-app-mode-workspace><header>
+      <div class="leading"><button id="native-title"><span>Synthetic conversation title</span><svg width="12" height="12"></svg></button></div>
+      <div class="actions"><button aria-label="More options">More</button></div>
+      <div class="mode" role="tablist"><button aria-selected="true">Chat</button><button aria-selected="false">Work</button></div>
+      <div class="chatgpt-app-mode-toolbar"></div>
+    </header></main></div>`);
+  await page.evaluate(() => { document.body.classList.add('faux-chatgpt-app-mode'); window.titleClicks=0; document.querySelector('#native-title').onclick=()=>window.titleClicks++; });
+  await page.addStyleTag({path:path.join(extensionPath,'styles/chatgpt-overrides.css')});
+  await page.addStyleTag({content:headerLayoutCss});
+  await page.evaluate(script=>(0,eval)(script),headerLayoutScript);
+  for (const width of [390,680,1015,1280]) for (const expanded of [false,true]) {
+    await page.setViewportSize({width,height:700});
+    await page.evaluate(expanded=>{
+      document.querySelector('.shell').classList.toggle('expanded',expanded && innerWidth>=680);
+      document.querySelector('#native-sidebar-spacer')?.remove();
+      if(expanded){const spacer=document.createElement('div');spacer.id='native-sidebar-spacer';spacer.setAttribute('aria-hidden','true');spacer.style.width='240px';document.querySelector('header').prepend(spacer);}
+    },expanded);
+    await expect.poll(()=>page.locator('.leading').getAttribute('data-app-mode-header-control-branch')).toBe('leading');
+    const g=await page.evaluate(()=>{
+      const title=document.querySelector('#native-title').getBoundingClientRect(),header=document.querySelector('header').getBoundingClientRect(),actions=document.querySelector('.actions').getBoundingClientRect();
+      const buttons=[...document.querySelectorAll('header button')].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);
+      const overlaps=buttons.some((a,i)=>buttons.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top));
+      return {overlaps,inset:title.left-header.left,titleRight:title.right,textWidth:document.querySelector('#native-title span').getBoundingClientRect().width,actionsLeft:actions.left,overflow:document.documentElement.scrollWidth>innerWidth};
+    });
+    expect(g.inset,JSON.stringify({width,expanded,g})).toBeGreaterThanOrEqual(0);
+    expect(g.inset,JSON.stringify({width,expanded,g})).toBeLessThanOrEqual(8);
+    expect(g.titleRight).toBeLessThanOrEqual(g.actionsLeft);
+    expect(g.textWidth).toBeGreaterThan(40);
+    expect(g.overflow).toBe(false);
+    expect(g.overlaps,JSON.stringify({width,expanded,g})).toBe(false);
+    await page.locator('#native-title').click();
+    await page.screenshot({path:testInfo.outputPath(`title-${width}-${expanded?'expanded':'collapsed'}.png`)});
+  }
+  expect(await page.evaluate(()=>window.titleClicks)).toBe(8);
+});
+
 test('compact sidebar rail persists in narrow responsive layout and opens the native drawer', async ({ page }) => {
   await page.setContent(fixture);
   await page.setViewportSize({ width: 390, height: 780 });
@@ -737,6 +780,58 @@ async function navigationSectionsFixture(page, native = false) {
   await page.setViewportSize({ width: 1280, height: 850 });
   await page.goto('https://chatgpt.com/');
 }
+
+test('reserved native rails keep neutral gutters and scrolled sidebar content below New chat', async ({ page }, testInfo) => {
+  await page.emulateMedia({colorScheme:'dark', reducedMotion:'reduce'});
+  await navigationSectionsFixture(page,true);
+  await page.evaluate(()=>{
+    document.documentElement.style.colorScheme='dark';history.pushState({},'', '/c/synthetic-surface-review');
+    const root=document.querySelector('#section-shell'),main=root.querySelector('main');
+    root.style.background='#191927';
+    const frame=document.createElement('div');frame.id='native-frame';frame.style.cssText='display:flex;flex:1;min-width:0;padding:4px;background:#191927';main.before(frame);frame.append(main);
+    main.style.position='relative';
+    main.insertAdjacentHTML('beforeend','<pre id="native-code" style="background:#191927">Synthetic code block</pre><div id="native-composer" style="position:absolute;bottom:24px;left:16px;right:16px;height:60px;background:#343647"><textarea aria-label="Native draft">Synthetic unsent draft</textarea></div>');
+    const rail=document.createElement('nav');rail.className='group/sidebar-rail';rail.style.cssText='width:52px;flex:none;order:-1';rail.innerHTML='<button aria-label="New chat">New chat</button><button aria-label="Search">Search</button>';root.prepend(rail);
+  });
+  const toggle=page.locator('#app-mode-compact-sidebar');
+  for(const width of [390,680,1015,1280]) {
+    await page.setViewportSize({width,height:850});
+    if(await page.locator('body').getAttribute('data-app-mode-navigation-state')==='compact')await toggle.click();
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state',width<700?'drawer':'docked');
+    await expect(toggle).toHaveAttribute('aria-expanded','true');
+    await expect(toggle).toHaveCSS('background-color','rgb(32, 32, 34)');
+    const panel=page.locator(width<700?'#browser-sidebar-popover':'[data-app-mode-docked-sidebar]');
+    const scroll=panel.locator('[data-app-mode-nav-scroll]');
+    await scroll.evaluate(e=>e.scrollTop=200);
+    await page.evaluate(()=>document.querySelector('#section-shell').classList.toggle('synthetic-reconcile'));
+    await expect.poll(()=>scroll.evaluate(e=>e.scrollTop)).toBe(200);
+    const bounds=await panel.evaluate(panel=>{
+      const scroll=panel.querySelector('[data-app-mode-nav-scroll]').getBoundingClientRect(),newChat=panel.querySelector('[href="/"]').getBoundingClientRect(),account=panel.querySelector('.section-footer').getBoundingClientRect();
+      const hit=document.elementFromPoint(newChat.x+newChat.width/2,newChat.y+newChat.height/2);
+      return {scrollTop:scroll.top,scrollBottom:scroll.bottom,newChatBottom:newChat.bottom,accountTop:account.top,newChatUsable:panel.querySelector('[href="/"]').contains(hit)};
+    });
+    expect(bounds.newChatBottom).toBeLessThanOrEqual(bounds.scrollTop);
+    expect(bounds.scrollBottom).toBeLessThanOrEqual(bounds.accountTop);
+    expect(bounds.newChatUsable).toBe(true);
+    await expect(panel.locator('#native-account')).toBeVisible();
+    await page.screenshot({path:testInfo.outputPath(`sidebar-scrolled-${width}.png`)});
+    if(width<700)await page.keyboard.press('Escape');else await toggle.click();
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state','compact');
+    await expect(page.locator('#section-shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+    for(const selector of ['#section-shell','#native-frame'])await expect(page.locator(selector)).toHaveCSS('background-color','rgb(13, 13, 14)');
+    await expect(page.locator('#native-code')).toHaveCSS('background-color','rgb(25, 25, 39)');
+    await expect(page.locator('#native-composer')).toHaveCSS('background-color','rgb(52, 54, 71)');
+    await expect(page.getByRole('textbox',{name:'Native draft'})).toHaveValue('Synthetic unsent draft');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
+    const dock=await page.locator('#native-composer').boundingBox(),workspace=await page.locator('main').boundingBox();
+    expect(Math.abs(workspace.y+workspace.height-dock.y-dock.height-24)).toBeLessThanOrEqual(1);
+    await page.mouse.move(width-20,400);
+    await expect(toggle).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+    await page.screenshot({path:testInfo.outputPath(`sidebar-collapsed-${width}.png`)});
+  }
+  await toggle.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
+  await expect(toggle).toBeFocused();await expect(toggle).toHaveCSS('outline-width','2px');
+});
 
 test('sidebar fallback disclosures retain native nodes, keyboard access and saved preferences through navigation', async ({ page }) => {
   await navigationSectionsFixture(page);
@@ -1117,7 +1212,8 @@ test('header compatibility ignores unrelated overlays and scrolling strips and r
     document.querySelector('header').prepend(replacement);
   });
   await expect(page.locator('#old-mode-branch')).not.toHaveAttribute('data-app-mode-header-mode-branch', '');
-  await expect(page.locator('#old-mode-branch')).toHaveAttribute('data-app-mode-header-control-branch', 'actions');
+  // The former switch is now the first real control group, after the new mode layer.
+  await expect(page.locator('#old-mode-branch')).toHaveAttribute('data-app-mode-header-control-branch', 'leading');
 
   await page.evaluate(() => {
     const overlay = document.createElement('div');

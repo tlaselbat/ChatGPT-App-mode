@@ -54,9 +54,8 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :has(button, a, [role
   align-self: center !important;
   align-items: center !important;
 }
-/* Leading and actions groups share equal flexible width on both sides of
-   the centered switch so the switch stays centered on the row's content
-   area whenever space allows. Contents keep their edge alignment. */
+/* Keep native leading controls at the workspace edge, with room to shrink
+   text titles. The mode switch and trailing actions retain their own slots. */
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   display: flex !important;
   align-items: center !important;
@@ -68,8 +67,14 @@ body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] {
   max-height: 30px;
   padding-block: 0 !important;
 }
-body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { order: 0; justify-content: flex-start; }
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-control-branch="leading"] {
+  order: 0; justify-content: flex-start; flex: 0 1 auto !important; margin-inline-start: 0 !important;
+}
+body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] button:not([data-app-mode-header-icon]) {
+  min-width: 0; max-width: 100%;
+}
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="actions"] {
+  flex: 0 0 auto !important;
   order: 2;
   margin-inline-start: auto;
   justify-content: flex-end;
@@ -86,8 +91,8 @@ body.faux-chatgpt-app-mode [data-app-mode-header-icon-path] {
   margin: 0 !important;
 }
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 32px !important; min-width: 32px !important; max-width: 32px; height: 28px; }
-/* The sidebar trigger overlays its hidden sizing placeholder in one grid cell. */
-body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] { display: grid !important; width: 32px !important; min-width: 32px !important; }
+/* Inert sizing placeholders must not reserve a slot beside the real controls. */
+body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"] > [aria-hidden="true"] { display: none !important; }
 /* The permanent rail already reserves its toggle. Do not keep another empty
    32px slot when this branch contains only replaced native sidebar buttons. */
 body.faux-chatgpt-app-mode [data-app-mode-header-control-branch="leading"]:has([data-app-mode-sidebar-original]):not(:has(button:not([data-app-mode-sidebar-original]), a[href])) {

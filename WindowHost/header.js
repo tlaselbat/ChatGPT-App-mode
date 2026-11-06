@@ -113,17 +113,23 @@
         let branch = tabs;
         while (branch.parentElement !== header) branch = branch.parentElement;
         mark(branch, 'data-app-mode-header-mode-branch');
+        // Sidebar expansion may prepend inert sizing nodes. Classify the first
+        // real control group, retaining hidden originals behind the activity rail.
+        const leading = [...header.children].find(child => child !== branch &&
+          !child.classList.contains('chatgpt-app-mode-toolbar') &&
+          [child, ...child.querySelectorAll('button,a,[role="button"]')].some(control =>
+            control.matches('button,a,[role="button"]') && !control.closest(excluded)));
         for (const child of header.children) {
           if (child === branch || child.classList.contains('chatgpt-app-mode-toolbar')) continue;
           const controls = [...child.querySelectorAll('button,a,[role="button"]')].filter(visible);
           if (!controls.length) continue;
-          mark(child, 'data-app-mode-header-control-branch', child === header.firstElementChild ? 'leading' : 'actions');
+          mark(child, 'data-app-mode-header-control-branch', child === leading ? 'leading' : 'actions');
           for (const control of controls) {
             if (control.matches('button') && control.querySelector('svg') && !control.textContent.trim()) {
               mark(control, 'data-app-mode-header-icon');
-            }
+            } else continue; // Text/title buttons keep their native sizing and truncation.
             for (let node = control.parentElement; node && header.contains(node); node = node.parentElement) {
-              if (getComputedStyle(node).display !== 'contents') {
+              if (getComputedStyle(node).display !== 'contents' && !node.textContent.trim()) {
                 mark(node, 'data-app-mode-header-icon-path');
               }
               if (node === child) break;
