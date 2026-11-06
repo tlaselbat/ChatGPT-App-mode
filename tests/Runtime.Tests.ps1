@@ -111,6 +111,9 @@ Assert ($LASTEXITCODE -eq 0) 'Taskbar build failed.'
 $assembly = [Reflection.Assembly]::LoadFile($exe)
 $program = $assembly.GetType('ChatGPTTaskbarLauncher.Program')
 $flags = [Reflection.BindingFlags]'Static,NonPublic,Public'
+$register = $program.GetMethod('TryRegisterJumpList', $flags)
+Assert ($register.Invoke($null, [object[]]@([Action]{ })) -eq $true) 'Optional registration success failed.'
+Assert ($register.Invoke($null, [object[]]@([Action]{ throw 'Synthetic unavailable registration' })) -eq $false) 'Optional registration exception escaped.'
 $quote = $program.GetMethod('QuoteNativeArgument', $flags)
 $argumentProbe = Join-Path $Scratch 'argument probe.ps1'
 'param([string]$Url); [Console]::Write($Url)' | Set-Content -LiteralPath $argumentProbe

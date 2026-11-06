@@ -29,8 +29,10 @@ namespace ChatGPTTaskbarLauncher
         {
             SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
 
-            var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-            RegisterJumpList(app);
+            bool registered = TryRegisterJumpList(delegate {
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                RegisterJumpList(app);
+            });
 
             var command = args.Length > 0 ? args[0] : (IsControlKeyDown() ? "--new-session" : "--app");
             if (command.Equals("--create-shortcut", StringComparison.OrdinalIgnoreCase))
@@ -41,7 +43,7 @@ namespace ChatGPTTaskbarLauncher
 
             if (command.Equals("--register-only", StringComparison.OrdinalIgnoreCase))
             {
-                return 0;
+                return registered ? 0 : 1;
             }
 
             if (command.Equals("--recent-chat", StringComparison.OrdinalIgnoreCase))
@@ -73,6 +75,18 @@ namespace ChatGPTTaskbarLauncher
 
             StartPowerShellScript(scriptPath, command.Equals("--new-session", StringComparison.OrdinalIgnoreCase) ? "-NewSession" : null);
             return 0;
+        }
+
+        internal static bool TryRegisterJumpList(Action register)
+        {
+            try { register(); return true; }
+            catch (Exception)
+            {
+                // Optional shell integration must not disable ordinary commands.
+                // Keep diagnostics fixed: exceptions can include private paths.
+                Console.Error.WriteLine("JUMP_LIST_REGISTRATION_FAILED");
+                return false;
+            }
         }
 
         private static int OpenRecentChat(string[] args)
