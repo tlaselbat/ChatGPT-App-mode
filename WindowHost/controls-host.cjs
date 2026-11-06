@@ -7,7 +7,7 @@ const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
 const ACTIONS = new Set(['minimize', 'maximize', 'restore', 'close', 'pin']);
 const NAVIGATION_ACTIONS = new Set(['toggle-sidebar', 'open-search']);
-const EMPTY_NAVIGATION = Object.freeze({ state: 'unavailable', toggle: false, search: false, blocked: false, identity: false });
+const EMPTY_NAVIGATION = Object.freeze({ state: 'unavailable', toggle: false, search: false, searchActive: false, blocked: false, identity: false });
 const COMPACT_BREAKPOINT = 480;
 // Native DIP geometry is independent of the remote page's CSS zoom.
 const HEADER_HEIGHT = 40;
@@ -252,7 +252,8 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
         }
         navigation = next && ['compact', 'docked', 'drawer', 'unavailable'].includes(next.state) &&
           ['toggle', 'search', 'blocked'].every(key => typeof next[key] === 'boolean') ?
-          { state: next.state, toggle: next.toggle, search: next.search, blocked: next.blocked, identity: next.identity === true } : EMPTY_NAVIGATION;
+          { state: next.state, toggle: next.toggle, search: next.search, searchActive: next.searchActive === true,
+            blocked: next.blocked, identity: next.identity === true } : EMPTY_NAVIGATION;
         previous = JSON.stringify(value);
         layout();
       } catch {

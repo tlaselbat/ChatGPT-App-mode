@@ -19,30 +19,12 @@ html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-co
 /* Identity and free title-bar space provide the native drag surface. */
 .titlebar-drag { flex: 1 1 auto; min-width: 36px; }
 .navigation { display: flex; align-items: center; padding-inline-start: 8px; flex: 0 0 auto; }
-.titlebar:has(.navigation [data-action="toggle-sidebar"]:not([hidden])) .brand .brand-mark { display: none; }
 .navigation-search { padding-inline: 4px 0; }
 /* When the toggle group is unavailable, Search becomes the leading control
    and keeps the same 8px edge inset. */
 .navigation:not(:has(button:not([hidden]))) + .navigation-search { padding-inline-start: 8px; }
 .navigation:not(:has(button:not([hidden]))) { display: none; }
-button[hidden], .brand[hidden] { display: none; }
-.brand {
-  display: flex; align-items: center; gap: 8px; min-width: 0;
-  padding-inline: 6px 12px; color: var(--app-mode-control-color);
-  font: 600 12px/1.2 "Segoe UI", sans-serif;
-}
-.brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body[data-compact="true"] .brand-mark { display: none; }
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 700;
-}
+button[hidden] { display: none; }
 .controls {
   display: flex;
   flex: 0 0 auto;
@@ -76,8 +58,17 @@ button:focus-visible { outline: 2px solid var(--app-mode-accent, var(--app-mode-
 button[data-action="pin"][aria-pressed="true"] { color: var(--app-mode-accent, var(--app-mode-control-color)); background: var(--app-mode-control-hover); border-color: var(--app-mode-accent, var(--app-mode-control-hover-border, currentColor)); }
 button:disabled { opacity: .4; cursor: default; }
 svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
-/* Navigation glyphs match the compact rail's perceived 16px/1.5 weight. */
-.navigation button svg { width: 16px; height: 16px; stroke-width: 1.5; }
+/* Navigation glyphs reuse the verified filled native artwork. */
+.navigation button svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+[data-action="toggle-sidebar"] .icon-expanded,
+[data-action="toggle-sidebar"][aria-expanded="true"] .icon-collapsed { display: none; }
+[data-action="toggle-sidebar"][aria-expanded="true"] .icon-expanded { display: block; }
+/* An open Search dialog keeps its entry point visible but noninteractive. */
+button[data-action="open-search"][data-active] {
+  color: var(--app-mode-accent, var(--app-mode-control-color));
+  background: var(--app-mode-control-hover);
+}
+button[data-action="open-search"][data-active]:disabled { opacity: 1; cursor: default; }
 button[data-action="pin"] svg { stroke: none; }
 .restore-icon, button[data-restored="true"] .maximize-icon { display: none; }
 button[data-restored="true"] .restore-icon { display: block; }

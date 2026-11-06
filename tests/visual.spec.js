@@ -122,28 +122,26 @@ test('trusted titlebar navigation keeps responsive hit regions, focus and native
     await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-${width}.png`) });
     const controls = await caption.locator('.controls').boundingBox();
     await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
-    await expect(caption.locator('.brand')).toBeHidden();
+    // The title bar is identical in compact and expanded navigation.
     expect(await caption.locator('.controls').boundingBox()).toEqual(controls);
     expect(await caption.locator('.titlebar-drag').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(36);
     await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-expanded-${width}.png`) });
     await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false, identity: false } }));
-    await expect(caption.locator('.brand')).toBeVisible();
+    await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeVisible();
   }
   await toggle.focus(); await caption.keyboard.press('Enter');
   await caption.getByRole('button', { name: 'Search', exact: true }).focus(); await caption.keyboard.press('Space');
   await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar', 'open-search']);
-  await expect(caption.locator('.brand')).toBeVisible();
   const searchBefore = await caption.locator('[data-action="open-search"]').boundingBox();
   const toggleBefore = await caption.locator('[data-action="toggle-sidebar"]').boundingBox();
   const captionsBefore = await caption.locator('.controls').boundingBox();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
-  await expect(caption.locator('.brand')).toBeHidden();
-  // Sidebar and Search keep their slots when the identity yields its width.
+  // Sidebar and Search keep their slots across navigation states.
   expect(Math.abs((await caption.locator('[data-action="open-search"]').boundingBox()).x - searchBefore.x)).toBeLessThanOrEqual(2);
   expect(Math.abs((await caption.locator('[data-action="toggle-sidebar"]').boundingBox()).x - toggleBefore.x)).toBeLessThanOrEqual(2);
   expect(await caption.locator('.controls').boundingBox()).toEqual(captionsBefore);
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: false } }));
-  await expect(caption.locator('.brand')).toBeVisible();
+  await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeVisible();
   await expect(caption.getByRole('button', { name: 'Close sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
   for (const theme of [
     { background: 'rgb(250, 250, 250)', color: 'rgb(20, 20, 20)', accent: 'rgb(0, 80, 190)' },
@@ -155,6 +153,17 @@ test('trusted titlebar navigation keeps responsive hit regions, focus and native
     await expect(search).toHaveCSS('color', theme.color);
     await expect(search).toHaveCSS('outline-color', theme.accent);
   }
+  // An active Search dialog keeps its entry point visible but noninteractive.
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, searchActive: true, blocked: true } }));
+  const activeSearch = caption.locator('[data-action="open-search"]');
+  await expect(activeSearch).toBeVisible();
+  await expect(activeSearch).toBeDisabled();
+  await expect(activeSearch).toHaveAttribute('data-active');
+  const activeBox = await activeSearch.boundingBox();
+  expect(Math.abs(activeBox.x - searchBefore.x)).toBeLessThanOrEqual(2);
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, searchActive: false, blocked: false } }));
+  await expect(activeSearch).toBeEnabled();
+  await expect(activeSearch).not.toHaveAttribute('data-active');
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'unavailable', toggle: false, search: false, blocked: false } }));
   await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeHidden();
   await caption.getByRole('button', { name: 'Always on top' }).click();
@@ -679,7 +688,7 @@ test('compact rail yields to expanded navigation and opens the native drawer', a
         search.addEventListener('click', () => {
           window.syntheticSearchCalls = (window.syntheticSearchCalls || 0) + 1;
           const modal = document.createElement('div'); modal.id = 'synthetic-action-search';
-          modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+          modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-label', 'Global search');
           modal.style.cssText = 'position:fixed;inset:50px;background:white';modal.innerHTML = '<input aria-label="Synthetic search">';
           drawer.setAttribute('aria-hidden', 'true');document.body.append(modal);modal.querySelector('input').focus();
         });
@@ -919,7 +928,7 @@ test('trusted navigation delegates native actions and conditionally condenses on
     document.addEventListener('click', event => {
       if (event.target.getAttribute('aria-label') !== 'Search') return;
       const dialog = document.createElement('div'); dialog.id = 'native-search-test';
-      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
       dialog.innerHTML = '<input aria-label="Search conversations">'; document.body.append(dialog);
       dialog.querySelector('input').focus();
     });
@@ -949,6 +958,14 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
   await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(false);
+  // While its native dialog is open, Search stays capable rather than
+  // degrading to the rail fallback, and a repeated request is a no-op
+  // instead of poisoning capability tracking.
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(true);
+  await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().searchActive)).toBe(true);
+  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]')).toHaveAttribute('data-app-mode-host-search-original', '');
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
+  await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-navigation-blocked');
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
@@ -1000,7 +1017,7 @@ test('trusted navigation retains lazy Search access after launch and reload at r
       const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true;
       document.addEventListener('click', event => {
         if (event.target.getAttribute('aria-label') !== 'Search' || event.target.closest('#app-mode-compact-sidebar-actions')) return;
-        const dialog = document.createElement('div'); dialog.id = 'lazy-native-search'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        const dialog = document.createElement('div'); dialog.id = 'lazy-native-search'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
         dialog.innerHTML = '<input aria-label="Lazy native search">'; document.body.append(dialog); dialog.querySelector('input').focus();
       });
       document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#lazy-native-search')?.remove(); });
@@ -1045,7 +1062,7 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
     };
     document.addEventListener('click', event => {
       if (event.target.id !== 'native-search') return;
-      const dialog = document.createElement('div'); dialog.id = 'search-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      const dialog = document.createElement('div'); dialog.id = 'search-dialog'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
       dialog.innerHTML = '<input aria-label="Native search input">'; document.body.append(dialog); dialog.querySelector('input').focus();
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#search-dialog')?.remove(); });

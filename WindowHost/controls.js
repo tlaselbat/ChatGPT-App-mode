@@ -21,8 +21,13 @@
     const navigation = state.navigation || {};
     const toggle = document.querySelector('[data-action="toggle-sidebar"]');
     toggle.hidden = !navigation.toggle;
-    document.querySelector('[data-action="open-search"]').hidden = !navigation.search;
-    document.querySelector('.brand').hidden = navigation.identity === true;
+    const search = document.querySelector('[data-action="open-search"]');
+    search.hidden = !navigation.search;
+    // A modal makes activation impossible; blocked controls stay in place but
+    // inert, so the bar's layout is stable and neither can steal modal focus.
+    toggle.disabled = navigation.toggle === true && navigation.blocked === true;
+    search.disabled = navigation.search === true && navigation.blocked === true;
+    search.toggleAttribute('data-active', navigation.searchActive === true);
     const expanded = navigation.state === 'docked' || navigation.state === 'drawer';
     toggle.setAttribute('aria-expanded', String(expanded));
     const sidebarLabel = expanded ? 'Close sidebar' : 'Open sidebar';

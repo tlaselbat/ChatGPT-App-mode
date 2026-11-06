@@ -19,23 +19,51 @@
     searchControl: null,
     rejectedSearch: new WeakSet(),
     rejectedToggle: null,
+    // Resolve a dialog's own accessible name: aria-label first, then the
+    // aria-labelledby chain ChatGPT uses for its Radix dialogs.
+    dialogName(element) {
+      const own = element.getAttribute('aria-label');
+      if (own) return own.trim();
+      return (element.getAttribute('aria-labelledby') || '').split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' ');
+    },
+    // An open Search dialog inerts its own trigger. Recognize the dialog by
+    // its resolved "Search" name and text input so unrelated input modals
+    // (rename, settings) keep ordinary modal blocking.
+    searchDialog(model) {
+      return [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].find(element =>
+        element !== model.drawer && element.getClientRects().length &&
+        getComputedStyle(element).visibility !== 'hidden' && element.querySelector('input') &&
+        /search/i.test(this.dialogName(element)));
+    },
     read() {
       const model = navigationAdapter.read();
       const toggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false });
       const supported = compactSidebarEnabled && !!model.root && !!toggle && toggle !== this.rejectedToggle;
-      const search = navigationAdapter.find(/^Search$/i);
-      this.searchControl = supported ? search : null;
-      return { state: supported ? model.state : 'unavailable', toggle: supported && !model.blocked && model.state !== 'drawer',
+      const dialog = this.searchDialog(model);
+      const found = navigationAdapter.find(/^Search$/i);
+      if (found) this.searchControl = found;
+      // While the dialog hides its trigger, the still-connected last control
+      // remains the capability signal; removal or replacement still fails.
+      const search = found || (dialog && this.searchControl?.isConnected ? this.searchControl : null);
+      if (!supported) this.searchControl = null;
+      return { state: supported ? model.state : 'unavailable', toggle: supported && model.state !== 'drawer',
         search: supported && !!search && !this.rejectedSearch.has(search) &&
-          !model.blocked && model.state !== 'drawer', blocked: model.blocked, identity: !!navigationAdapter.identity(model) };
+          ((!model.blocked && model.state !== 'drawer') || !!dialog),
+        searchActive: !!dialog, blocked: model.blocked, identity: !!navigationAdapter.identity(model) };
     },
     publish() {
       const value = JSON.stringify(this.read());
       if (document.body?.getAttribute('data-app-mode-host-navigation') !== value) document.body?.setAttribute('data-app-mode-host-navigation', value);
     },
     async run(action) {
-      if (!this.ready || !this.visible || this.busy || !['toggle-sidebar', 'open-search'].includes(action) ||
-          !(action === 'toggle-sidebar' ? this.read().toggle : this.read().search)) return false;
+      if (!this.ready || !this.visible || this.busy || !['toggle-sidebar', 'open-search'].includes(action)) return false;
+      const capability = this.read();
+      if (!(action === 'toggle-sidebar' ? capability.toggle : capability.search)) return false;
+      // A modal makes activation impossible; an already-open Search dialog
+      // already satisfies the request. Neither outcome is a capability
+      // verdict, so neither reaches the rejection set.
+      if (navigationAdapter.read().blocked) return action === 'open-search' && capability.searchActive === true;
       this.busy = true;
       const root = navigationAdapter.read().root;
       const searchControl = this.searchControl;
@@ -412,23 +440,24 @@
       toggle = document.createElement('button');
       toggle.id = 'app-mode-compact-sidebar'; toggle.type = 'button';
       toggle.setAttribute('aria-label', 'Open sidebar'); toggle.title = 'Open sidebar';
-      toggle.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9 4v16"/></svg>';
+      toggle.innerHTML = `<svg viewBox="0 0 20 20" width="20" height="20" fill="currentColor" aria-hidden="true"><g data-icon-collapsed><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.877a3.665 3.665 0 0 1 3.665 3.665v6.917a3.665 3.665 0 0 1-3.665 3.665h-9a3.665 3.665 0 0 1-3.665-3.665V6.542A3.665 3.665 0 0 1 5.5 2.877zm-9 1.33a2.335 2.335 0 0 0-2.335 2.335v6.917A2.335 2.335 0 0 0 5.5 15.794h9a2.335 2.335 0 0 0 2.335-2.335V6.542A2.335 2.335 0 0 0 14.5 4.207z"/><path d="M5.833 6.001c.367 0 .665.298.665.665v6.667a.665.665 0 0 1-1.33 0V6.666c0-.367.298-.665.665-.665"/></g><path data-icon-expanded fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.877a3.665 3.665 0 0 1 3.665 3.665v6.917a3.665 3.665 0 0 1-3.665 3.665h-9a3.665 3.665 0 0 1-3.665-3.665V6.542A3.665 3.665 0 0 1 5.5 2.877zM8.165 15.794H14.5a2.335 2.335 0 0 0 2.335-2.335V6.542A2.335 2.335 0 0 0 14.5 4.207H8.165zM5.5 4.207a2.335 2.335 0 0 0-2.335 2.335v6.917A2.335 2.335 0 0 0 5.5 15.794h1.335V4.207z"/></svg>`;
       document.body.append(toggle);
     }
     let menu = document.getElementById('app-mode-compact-sidebar-actions');
     if (!menu) {
       menu = document.createElement('nav'); menu.id = 'app-mode-compact-sidebar-actions';
       menu.setAttribute('aria-label', 'App navigation');
+      // Verified native sidebar icon geometry (20px filled artwork).
       const actions = [
-        ['New chat', 'M12 4v16M4 12h16'],
-        ['Search', 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14m5 12 6 6'],
-        ['Library', 'M4 5h5v14H4zM10 5h5v14h-5zM16 5h4v14h-4z'],
-        ['Explore', 'M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z']
+        ['New chat', '<path d="M8.16675 2.50127C8.53391 2.50127 8.83161 2.7992 8.83179 3.16631C8.83179 3.53358 8.53402 3.83135 8.16675 3.83135H5.83374C4.72836 3.83135 3.83197 4.72797 3.83179 5.8333V14.1663C3.83179 15.2718 4.72825 16.1683 5.83374 16.1683H14.1667C15.2722 16.1683 16.1687 15.2718 16.1687 14.1663V11.8333C16.1689 11.4662 16.4666 11.1683 16.8337 11.1683C17.2007 11.1684 17.4986 11.4663 17.4988 11.8333V14.1663C17.4988 16.0063 16.0068 17.4983 14.1667 17.4983H5.83374C3.99371 17.4983 2.50171 16.0063 2.50171 14.1663V5.8333C2.50189 3.99343 3.99382 2.50127 5.83374 2.50127H8.16675Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M13.4265 3.10381C14.3857 2.15908 15.9276 2.16466 16.8796 3.11651C17.8339 4.07106 17.8372 5.61827 16.8865 6.57647L11.7244 11.7786C11.3005 12.2058 10.7622 12.5027 10.1746 12.6321L7.78784 13.1565C7.20661 13.2842 6.6889 12.766 6.81714 12.1849L7.34253 9.80498C7.47294 9.21426 7.77197 8.67391 8.20288 8.24932L13.4265 3.10381ZM15.9392 4.05694C15.5038 3.62172 14.7988 3.61907 14.3601 4.05108L9.13647 9.19659C8.88861 9.44077 8.71644 9.75138 8.64136 10.0911L8.28979 11.6849L9.88843 11.3333C10.2265 11.2588 10.5362 11.0878 10.78 10.8421L15.9421 5.63897C16.3769 5.20075 16.3756 4.49352 15.9392 4.05694Z"/>'],
+        ['Search', '<path fill-rule="evenodd" clip-rule="evenodd" d="M9.161 2.379a6.707 6.707 0 0 1 5.157 10.993l3.242 3.243a.665.665 0 0 1-.94.94l-3.252-3.25A6.707 6.707 0 1 1 9.161 2.379m0 1.33a5.377 5.377 0 1 0 0 10.754 5.377 5.377 0 0 0 0-10.754"/>'],
+        ['Library', '<path fill-rule="evenodd" clip-rule="evenodd" d="M14.4021 2.64802C15.5977 2.4372 16.7381 3.23563 16.949 4.43122L18.7312 14.5416C18.942 15.7371 18.1444 16.8774 16.949 17.0884L15.4548 17.3511C14.2594 17.5618 13.1189 16.7643 12.908 15.5689L12.0515 10.7095V15.1334C12.0513 16.3473 11.0673 17.3316 9.85327 17.3316H8.33667C7.73973 17.3315 7.19954 17.0919 6.80347 16.7056C6.40733 17.0919 5.86729 17.3316 5.27026 17.3316H3.75366C2.53973 17.3315 1.5556 16.3473 1.55542 15.1334V4.86677C1.55549 3.65276 2.53966 2.6686 3.75366 2.66853H5.27026C5.86695 2.66853 6.4074 2.90664 6.80347 3.29255C7.19948 2.90662 7.74007 2.66866 8.33667 2.66853H9.85327C10.5993 2.66853 11.2576 3.04071 11.655 3.60896C11.972 3.25511 12.4048 3.00061 12.9089 2.91169L14.4021 2.64802ZM15.6394 4.66169C15.556 4.1897 15.1056 3.87452 14.6335 3.95759L13.1394 4.22126C12.6674 4.30473 12.3521 4.75503 12.4353 5.22712L14.2185 15.3375C14.3018 15.8097 14.7521 16.1248 15.2244 16.0416L16.7175 15.7779C17.1897 15.6946 17.5047 15.2452 17.4216 14.773L15.6394 4.66169ZM3.75366 3.9986C3.2742 3.99868 2.88557 4.3873 2.8855 4.86677V15.1334C2.88568 15.6127 3.27427 16.0015 3.75366 16.0015H5.27026C5.74972 16.0015 6.13825 15.6128 6.13843 15.1334V4.86677C6.13836 4.38726 5.74979 3.9986 5.27026 3.9986H3.75366ZM8.33667 3.9986C7.85737 3.99887 7.46858 4.38743 7.46851 4.86677V15.1334C7.46869 15.6126 7.85744 16.0013 8.33667 16.0015H9.85327C10.3327 16.0015 10.7213 15.6128 10.7214 15.1334C10.7214 4.38726 10.3328 3.9986 9.85327 3.9986H8.33667Z"/>'],
+        ['Explore', '<path d="M4.1665 8.50146C4.9939 8.50146 5.66535 9.17215 5.66553 9.99951C5.66553 10.827 4.99401 11.4985 4.1665 11.4985C3.33915 11.4984 2.66846 10.8269 2.66846 9.99951C2.66863 9.17226 3.33926 8.50164 4.1665 8.50146Z"/><path d="M9.99951 8.50146C10.8269 8.50146 11.4984 9.17215 11.4985 9.99951C11.4985 10.827 10.827 11.4985 9.99951 11.4985C9.17227 11.4982 8.50146 10.8268 8.50146 9.99951C8.50164 9.17234 9.17238 8.50177 9.99951 8.50146Z"/><path d="M15.8335 8.50146C16.6607 8.50166 17.3323 9.17228 17.3325 9.99951C17.3325 10.8269 16.6608 11.4983 15.8335 11.4985C15.0061 11.4984 14.3354 10.8269 14.3354 9.99951C14.3356 9.17226 15.0062 8.50164 15.8335 8.50146Z"/>']
       ];
-      for (const [label, path] of actions) {
+      for (const [label, icon] of actions) {
         const action = document.createElement('button'); action.type = 'button';
         action.setAttribute('data-app-mode-sidebar-action', ''); action.setAttribute('aria-label', label); action.title = label;
-        action.innerHTML = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="${path}"/></svg>`;
+        action.innerHTML = `<svg viewBox="0 0 20 20" width="20" height="20" fill="currentColor" aria-hidden="true">${icon}</svg>`;
         menu.append(action);
       }
       document.body.append(menu);
@@ -444,7 +473,7 @@
       account.setAttribute('data-app-mode-sidebar-action', '');
       account.setAttribute('data-app-mode-rail-account', '');
       account.setAttribute('aria-label', railAccountLabel); account.title = railAccountLabel;
-      account.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>';
+      account.innerHTML = '<svg viewBox="0 0 20 20" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10 10.989a7.105 7.105 0 0 1 7.076 6.482.666.666 0 0 1-1.325.115 5.775 5.775 0 0 0-11.504 0 .666.666 0 0 1-1.324-.115 7.104 7.104 0 0 1 7.076-6.482"/><path fill-rule="evenodd" clip-rule="evenodd" d="M10 1.756a3.986 3.986 0 1 1-.002 7.971A3.986 3.986 0 0 1 10 1.756m0 1.33a2.656 2.656 0 1 0 0 5.31 2.656 2.656 0 0 0 0-5.31"/></svg>';
       menu.append(account);
     }
     // Route-aware selection: mirror the site's aria-current link onto the

@@ -739,7 +739,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
         toggle.setAttribute('aria-label', open ? 'Close sidebar' : 'Open sidebar');
       };
       root.querySelector('[aria-label="Search"]').onclick = () => {
-        const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
         dialog.id = 'host-search-fixture'; dialog.innerHTML = '<input aria-label="Native host search">';
         document.body.append(dialog); dialog.querySelector('input').focus();
       };
@@ -747,7 +747,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     });
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.toggle) { off(); resolve(true); } }); })");
-    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), false);
+    assert.equal(await controlsEval('document.querySelector(".brand") === null'), true, 'Title bar carries no static branding');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), true, 'Hidden stale Search stays hidden in the title bar');
     await native('Activate');
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), false, 'Hidden stale Search must not advertise trusted capability');
     assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').isVisible(), true);
@@ -755,14 +756,20 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.getByRole('textbox', { name: 'Native host search' }).waitFor();
     assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.blocked) { off(); resolve(true); } }); })");
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), false, 'Title-bar Search stays mounted while its dialog is open');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").disabled'), true, 'Title-bar Search is inert while its dialog is open');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hasAttribute("data-active")'), true);
+    assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true, 'Repeated Search requests are no-ops, not capability failures');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), false, 'Repeated requests do not swap controls');
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').evaluate(e => getComputedStyle(e).display), 'none', 'Rail Search stays suppressed while the dialog is open');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.identity && !state.navigation.blocked) { off(); resolve(true); } }); })");
-    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), true);
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").disabled'), false, 'Search is interactive again after dismissal');
     assert.equal(await controlsEval('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.activeElement === document.querySelector("[data-action=open-search]")))))'), true, 'Search dismissal restores focus to the visible trusted entry point');
     await page.locator('#native-host-identity').evaluate(element => element.hidden = true);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (!state.navigation.identity && state.navigation.state === 'docked') { off(); resolve(true); } }); })");
-    assert.equal(await controlsEval('document.querySelector(".brand").hidden'), false);
+    assert.equal(await controlsEval('document.querySelector(".titlebar-drag").getBoundingClientRect().width >= 36'), true);
     await page.locator('#native-host-identity').evaluate(element => element.hidden = false);
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
@@ -793,7 +800,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.evaluate(() => {
       const search = document.createElement('button'); search.setAttribute('aria-label', 'Search');
       search.onclick = () => {
-        const dialog = document.createElement('div'); dialog.id = 'host-search-fixture'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+        const dialog = document.createElement('div'); dialog.id = 'host-search-fixture'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
         dialog.innerHTML = '<input aria-label="Recovered native Search">'; document.body.append(dialog); dialog.querySelector('input').focus();
       };
       document.querySelector('#host-navigation-fixture .h-toolbar').append(search);

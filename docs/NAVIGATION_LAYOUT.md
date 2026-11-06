@@ -276,7 +276,12 @@ retains its native reserved column without adding a second rail offset.
 The native header's painted background can be clipped by content-column
 ancestors. A pointer-transparent 52px corner surface completes the same header
 background and bottom border beneath the toggle. It stays below the native
-modal and both toggle variants, preserving drawer close interaction.
+modal and both toggle variants, preserving drawer close interaction. While the
+Electron title bar owns navigation (so the page toggle is hidden), the same
+corner carries a small centered OpenAI knot via a pointer-transparent
+pseudo-element masked from the site's own icon geometry. It follows the
+native text color, appears only in the compact state, and never occupies
+layout space.
 
 Isolated live review covered compact and expanded states at 1280px and 620px
 in light and dark themes. The corner matched the header color and its toggle
