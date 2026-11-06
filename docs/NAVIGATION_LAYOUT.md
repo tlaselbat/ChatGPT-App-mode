@@ -8,24 +8,22 @@ not rerun or extend that verification.
 
 ## Codex-inspired surface
 
-The navigation controller now implements a Codex-style persistent activity
-rail: the custom 52px rail (`#app-mode-compact-sidebar-actions`) stays mounted
-in every navigation state — compact, docked, and beneath the modal drawer —
-instead of appearing only in the compact state. The shell therefore reserves
-the rail width whenever the site itself does not reserve a rail column: a
-rendered collapsed panel or a rendered native rail suppresses the offset, and
-a rendered native rail beside a docked panel does too. A docked panel inside
-the shell shifts right with the offset, so the layout reads rail | sidebar |
-workspace in the expanded state.
+The navigation controller implements a compact 52px activity rail
+(`#app-mode-compact-sidebar-actions`) only while native navigation is compact.
+When a rendered docked panel or modal drawer supplies expanded navigation, the
+compact rail is hidden and its shell reservation is removed. The expanded
+sidebar therefore begins at the page origin and the workspace reclaims the
+52px width. The existing App Mode toggle remains the docked sidebar header
+control; the native drawer keeps its own close control inside its focus trap.
 
 The responsive docked width is keyed to the site's own
 `data-app-shell-sidebar-open="true"` attribute, not our state marker. It
 releases on native collapse intent so width-based detection can see the panel
 shrink; without that flag, native width remains authoritative. Sizing and
 account behavior are specified in the section refinement below rather than
-in a second fixed-width model. The native modal drawer opens at `left: 52px`
-beside the rail, retaining its dismissal, scrim, and focus trap; docked
-navigation occupies its own column without a modal scrim.
+in a second fixed-width model. The native modal drawer opens at the page
+origin, retaining its dismissal, scrim, and focus trap; docked navigation
+occupies its own column without a modal scrim.
 
 Rail buttons gain a `data-app-mode-rail-active` selected state when the site's
 `aria-current` link matches their label. The single rendered content `main`

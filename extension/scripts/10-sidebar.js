@@ -401,14 +401,12 @@
     }
     const modalClose = model.drawer?.querySelector('button[aria-label="Hide sidebar" i], button[aria-label="Close sidebar" i]');
     own(modalClose, 'data-app-mode-modal-sidebar-toggle');
-    // The rail is permanent, so the app column reserves its 52px — except
-    // when the site itself already reserves that space: a rendered collapsed
-    // panel or native rail column we overlay, including a native rail kept
-    // beside a docked panel. A docked panel inside the shell shifts right
-    // with the offset instead of needing its own reservation.
+    // Only compact navigation needs the 52px rail reservation. A rendered
+    // docked panel or drawer is the expanded navigation surface, so it starts
+    // at the page origin and the workspace gets that width back.
     const navRailReserved = nativeRail && nativeRail.getBoundingClientRect().width > 0 &&
       [...nativeRail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1;
-    if (!navRailReserved && (dockedPanel || !model.reservedRail)) own(root, 'data-app-mode-compact-sidebar-shell');
+    if (state === 'compact' && !navRailReserved && !model.reservedRail) own(root, 'data-app-mode-compact-sidebar-shell');
     // The rounded Codex workspace is the single rendered content main inside
     // the shell. Ambiguous structure keeps the native, unmarked layout.
     const contentMains = [...root.querySelectorAll('main')].filter(element =>

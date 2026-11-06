@@ -65,6 +65,12 @@ body.faux-chatgpt-app-mode [data-app-shell-sidebar-open="true"] [data-app-mode-d
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] {
   min-height: var(--app-mode-subheader-height); height: var(--app-mode-subheader-height); flex-shrink: 0; padding-inline: 12px;
 }
+/* The retained collapse control occupies the first header slot while
+   navigation is expanded. Reserve that slot so the native title never paints
+   beneath the control. */
+body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-nav-header] {
+  padding-inline-start: var(--app-mode-rail-width);
+}
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-account-row] { min-height: 48px; height: auto; padding-block: 6px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-primary] { gap: 4px; margin-block: 8px; }
@@ -129,6 +135,11 @@ body.faux-chatgpt-app-mode #app-mode-compact-sidebar {
 }
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions {
   top: var(--app-mode-subheader-height); bottom: 0; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+/* A rendered native panel or drawer is the full navigation surface. Keep the
+   existing toggle as its header control and hide only the redundant actions. */
+body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions {
+  display: none;
 }
 body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions button {
   flex: 0 0 36px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center;
@@ -199,6 +210,7 @@ body.faux-chatgpt-app-mode [data-app-mode-workspace] > footer {
 }
 body.faux-chatgpt-app-mode [data-app-mode-sidebar-original] { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-native-sidebar] { visibility: hidden !important; }
+body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-native-sidebar] { display: none !important; }
 
 /* Keep the modal's full input-blocking surface, but leave the shared header
    visually clear. The adapter captures the native color, including alpha. */
@@ -300,13 +312,13 @@ body.faux-chatgpt-app-mode [data-app-mode-docked-sidebar-parent] { background: v
 /* The native row is inside the content column; its paint can be clipped at
    the sidebar's edge even when its measured box spans the viewport. Complete
    only that 52px corner, below both toggle variants and above native panels. */
-body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar)::before {
+body.faux-chatgpt-app-mode[data-app-mode-navigation-state="compact"]:has(#app-mode-compact-sidebar)::before {
   content: ''; position: fixed; top: 0; left: 0;
   width: var(--app-mode-rail-width); height: var(--app-mode-subheader-height);
   background: var(--app-mode-control-bg);
   box-sizing: border-box; z-index: 39; pointer-events: none;
 }
-body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) [data-app-mode-header-layout] { z-index: 50; background: var(--app-mode-control-bg); }
+body.faux-chatgpt-app-mode[data-app-mode-navigation-state="compact"]:has(#app-mode-compact-sidebar) [data-app-mode-header-layout] { z-index: 50; background: var(--app-mode-control-bg); }
 /* Use the native close control in the same slot while its modal focus trap is
    active. The custom opener must not compete with it visually or by keyboard. */
 body.faux-chatgpt-app-mode:has([data-app-mode-modal-sidebar-toggle]) #app-mode-compact-sidebar { visibility: hidden; }
@@ -349,13 +361,13 @@ body.faux-chatgpt-app-mode #chatgpt-app-mode-pin-toggle {
 /* Conversation composers retain their native elevated surface and geometry.
    Only the recognized blank-home card above needs an App Mode surface. */
 
-/* The modal header sits beside the activity rail, sharing the page origin.
-   Keep its native footer inside the same external bottom inset. */
+/* The modal drawer uses the complete page origin while expanded. Keep its
+   native footer inside the same external bottom inset. */
 body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) #browser-sidebar-popover[role="dialog"] {
   transform: none !important;
   translate: none !important;
   top: 0 !important;
-  left: var(--app-mode-rail-width) !important;
+  left: 0 !important;
   bottom: var(--app-mode-gap) !important;
   height: auto !important;
   max-height: calc(100dvh - var(--app-mode-gap)) !important;

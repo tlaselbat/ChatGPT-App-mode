@@ -583,7 +583,7 @@ test('conversation-only title ignores the native sidebar-width grid of invisible
   expect(await page.evaluate(()=>window.nativeTitleClicks)).toBe(8);
 });
 
-test('compact sidebar rail persists in narrow responsive layout and opens the native drawer', async ({ page }) => {
+test('compact rail yields to expanded navigation and opens the native drawer', async ({ page }) => {
   await page.setContent(fixture);
   await page.setViewportSize({ width: 390, height: 780 });
   await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
@@ -614,6 +614,7 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
       setTimeout(() => {
         if (!drawer.isConnected) return;
         const search = document.createElement('button'); search.setAttribute('aria-label', 'Search');
+        search.style.marginTop = '40px';
         search.addEventListener('click', () => {
           window.syntheticSearchCalls = (window.syntheticSearchCalls || 0) + 1;
           const modal = document.createElement('div'); modal.id = 'synthetic-action-search';
@@ -654,11 +655,10 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   await expect(page.locator('[role="dialog"][aria-modal="true"]')).toBeVisible();
   await page.locator('[role="dialog"][aria-modal="true"]').evaluate(element => { element.id = 'browser-sidebar-popover'; });
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('top', '0px');
-  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('left', '52px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('left', '0px');
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('height', '772px');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
-  // The rail is permanent: it stays mounted beneath the modal drawer.
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
   await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toHaveCSS('top', '5px');
   // A native popup may temporarily hide its parent drawer from accessibility.
   // Its rendered layout and dismissal control must remain owned and stable.
@@ -698,20 +698,20 @@ test('compact sidebar rail persists in narrow responsive layout and opens the na
   await page.evaluate(() => {
     const aside = document.createElement('aside'); aside.className = 'app-shell-left-panel';
     aside.style.cssText = 'display:block;width:280px;height:100vh';
-    aside.innerHTML = '<div id="synthetic-sidebar-scroll" style="height:100px;overflow:auto"><div style="height:1000px"></div></div>';
+    aside.innerHTML = '<button aria-label="New chat">New chat</button><button aria-label="Search">Search</button><button aria-label="Library">Library</button><button aria-label="Explore">Explore</button><div id="synthetic-sidebar-scroll" style="height:100px;overflow:auto"><div style="height:1000px"></div></div>';
     document.querySelector('#app').prepend(aside);
     aside.querySelector('#synthetic-sidebar-scroll').scrollTop = 80;
   });
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
-  // The docked panel sits inside the shell column, so the permanent rail's
-  // 52px reservation now shifts it right: rail 0-52, sidebar 52-291.
-  await expect(page.locator('#app')).toHaveAttribute('data-app-mode-compact-sidebar-shell', '');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  // Expanded navigation owns the left edge and reclaims the compact rail's
+  // 52px reservation while the existing toggle remains available to close it.
+  await expect(page.locator('#app')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
   const dockedBox = await page.locator('aside.app-shell-left-panel').boundingBox();
   // Native panel width is preserved (width-based state detection rules out
-  // forcing 239px); only its position right of the rail is asserted.
+  // forcing 239px); its position at the application edge is asserted.
   expect(dockedBox.width).toBeGreaterThanOrEqual(200);
-  expect(Math.abs(dockedBox.x - 52)).toBeLessThanOrEqual(2);
+  expect(Math.abs(dockedBox.x)).toBeLessThanOrEqual(2);
   await expect(page.locator('aside.app-shell-left-panel')).toHaveCSS('margin-top', '0px');
   // A separate global modal blocks background controls without invalidating
   // the docked navigation layout or its scroll position.
@@ -976,19 +976,25 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
     const state = width < 700 ? 'drawer' : 'docked';
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
     const panel = page.locator(width < 700 ? '#browser-sidebar-popover' : '[data-app-mode-docked-sidebar]');
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+    await expect(width < 700 ? page.locator('[data-app-mode-modal-sidebar-toggle]') : page.locator('#app-mode-compact-sidebar')).toBeVisible();
     const scroll = panel.locator('[data-app-mode-nav-scroll]');
     const last = panel.locator('[data-section="recents"] a').last();
     await scroll.evaluate(e => e.scrollTop = e.scrollHeight);
     const geometry = await panel.evaluate(panel => {
-      const box = e => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+      const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, right: r.right, top: r.top, bottom: r.bottom, width: r.width }; };
       const scroll = panel.querySelector('[data-app-mode-nav-scroll]');
       const last = panel.querySelector('[data-section="recents"] a:last-child');
+      const collapse = panel.querySelector('[data-app-mode-modal-sidebar-toggle]') || document.querySelector('#app-mode-compact-sidebar');
       return { panel: box(panel), workspace: box(document.querySelector('main')), scroll: box(scroll),
         last: box(last), tail: box([...scroll.querySelectorAll('a[href]')].at(-1)), account: box(panel.querySelector('#native-account')), footer: box(panel.querySelector('.section-footer')),
+        collapse: box(collapse), title: box(panel.querySelector('[data-app-mode-nav-header] strong')),
         gap: parseFloat(getComputedStyle(document.body).getPropertyValue('--app-mode-gap')),
         padding: parseFloat(getComputedStyle(scroll).paddingBottom), overflow: document.documentElement.scrollHeight > innerHeight };
     });
     expect(geometry.panel.top).toBe(geometry.workspace.top);
+    expect(geometry.panel.x).toBeLessThanOrEqual(1);
+    expect(geometry.collapse.right).toBeLessThanOrEqual(geometry.title.x);
     expect(geometry.panel.bottom).toBe(geometry.workspace.bottom);
     expect(811 - geometry.panel.bottom).toBe(geometry.gap);
     expect(geometry.padding).toBeGreaterThanOrEqual(geometry.gap);
@@ -1006,10 +1012,19 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
     await page.keyboard.press('Escape');
     await page.screenshot({ path: testInfo.outputPath(`sidebar-boundaries-${width}.png`) });
     if (state === 'drawer') await page.keyboard.press('Escape');
-    else await page.locator('#app-mode-compact-sidebar').click();
+    else if (width === 1063) {
+      await page.locator('#app-mode-compact-sidebar').focus();
+      await page.keyboard.press('Enter');
+    } else await page.locator('#app-mode-compact-sidebar').click();
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
-    await expect(page.locator('[data-app-mode-rail-account]')).toBeVisible();
-    await page.locator('#app-mode-compact-sidebar').click();
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('width', '52px');
+    if (width >= 700) expect((await page.locator('main').boundingBox()).width).toBeGreaterThan(geometry.workspace.width);
+    await page.screenshot({ path: testInfo.outputPath(`sidebar-collapsed-${width}.png`) });
+    if (width === 1063) {
+      await page.locator('#app-mode-compact-sidebar').focus();
+      await page.keyboard.press('Enter');
+    } else await page.locator('#app-mode-compact-sidebar').click();
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
   }
 });
@@ -1035,8 +1050,9 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
           sidebarHeader: box(panel.querySelector('[data-app-mode-nav-header]')), scroll: box(panel.querySelector('[data-app-mode-nav-scroll]')),
           account: box(panel.querySelector('.section-footer')), overflow: document.documentElement.scrollWidth > innerWidth };
       });
-      expect(geometry.rail.width).toBe(52);
-      expect(geometry.sidebar.x).toBeGreaterThanOrEqual(52);
+      expect(geometry.rail.width).toBe(0);
+      expect(geometry.sidebar.x).toBeGreaterThanOrEqual(0);
+      expect(geometry.sidebar.x).toBeLessThanOrEqual(1);
       expect(geometry.sidebar.right).toBeLessThanOrEqual(cssWidth + 1);
       expect(geometry.workspace.width).toBeGreaterThan(150);
       expect(geometry.header.y).toBe(0);
