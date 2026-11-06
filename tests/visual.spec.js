@@ -545,6 +545,44 @@ test('native title buttons stay left aligned when sidebar spacers precede the le
   expect(await page.evaluate(()=>window.titleClicks)).toBe(8);
 });
 
+test('conversation-only title ignores the native sidebar-width grid of invisible controls', async ({ page }, testInfo) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.setContent(`<style>*{box-sizing:border-box}html{color-scheme:dark}body{margin:0;color:#ddd;--app-shell-left-panel-width:52px}
+    body.expanded{--app-shell-left-panel-width:340px}.shell{margin-left:52px;display:flex;height:810px}
+    aside{flex:none;width:0}.expanded aside{width:var(--app-mode-sidebar-width)}main{flex:1;min-width:0;border-left:1px solid transparent}header{height:40px}
+    @media(max-width:699px){.expanded aside{width:0}}
+    </style><div class="shell"><aside></aside><main data-app-mode-workspace><header></header></main></div>`);
+  await page.evaluate(html=>{document.body.classList.add('faux-chatgpt-app-mode');document.querySelector('header').innerHTML=html;window.nativeTitleClicks=0;document.querySelector('#native-conversation-title').onclick=()=>window.nativeTitleClicks++;},fs.readFileSync(path.join(root,'tests/fixtures/conversation-title-header.html'),'utf8'));
+  await page.addStyleTag({path:path.join(extensionPath,'styles/chatgpt-overrides.css')});
+  await page.addStyleTag({content:headerLayoutCss});
+  await page.evaluate(script=>(0,eval)(script),headerLayoutScript);
+  for(const width of [1047,390,680,1280]) {
+    const samples=[];
+    await page.setViewportSize({width,height:810});
+    for(const expanded of [false,true]) {
+      await page.evaluate(value=>document.body.classList.toggle('expanded',value),expanded);
+      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+      const g=await page.evaluate(()=>{
+        const header=document.querySelector('header'),workspace=document.querySelector('main').getBoundingClientRect(),title=document.querySelector('#native-conversation-title'),r=title.getBoundingClientRect();
+        const buttons=[...header.querySelectorAll('button')].map(e=>e.getBoundingClientRect()).filter(r=>r.width&&r.height);
+        const style=getComputedStyle(title);
+        return {offset:r.left-workspace.left,gridWidth:header.firstElementChild.getBoundingClientRect().width,tabs:header.querySelectorAll('[data-app-mode-header-tabs]').length,
+          overlaps:buttons.some((a,i)=>buttons.slice(i+1).some(b=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),
+          bounded:buttons.every(b=>b.left>=workspace.left&&b.right<=innerWidth&&b.top>=0&&b.bottom<=40),overflow:document.documentElement.scrollWidth>innerWidth,
+          nativeStyle:{font:style.fontSize,weight:style.fontWeight,height:r.height,padding:style.paddingLeft}};
+      });
+      samples.push(g);
+      expect(g.tabs).toBe(0);expect(g.overlaps).toBe(false);expect(g.bounded).toBe(true);expect(g.overflow).toBe(false);
+      expect(g.nativeStyle).toEqual({font:'14px',weight:'600',height:36,padding:width<=480?'5px':'7px'});
+      await page.locator('#native-conversation-title').click();
+      await page.screenshot({path:testInfo.outputPath(`conversation-only-${width}-${expanded?'expanded':'collapsed'}.png`)});
+    }
+    expect(Math.abs(samples[1].offset-samples[0].offset),JSON.stringify({width,samples})).toBeLessThanOrEqual(1);
+    expect(samples[1].gridWidth).toBeLessThanOrEqual(52);
+  }
+  expect(await page.evaluate(()=>window.nativeTitleClicks)).toBe(8);
+});
+
 test('compact sidebar rail persists in narrow responsive layout and opens the native drawer', async ({ page }) => {
   await page.setContent(fixture);
   await page.setViewportSize({ width: 390, height: 780 });

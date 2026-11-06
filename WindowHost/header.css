@@ -17,6 +17,14 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout] {
   padding: 5px 8px !important;
 }
 
+/* Conversation-only headers retain a native sidebar-width grid even when
+   its controls are replaced by the rail. Size that grid from its remaining
+   content, rather than counting the native sidebar width a second time. */
+body.faux-chatgpt-app-mode [data-app-mode-header-layout] > :has([data-app-mode-sidebar-original]) {
+  width: auto !important;
+  min-width: 0 !important;
+}
+
 /* Known sidebar controls sort before sibling new-chat controls. These optional
    site labels/test IDs may change; unmatched site controls retain their order. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a):is([data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar" i], [aria-label="Close sidebar" i], [aria-label="Sidebar" i]) {

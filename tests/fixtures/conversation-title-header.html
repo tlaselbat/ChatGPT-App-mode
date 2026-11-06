@@ -1,0 +1,27 @@
+<!-- Synthetic geometry of the authenticated conversation-only header.
+     Native hidden controls still occupy a sidebar-width grid; there is no mode switch. -->
+<div class="native-leading-grid" style="display:grid;position:relative;min-width:max-content;flex:none;width:var(--app-shell-left-panel-width)">
+  <div aria-hidden="true" style="grid-area:1/1;visibility:hidden;justify-self:start;padding-left:8px">
+    <div style="display:inline-flex;gap:8px"><div style="display:none"><button data-app-mode-sidebar-original aria-label="Open sidebar"></button></div><div style="display:none"><button aria-label="New chat"></button></div></div>
+  </div>
+  <div style="grid-area:1/1;position:relative;width:100%;min-width:0;padding-left:8px">
+    <div style="display:inline-flex;width:100%;gap:8px"><div style="display:none"><button data-app-mode-sidebar-original aria-label="Open sidebar"></button></div><div style="display:none"><button aria-label="New chat"></button></div></div>
+  </div>
+</div>
+<div class="native-toolbar-frame" style="position:relative;display:flex;align-items:center;flex:1 0 0%;min-width:0;overflow:hidden;padding:0 8px">
+  <div style="flex:1;min-width:0">
+    <div style="display:flex;height:52px;align-items:center;justify-content:space-between;padding:0 6px 0 8px">
+      <div style="display:flex;align-items:center;flex:1;min-width:0;max-width:max-content;overflow:hidden">
+        <div style="display:flex;align-items:center;min-width:0"><div style="min-width:0;max-width:320px;overflow:hidden">
+          <button id="native-conversation-title" style="height:36px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:600 14px system-ui">Synthetic conversation</button>
+        </div></div><div style="display:flex;flex:none"></div>
+      </div><div style="display:flex;flex:none;max-width:max-content;justify-content:flex-end"></div>
+    </div>
+  </div>
+  <div class="native-contextual-actions" style="display:flex;flex:none;align-items:center;gap:8px">
+    <button aria-label="More options"><svg width="14" height="14"><circle cx="7" cy="7" r="1"/></svg></button>
+    <button aria-label="Conversation controls"><svg width="14" height="14"><path d="M2 4h10M2 10h10"/></svg></button>
+  </div>
+</div>
+<div style="width:0;margin-left:auto"></div>
+<span class="chatgpt-app-mode-toolbar"></span>
