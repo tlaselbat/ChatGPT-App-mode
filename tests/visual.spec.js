@@ -1120,6 +1120,69 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(rail).toBeVisible();
 });
 
+test('responsive navigation ignores retained desktop controls after narrowing and keeps Search usable', async ({ page }) => {
+  const body = `<style>
+    body{margin:0}main{flex:1;min-width:0}header{height:40px}button{min-width:36px;min-height:32px}
+    #responsive-root{display:flex;height:100vh}aside{width:52px;flex-shrink:0;overflow:hidden}
+    #responsive-root[data-app-shell-sidebar-open=true] aside{width:260px}
+    .mobile{display:none}#browser-sidebar-popover{position:fixed;inset:0 auto 0 0;width:260px;background:Canvas}
+    @media(max-width:700px){.desktop{display:none}.mobile{display:block}}
+  </style><div id="responsive-root" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="false">
+    <aside class="app-shell-left-panel desktop"><div class="sidebar-navigation">
+      <header><button aria-label="Open sidebar" id="desktop-toggle">Sidebar</button><button aria-label="Search" id="desktop-search">Search</button></header>
+      <section class="group/nav-section"><div><div class="group/nav-section-title"><button class="group/section-toggle" aria-expanded="true">Recents</button></div>
+      <div><a href="https://chatgpt.com/c/synthetic-retained">Synthetic retained chat</a></div></div></section>
+    </div></aside><main><header class="mobile"><button aria-label="Open sidebar" id="mobile-toggle">Sidebar</button></header><p>Synthetic workspace</p></main></div>`;
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"enabled":false}' }));
+  await page.goto('https://chatgpt.com/');
+  const evaluateNavigation = await navigationEvaluator(page);
+  await page.evaluate(() => {
+    const root = document.querySelector('#responsive-root');
+    const search = () => {
+      const dialog = document.createElement('div'); dialog.id = 'responsive-search';
+      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Search');
+      dialog.innerHTML = '<input aria-label="Synthetic responsive Search">'; document.body.append(dialog); dialog.querySelector('input').focus();
+    };
+    document.querySelector('#desktop-search').onclick = search;
+    document.querySelector('#desktop-toggle').onclick = () => {
+      const open = root.getAttribute('data-app-shell-sidebar-open') !== 'true';
+      root.setAttribute('data-app-shell-sidebar-open', String(open));
+      document.querySelector('#desktop-toggle').setAttribute('aria-label', open ? 'Close sidebar' : 'Open sidebar');
+    };
+    document.querySelector('#mobile-toggle').onclick = () => {
+      const drawer = document.createElement('div'); drawer.id = 'browser-sidebar-popover';
+      drawer.setAttribute('role', 'dialog'); drawer.setAttribute('aria-modal', 'true');
+      drawer.innerHTML = '<button aria-label="Close sidebar">Close</button><button aria-label="Search">Search</button>';
+      drawer.querySelector('[aria-label="Close sidebar"]').onclick = () => { drawer.remove(); root.setAttribute('data-app-shell-sidebar-open', 'false'); };
+      drawer.querySelector('[aria-label="Search"]').onclick = search;
+      document.body.append(drawer); drawer.querySelector('button').focus();
+    };
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelector('#responsive-search')?.remove(); });
+  });
+  await evaluateNavigation(() => { const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true; c.navigationController.schedule(); });
+  await page.locator('[data-app-mode-rail-section="recents"]').click();
+  await expect(page.locator('#app-mode-navigation-flyout')).toBeVisible();
+  for (const width of [598, 1280, 680, 390, 1280]) {
+    await page.setViewportSize({ width, height: 700 });
+    await expect(page.locator('#app-mode-navigation-flyout')).toHaveCount(0);
+    await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.navigationAdapter.find(/^(open|show|hide|close) sidebar$/i)?.id)).toBe(width <= 700 ? 'mobile-toggle' : 'desktop-toggle');
+    expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width <= 700 ? 'drawer' : 'docked');
+    if (width <= 700) {
+      await page.locator('#browser-sidebar-popover [aria-label="Close sidebar"]').click();
+      const search = page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]');
+      await expect(search).toBeVisible(); await search.click();
+    } else expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
+    await expect(page.getByRole('textbox', { name: 'Synthetic responsive Search' })).toBeFocused();
+    await page.keyboard.press('Escape'); await expect(page.getByRole('textbox')).toHaveCount(0);
+    if (width <= 700) await expect(page.locator('#browser-sidebar-popover')).toHaveCount(0);
+    else expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+    expect(await evaluateNavigation(() => !!window.__APP_MODE_CONTEXT__.hostNavigation.rejectedToggle)).toBe(false);
+  }
+});
+
 test('compact flyouts delegate mounted native entries and preserve nonmodal keyboard behavior', async ({ page }) => {
   await navigationSectionsFixture(page, true, false, true);
   const trigger = key => page.locator(`[data-app-mode-rail-section="${key}"]`);

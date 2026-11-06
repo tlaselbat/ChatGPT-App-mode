@@ -89,6 +89,14 @@ frontend/profile observations, not permanent capabilities: every activation
 checks current availability. Synthetic fixtures separately exercise mounted
 anchor variants for all three sections.
 
+Desktop-to-narrow transitions can also retain a desktop panel beneath a
+native `display: none` wrapper. Connected links in that zero-width panel do
+not back a flyout. Native action discovery temporarily removes only App Mode's
+own suppression while measuring a candidate, then restores it synchronously.
+It therefore chooses the rendered mobile opener rather than a retained,
+breakpoint-hidden desktop toggle. Resizing must not turn that stale desktop
+control into a rejected capability or remove usable navigation.
+
 The responsive drawer retains its native close and Search controls in the
 page. Those controls belong inside its focus trap; trusted title-bar navigation
 is unavailable during the drawer. Their presence beside the native ChatGPT

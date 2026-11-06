@@ -4,12 +4,30 @@
   if (!c || !c.initialized || c.reinjection) return;
   with (c) {
   c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true, rendered = true } = {}) {
+    const renderedControl = element => {
+      // Our suppression must not be mistaken for native unavailability, but
+      // an owned marker is not proof that a breakpoint-hidden target works.
+      // Measure the native layout synchronously with only our hiding removed.
+      const hidden = ['data-app-mode-sidebar-original', 'data-app-mode-host-search-original']
+        .filter(attribute => element.hasAttribute(attribute)).map(attribute => [element, attribute]);
+      const rail = element.closest('[data-app-mode-native-sidebar]');
+      if (rail) hidden.push([rail, 'data-app-mode-native-sidebar']);
+      for (const [node, attribute] of hidden) node.removeAttribute(attribute);
+      try {
+        const box = element.getBoundingClientRect();
+        // Keep supported programmatic actions such as the native account
+        // trigger, which can be visibility:hidden while retaining geometry.
+        return box.width > 0 && box.height > 0;
+      } finally {
+        for (const [node, attribute] of hidden) node.setAttribute(attribute, '');
+      }
+    };
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
       !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar, #app-mode-navigation-flyout') &&
+      label.test(accessibleName(element) || element.textContent.trim()) &&
       !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
       (!interactive || !element.closest('[aria-hidden="true"], [inert]')) &&
-      (!rendered || element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original') || element.getClientRects().length) &&
-      label.test(accessibleName(element) || element.textContent.trim()));
+      (!rendered || renderedControl(element)));
   }
 
   c.hostNavigation = {
@@ -291,6 +309,10 @@
       const panels = [...model.root.querySelectorAll('aside.app-shell-left-panel')]
         .filter(panel => !panel.closest('[role="dialog"]'));
       if (panels.length !== 1) return null;
+      // The desktop panel can remain mounted under a display:none wrapper
+      // after resizing to the native drawer breakpoint. Its links are stale
+      // presentation sources even though they remain connected.
+      if (panels[0].getBoundingClientRect().width <= 0) return null;
       const sections = this.sections(panels[0]).filter(section => section.key === key);
       if (sections.length !== 1) return null;
       const section = sections[0];
