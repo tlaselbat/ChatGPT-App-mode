@@ -823,7 +823,7 @@ test('reserved native rails keep neutral gutters and scrolled sidebar content be
   await page.emulateMedia({colorScheme:'dark', reducedMotion:'reduce'});
   await navigationSectionsFixture(page,true);
   await page.evaluate(()=>{
-    document.documentElement.style.colorScheme='dark';history.pushState({},'', '/c/synthetic-surface-review');
+    document.documentElement.style.cssText='color-scheme:dark;--color-surface-secondary:#191927;--color-background-primary-surface:#303044';history.pushState({},'', '/c/synthetic-surface-review');
     const root=document.querySelector('#section-shell'),main=root.querySelector('main');
     root.style.background='#191927';
     const frame=document.createElement('div');frame.id='native-frame';frame.style.cssText='display:flex;flex:1;min-width:0;padding:4px;background:#191927';main.before(frame);frame.append(main);
@@ -837,7 +837,7 @@ test('reserved native rails keep neutral gutters and scrolled sidebar content be
     if(await page.locator('body').getAttribute('data-app-mode-navigation-state')==='compact')await toggle.click();
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state',width<700?'drawer':'docked');
     await expect(toggle).toHaveAttribute('aria-expanded','true');
-    await expect(toggle).toHaveCSS('background-color','rgb(32, 32, 34)');
+    await expect(toggle).toHaveCSS('background-color','rgb(48, 48, 68)');
     const panel=page.locator(width<700?'#browser-sidebar-popover':'[data-app-mode-docked-sidebar]');
     const scroll=panel.locator('[data-app-mode-nav-scroll]');
     await scroll.evaluate(e=>e.scrollTop=200);
@@ -856,7 +856,7 @@ test('reserved native rails keep neutral gutters and scrolled sidebar content be
     if(width<700)await page.keyboard.press('Escape');else await toggle.click();
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state','compact');
     await expect(page.locator('#section-shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
-    for(const selector of ['#section-shell','#native-frame'])await expect(page.locator(selector)).toHaveCSS('background-color','rgb(13, 13, 14)');
+    for(const selector of ['#section-shell','#native-frame'])await expect(page.locator(selector)).toHaveCSS('background-color','rgb(25, 25, 39)');
     await expect(page.locator('#native-code')).toHaveCSS('background-color','rgb(25, 25, 39)');
     await expect(page.locator('#native-composer')).toHaveCSS('background-color','rgb(52, 54, 71)');
     await expect(page.getByRole('textbox',{name:'Native draft'})).toHaveValue('Synthetic unsent draft');
@@ -1141,7 +1141,7 @@ test('home composition stays stable across the mobile breakpoint and preserves t
   }
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
-    for (const width of [390, 480, 640, 680, 864, 1280]) {
+    for (const width of [390, 480, 640, 680, 864, 1063, 1280]) {
       await page.setViewportSize({ width, height: 850 });
       const card = await page.locator('.card').boundingBox();
       expect(card.x).toBeGreaterThanOrEqual(12);
@@ -1216,8 +1216,8 @@ test('sidebar boundary stays at the workspace origin throughout opening and clos
       const header = getComputedStyle(document.querySelector('header'));
       return { background: plate.backgroundColor, rowBackground: header.backgroundColor, width: plate.width, height: plate.height, pointerEvents: plate.pointerEvents };
     });
-    expect(corner.background).toBe(scheme === 'dark' ? 'rgb(13, 13, 14)' : 'rgb(244, 244, 244)');
-    expect(corner.rowBackground).toBe(scheme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(255, 255, 255)');
+    expect(corner.background).toBe(scheme === 'dark' ? 'rgb(23, 23, 23)' : 'rgb(244, 244, 244)');
+    expect(corner.rowBackground).toBe(scheme === 'dark' ? 'rgb(33, 33, 33)' : 'rgb(255, 255, 255)');
     expect(corner.width).toBe('52px');expect(corner.height).toBe('40px');expect(corner.pointerEvents).toBe('none');
   }
   const samples = await page.evaluate(() => new Promise(resolve => {
@@ -1801,6 +1801,61 @@ test('new-chat header and clipped app fallback inherit a custom theme with stale
   await expect(page.locator('#chatgpt-app-mode-toolbar-fallback')).toHaveCount(0);
 });
 
+test('native appearance, nested scopes, accents and contrast resolve independently of OS preference', async ({ page }) => {
+  await page.setContent(`<style>
+    html { color-scheme:light dark; --color-surface:light-dark(#fafafa,#242428); --color-surface-secondary:light-dark(#eeeeee,#18181c); --color-text-primary:light-dark(#171717,#eeeeee); --color-border-primary-outline:light-dark(#777777,#999999); --color-surface-elevated:#dedede; --app-color-icon-accent:#276ac2 }
+    body { color:var(--color-text-primary) }
+    html[data-theme=light] { color-scheme:light } html[data-theme=dark] { color-scheme:dark }
+    [data-theme=dark] { color-scheme:dark }
+    .native-message { background:var(--color-surface); color:var(--color-text-primary) }
+    .native-composer { background:var(--color-surface-elevated,Canvas) }
+    </style><body class="faux-chatgpt-app-mode"><main data-app-mode-workspace><header></header><div class="native-message">Synthetic message</div><div class="native-composer"></div></main>
+    <nav id="app-mode-compact-sidebar-actions"><button data-app-mode-rail-active>Home</button></nav>
+    <section id="nested" data-theme="dark" style="--color-surface:#303044;--color-surface-secondary:#202034;--color-text-primary:#ffffff;--color-border-primary-outline:#dddddd;--app-color-icon-accent:#aadd66"><main data-app-mode-workspace><header></header></main><nav data-app-mode-nav-primary><button aria-current="page">Nested</button></nav></section></body>`);
+  await page.addStyleTag({ path: path.join(extensionPath, 'styles/chatgpt-overrides.css') });
+  const main = page.locator('body > main');
+  for (const os of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: os });
+    for (const appearance of ['light', 'dark', 'system']) {
+      await page.evaluate(value => document.documentElement.setAttribute('data-theme', value), appearance);
+      const dark = appearance === 'dark' || (appearance === 'system' && os === 'dark');
+      await expect(main).toHaveCSS('background-color', dark ? 'rgb(36, 36, 40)' : 'rgb(250, 250, 250)');
+      await expect(page.locator('.native-message')).toHaveCSS('background-color', dark ? 'rgb(36, 36, 40)' : 'rgb(250, 250, 250)');
+      await expect(page.locator('.native-composer')).toHaveCSS('background-color', 'rgb(222, 222, 222)');
+      await expect(page.locator('#nested main')).toHaveCSS('background-color', 'rgb(48, 48, 68)');
+      await expect(page.locator('#nested header')).toHaveCSS('background-color', 'rgb(48, 48, 68)');
+      await expect(main).toHaveCSS('color', dark ? 'rgb(238, 238, 238)' : 'rgb(23, 23, 23)');
+    }
+  }
+  const active = page.locator('[data-app-mode-rail-active]');
+  const before = await main.evaluate(e => getComputedStyle(e).backgroundColor);
+  for (const accent of ['rgb(39, 106, 194)', 'rgb(190, 65, 100)']) {
+    await page.evaluate(value => document.documentElement.style.setProperty('--app-color-icon-accent', value), accent);
+    expect(await active.evaluate(e => getComputedStyle(e).boxShadow)).toContain(accent);
+    await active.focus();
+    await expect(active).toHaveCSS('outline-color', accent);
+    await expect(main).toHaveCSS('background-color', before);
+  }
+  await expect(page.locator('#nested button')).toHaveCSS('box-shadow', 'rgb(170, 221, 102) 2px 0px 0px 0px inset');
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--color-border-primary-outline', '#ffffff');
+    document.documentElement.style.setProperty('--color-text-primary', '#ffffff');
+    const probe = document.createElement('button'); probe.id = 'contrast-probe';
+    probe.className = 'chatgpt-app-mode-pin-button'; probe.style.borderColor = 'var(--app-mode-border)';
+    document.querySelector('main header').append(probe);
+  });
+  await expect(page.locator('#contrast-probe')).toHaveCSS('border-top-color', 'rgb(255, 255, 255)');
+  await expect(main).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await page.evaluate(() => {
+    document.querySelector('style').remove();
+    document.documentElement.removeAttribute('style');
+    document.documentElement.style.colorScheme = 'dark';
+  });
+  await expect(main).toHaveCSS('background-color', 'rgb(33, 33, 33)');
+  await page.evaluate(() => document.documentElement.style.setProperty('--unsupported-native-surface', '#ff00ff'));
+  await expect(main).toHaveCSS('background-color', 'rgb(33, 33, 33)');
+});
+
 test('App Mode unifies shell surfaces and preserves elevated composers across theme changes', async ({ page }) => {
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
@@ -1897,15 +1952,15 @@ test('current theme tokens keep conversation surfaces coherent and native thread
       const root = document.documentElement; root.style.colorScheme = theme;
       for (const [key, value] of Object.entries(values)) root.style.setProperty(key === 'text' ? '--color-text-primary' : '--color-' + (key === 'surface' ? key : 'surface-' + key), value);
     }, theme);
-    for (const [width, expanded] of [390, 480, 680, 864, 1280].flatMap(width => width >= 680 ? [[width, true], [width, false]] : [[width, false]])) {
+    for (const [width, expanded] of [390, 480, 680, 864, 1063, 1280].flatMap(width => width >= 680 ? [[width, true], [width, false]] : [[width, false]])) {
       await page.setViewportSize({ width, height: 800 });
       await page.locator('aside').evaluate((e, expanded) => e.style.display = expanded ? '' : 'none', expanded);
       await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       const colors = await page.evaluate(() => ['main', 'footer', 'header', '#app-mode-compact-sidebar-actions'].map(s => getComputedStyle(document.querySelector(s)).backgroundColor));
       expect(colors[0]).toBe(colors[1]); expect(colors[2]).toBe(colors[0]);
-      expect(colors[0]).toBe(theme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(255, 255, 255)');
-      expect(colors[3]).toBe(theme === 'dark' ? 'rgb(13, 13, 14)' : 'rgb(242, 243, 245)');
-      await expect(page.locator('.composer')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(42, 42, 44)' : 'rgb(247, 248, 250)');
+      expect(colors[0]).toBe(theme === 'dark' ? 'rgb(30, 30, 46)' : 'rgb(255, 255, 255)');
+      expect(colors[3]).toBe(theme === 'dark' ? 'rgb(25, 25, 39)' : 'rgb(242, 243, 245)');
+      await expect(page.locator('.composer')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(52, 54, 71)' : 'rgb(247, 248, 250)');
       await expect(page.getByRole('textbox')).toHaveValue('An unsent draft');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (expanded) {
@@ -1943,10 +1998,10 @@ test('workspace boundary includes the contextual header with continuous corners 
   await injectOverrides(page);
   const main = page.locator('main'), surface = page.locator('.surface');
   await expect(surface).toHaveAttribute('data-app-mode-workspace-surface', '');
-  for (const theme of ['light', 'dark']) for (const width of [390, 480, 680, 864, 1280]) {
+  for (const theme of ['light', 'dark']) for (const width of [390, 480, 680, 864, 1063, 1280]) {
     await page.setViewportSize({width,height:700});
     await page.evaluate(theme => document.documentElement.style.colorScheme = theme, theme);
-    await expect(main).toHaveCSS('background-color', theme === 'dark' ? 'rgb(15, 15, 17)' : 'rgb(250, 250, 250)');
+    await expect(main).toHaveCSS('background-color', 'rgb(250, 250, 250)');
     await expect(surface).toHaveCSS('border-radius', '0px 0px 14px 14px');
     await expect(page.locator('header')).toHaveCSS('border-radius', '14px 14px 0px 0px');
     await expect(main).toHaveCSS('overflow', 'visible');
@@ -1960,8 +2015,8 @@ test('workspace boundary includes the contextual header with continuous corners 
       return {corners:[sample(r.left+1,r.top+1),sample(r.right-2,r.top+1),sample(r.left+1,r.bottom-2),sample(r.right-2,r.bottom-2)],
         seam:[sample(r.left+1,seam-1),sample(r.left+1,seam+1)]};
     }, screenshot.toString('base64'));
-    expect(pixels.corners).toEqual(Array(4).fill(theme==='dark'?[13,13,14]:[238,238,238]));
-    expect(pixels.seam).toEqual(Array(2).fill(theme==='dark'?[15,15,17]:[250,250,250]));
+    expect(pixels.corners).toEqual(Array(4).fill([238,238,238]));
+    expect(pixels.seam).toEqual(Array(2).fill([250,250,250]));
     await page.locator('#action').click();
     expect(await page.locator('#menu').evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.right-1,r.top+20));})).toBe(true);
     await page.locator('#menu').evaluate(el=>el.style.display='none');

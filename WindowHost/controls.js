@@ -27,6 +27,7 @@
       hover: '--app-mode-control-hover',
       hoverBorder: '--app-mode-control-hover-border',
       pressed: '--app-mode-control-pressed',
+      accent: '--app-mode-accent',
     })) {
       if (typeof theme[key] === 'string' && theme[key]) document.documentElement.style.setProperty(property, theme[key]);
     }

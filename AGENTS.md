@@ -37,6 +37,10 @@ See [Architecture](docs/ARCHITECTURE.md),
   supported fallback disclosures must remain accessible and reversible.
 - Preserve native links, independent sidebar scrolling, account access,
   keyboard focus, drawer dismissal, composer, and conversation rendering.
+- ChatGPT's native appearance, accent, and supported contrast tokens own colors.
+  Resolve application aliases at recognized theme/component scopes; never write
+  application colors into native variables. Use effective-scheme-aware neutral
+  fallbacks only when semantic tokens are unavailable, not a separate preference.
 - Follow the canonical Pin ownership/fallback rules in Architecture. Avoid
   duplicate visible Pins while retaining the functional hostless page fallback.
 - Keep ordered script injection, scoped selectors, idempotent reconciliation,

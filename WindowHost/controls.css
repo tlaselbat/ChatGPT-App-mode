@@ -64,8 +64,8 @@ button:hover:not(:disabled) { background: var(--app-mode-control-hover); border-
 button:active:not(:disabled) { background: var(--app-mode-control-pressed, #3a4050); }
 button[data-action="close"]:hover:not(:disabled) { color: white; border-color: transparent; background: #c42b1c; }
 button[data-action="close"]:active:not(:disabled) { color: white; background: #a82218; }
-button:focus-visible { outline: 2px solid var(--app-mode-control-color); outline-offset: -3px; }
-button[data-action="pin"][aria-pressed="true"] { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, #4f5d7a); }
+button:focus-visible { outline: 2px solid var(--app-mode-accent, var(--app-mode-control-color)); outline-offset: -3px; }
+button[data-action="pin"][aria-pressed="true"] { color: var(--app-mode-accent, var(--app-mode-control-color)); background: var(--app-mode-control-hover); border-color: var(--app-mode-accent, var(--app-mode-control-hover-border, currentColor)); }
 button:disabled { opacity: .4; cursor: default; }
 svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 button[data-action="pin"] svg { stroke: none; }

@@ -10,7 +10,7 @@ const COMPACT_BREAKPOINT = 480;
 // Native DIP geometry is independent of the remote page's CSS zoom.
 const HEADER_HEIGHT = 40;
 const DEFAULT_THEME = Object.freeze({ color: 'rgb(221, 221, 221)', border: 'rgba(221, 221, 221, 0.24)',
-  background: '#1c1f26', hover: '#2a2f3a', hoverBorder: '#4f5d7a', pressed: '#3a4050' });
+  background: '#212121', hover: '#303030', hoverBorder: '#666666', pressed: '#404040', accent: 'rgb(221, 221, 221)' });
 
 function trustedControlSender(event, { win, view, controlsUrl }) {
   try {
@@ -34,7 +34,7 @@ function validateControlRequest(event, args, context) {
 function observeVisualTheme(previous) {
   return new Promise(resolve => {
     const probe = document.createElement('span');
-    probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;border:1px solid var(--app-mode-control-border);background:var(--app-mode-titlebar-bg, var(--app-mode-control-bg));';
+    probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;border:1px solid var(--app-mode-control-border, var(--color-border-primary-outline, currentColor));background:var(--app-mode-titlebar-bg, var(--color-surface-secondary, Canvas));';
     let header;
     let toolbar;
     let frame;
@@ -69,21 +69,23 @@ function observeVisualTheme(previous) {
       probe.style.color = getComputedStyle(header).color;
       const style = getComputedStyle(probe);
       const theme = { color: style.color, border: style.borderTopColor, background: style.backgroundColor };
-      probe.style.background = 'var(--app-mode-control-hover)';
+      probe.style.background = 'var(--app-mode-control-hover, var(--color-background-primary-surface, color-mix(in srgb, currentColor 8%, Canvas)))';
       theme.hover = getComputedStyle(probe).backgroundColor;
-      probe.style.borderColor = 'var(--app-mode-control-hover-border)';
+      probe.style.borderColor = 'var(--app-mode-control-hover-border, var(--color-border-primary-outline, currentColor))';
       theme.hoverBorder = getComputedStyle(probe).borderTopColor;
-      probe.style.borderColor = 'var(--app-mode-control-border)';
-      probe.style.background = 'var(--app-mode-control-pressed)';
+      probe.style.borderColor = 'var(--app-mode-control-border, var(--color-border-primary-outline, currentColor))';
+      probe.style.background = 'var(--app-mode-control-pressed, color-mix(in srgb, currentColor 14%, Canvas))';
       theme.pressed = getComputedStyle(probe).backgroundColor;
-      probe.style.background = 'var(--app-mode-titlebar-bg, var(--app-mode-control-bg))';
+      probe.style.background = 'var(--app-mode-accent, var(--app-color-icon-accent, currentColor))';
+      theme.accent = getComputedStyle(probe).backgroundColor;
+      probe.style.background = 'var(--app-mode-titlebar-bg, var(--color-surface-secondary, Canvas))';
       const result = { theme, width: innerWidth, height: innerHeight, scale: devicePixelRatio };
       if (JSON.stringify(result) !== previous) finish(result);
     }
     // Themes are inherited through html/body/header classes and styles; head
     // changes also cover custom stylesheets. Child changes catch header rerenders.
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
-      attributeFilter: ['class', 'style'] });
+      attributeFilter: ['class', 'style', 'data-theme'] });
     window.addEventListener('resize', sample);
     window.visualViewport?.addEventListener('resize', sample);
     window.addEventListener('pagehide', unload, { once: true });
@@ -192,7 +194,9 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
         }
         previous = JSON.stringify(value);
         layout();
-      } catch { return; }
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
   }
   chat.on('did-finish-load', observeTheme);

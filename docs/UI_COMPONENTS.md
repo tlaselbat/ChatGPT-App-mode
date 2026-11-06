@@ -5,7 +5,7 @@
 | Component | Current implementation | Behavior |
 |---|---|---|
 | Shared page modules | Ordered classic scripts in `extension/manifest.json` | Runtime, sidebar, home, Share, lifecycle, and Pin/session modules; `chatgpt-overrides.js` coordinates events. See the [module inventory](CONTENT_SCRIPT_BEHAVIOR.md). |
-| Override styles | `extension/styles/chatgpt-overrides.css` | Codex surface tokens, permanent activity rail, docked sidebar offset, rounded workspace panel, home hero/composer layout, scrollbar treatment, and header pin/status states |
+| Override styles | `extension/styles/chatgpt-overrides.css` | Native-first scope-aware theme tokens, permanent activity rail, docked sidebar offset, rounded workspace panel, home hero/composer layout, scrollbar treatment, and header pin/status states |
 | Page header layer | `WindowHost/header.css`, `WindowHost/header.js` | Defensive compatibility for recognized contextual controls in place; no native window dragging or caption reservation. See [header architecture](ARCHITECTURE.md#native-header-host). |
 | Window controls | `WindowHost/controls.html`, `controls.css`, `controls.js` and trusted control host | Isolated full-width title bar above the page view; identity, native dragging, window actions, and state synchronization through a validated local channel. See [Pin ownership and fallback](ARCHITECTURE.md#pin-ownership-and-fallback). |
 | Navigation | `extension/scripts/10-sidebar.js`, shared override styles | Permanent activity rail plus native docked/drawer navigation, section disclosures, account forwarding, and focus recovery. See [navigation behavior](NAVIGATION_LAYOUT.md). |

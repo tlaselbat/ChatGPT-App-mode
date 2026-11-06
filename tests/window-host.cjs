@@ -171,7 +171,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
   }
   const fixture = path.join(scratch, 'fixture.html');
   fs.writeFileSync(fixture, `<!doctype html><html style="color-scheme:dark"><head><title>Synthetic header fixture</title>
-    <style>*{box-sizing:border-box}body{margin:0;color:#cdd6f4;background:#1e1e2e;font:14px system-ui}header{display:flex;align-items:center;gap:8px;height:48px}.title{margin-right:auto}main>p{margin:40px}button{color:inherit}</style></head>
+    <style>*{box-sizing:border-box}body{margin:0;color:var(--color-text-primary,#cdd6f4);background:#1e1e2e;font:14px system-ui}header{display:flex;align-items:center;gap:8px;height:48px}.title{margin-right:auto}main>p{margin:40px}button{color:inherit}</style></head>
     <body><main><header><span class="title">Synthetic ChatGPT fixture</span><button aria-label="Share">Share</button></header><p>Offline native header review. No account or conversation data.</p></main></body></html>`);
   let electron;
   try {
@@ -247,10 +247,53 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       await page.waitForTimeout(50);
     }
     assert.equal(await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-control-hover").trim()'), 'rgb(60, 61, 62)');
-    assert.equal(await controlsEval('getComputedStyle(document.body).backgroundColor'), 'rgb(13, 13, 14)');
+    assert.equal(await controlsEval('getComputedStyle(document.body).backgroundColor'), 'rgb(23, 23, 23)');
     await page.locator('header').evaluate(header => {
       header.style.removeProperty('--app-mode-control-bg'); header.style.removeProperty('--app-mode-control-hover');
     });
+
+    for (const os of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: os });
+      for (const appearance of ['light', 'dark', 'system']) {
+        const dark = appearance === 'dark' || (appearance === 'system' && os === 'dark');
+        const background = dark ? 'rgb(24, 25, 30)' : 'rgb(240, 241, 245)';
+        const accent = dark ? 'rgb(246, 197, 67)' : 'rgb(39, 106, 194)';
+        await page.evaluate(({ appearance, dark, background, accent }) => {
+          const root = document.documentElement;
+          root.setAttribute('data-theme', appearance);
+          root.style.colorScheme = appearance === 'system' ? 'light dark' : appearance;
+          root.style.setProperty('--color-surface-secondary', background);
+          root.style.setProperty('--color-surface', dark ? '#252630' : '#ffffff');
+          root.style.setProperty('--color-text-primary', dark ? '#eeeeee' : '#171717');
+          root.style.setProperty('--color-border-primary-outline', dark ? '#cccccc' : '#333333');
+          root.style.setProperty('--app-color-icon-accent', accent);
+        }, { appearance, dark, background, accent });
+        for (let attempt = 0; attempt < 50; attempt++) {
+          if (await controlsEval('getComputedStyle(document.body).backgroundColor') === background &&
+            await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-accent").trim()') === accent &&
+            await controlsEval('getComputedStyle(document.querySelector("button")).color') === (dark ? 'rgb(238, 238, 238)' : 'rgb(23, 23, 23)')) break;
+          await page.waitForTimeout(50);
+        }
+        assert.equal(await controlsEval('getComputedStyle(document.body).backgroundColor'), background);
+        assert.equal(await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-accent").trim()'), accent);
+        assert.equal(await controlsEval('getComputedStyle(document.querySelector("button")).color'), dark ? 'rgb(238, 238, 238)' : 'rgb(23, 23, 23)');
+        assert.equal(await controlsEval('getComputedStyle(document.documentElement).getPropertyValue("--app-mode-control-border").trim()'), dark ? 'rgb(204, 204, 204)' : 'rgb(51, 51, 51)');
+      }
+    }
+    await page.locator('main').evaluate(main => {
+      main.setAttribute('data-theme', 'dark');
+      main.style.setProperty('--color-surface-secondary', 'rgb(35, 36, 48)');
+      main.style.setProperty('--app-color-icon-accent', 'rgb(170, 221, 102)');
+      const header = main.querySelector('header');
+      header.replaceWith(header.cloneNode(true));
+    });
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (await controlsEval('getComputedStyle(document.body).backgroundColor') === 'rgb(35, 36, 48)') break;
+      await page.waitForTimeout(50);
+    }
+    assert.equal(await controlsEval('getComputedStyle(document.body).backgroundColor'), 'rgb(35, 36, 48)');
+    await page.locator('main').evaluate(main => { main.removeAttribute('style'); main.removeAttribute('data-theme'); });
+    await page.evaluate(() => { document.documentElement.style.cssText = 'color-scheme:dark'; document.documentElement.removeAttribute('data-theme'); });
 
     assert.notEqual(await controlsEval('getComputedStyle(document.querySelector("[data-action=close]")).borderTopColor'), 'rgb(239, 68, 68)');
     const security = await electron.evaluate(({ BrowserWindow }, modulePath) => {
