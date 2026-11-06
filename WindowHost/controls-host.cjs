@@ -36,6 +36,7 @@ function validateControlRequest(event, args, context) {
 function observeVisualTheme(previous) {
   return new Promise(resolve => {
     const probe = document.createElement('span');
+    probe.setAttribute('data-app-mode-theme-probe', '');
     probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;border:1px solid var(--app-mode-control-border, var(--color-border-primary-outline, currentColor));background:var(--app-mode-titlebar-bg, var(--color-surface-secondary, Canvas));';
     let header;
     let toolbar;
@@ -136,18 +137,29 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   const chat = chatView.webContents;
   const compact = () => win.getContentBounds().width <= COMPACT_BREAKPOINT;
   const state = () => ({ maximized: win.isMaximized(), fullscreen: win.isFullScreen(), compact: compact(), pinned: win.isAlwaysOnTop(), theme, navigation: pageReady ? navigation : EMPTY_NAVIGATION });
+  let lastPublished = '';
+  let lastLayout = '';
   function publish() {
-    if (!disposed && loaded && !win.isDestroyed() && !contents.isDestroyed()) contents.send(STATE_CHANNEL, state());
+    if (disposed || !loaded || win.isDestroyed() || contents.isDestroyed()) return;
+    const value = state();
+    const serialized = JSON.stringify(value);
+    if (serialized === lastPublished) return;
+    lastPublished = serialized;
+    contents.send(STATE_CHANNEL, value);
   }
   function layout() {
     if (disposed || win.isDestroyed() || contents.isDestroyed()) return;
     const { width, height } = win.getContentBounds();
-    contents.setZoomFactor(1);
+    if (contents.getZoomFactor() !== 1) contents.setZoomFactor(1);
     const fullscreen = win.isFullScreen();
     const bar = fullscreen ? 0 : Math.min(HEADER_HEIGHT, height);
-    view.setBounds({ x: 0, y: 0, width, height: bar });
-    chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
-    view.setVisible(!fullscreen);
+    const geometry = JSON.stringify([width, height, fullscreen]);
+    if (geometry !== lastLayout) {
+      lastLayout = geometry;
+      view.setBounds({ x: 0, y: 0, width, height: bar });
+      chatView.setBounds({ x: 0, y: bar, width, height: Math.max(0, height - bar) });
+      view.setVisible(!fullscreen);
+    }
     syncOwnership();
     publish();
   }
@@ -201,7 +213,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   // Do not revoke it on did-start-navigation: a denied request may never emit
   // did-finish-load. Exact current URL/main-frame checks reject any committed
   // replacement, and loaded only gates initial controls initialization.
-  contents.on('did-finish-load', () => { loaded = contents.getURL() === controlsUrl; layout(); });
+  contents.on('did-finish-load', () => { loaded = contents.getURL() === controlsUrl; lastPublished = ''; layout(); });
   const controlsUnavailable = () => { loaded = false; syncOwnership(); };
   contents.on('render-process-gone', controlsUnavailable);
   contents.on('destroyed', controlsUnavailable);
@@ -255,7 +267,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
           { state: next.state, toggle: next.toggle, search: next.search, searchActive: next.searchActive === true,
             blocked: next.blocked, identity: next.identity === true } : EMPTY_NAVIGATION;
         previous = JSON.stringify(value);
-        layout();
+        publish();
       } catch {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -281,7 +293,7 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
   layout();
   contents.loadURL(controlsUrl).catch(() => {});
   return { view, async pageReady() {
-    if (disposed || chat.isDestroyed() || !isChatGptUrl(chat.getURL())) return;
+    if (disposed || chat.isDestroyed() || !isChatGptUrl(chat.getURL())) return false;
     const current = generation;
     const ready = await chat.mainFrame.executeJavaScript(`(() => {
       const navigation = window.__APP_MODE_CONTEXT__?.hostNavigation;
@@ -290,10 +302,11 @@ function installWindowControls(win, chatView, { isChatGptUrl }) {
       navigation.publish();
       return true;
     })()`);
-    if (disposed || current !== generation) return;
+    if (disposed || current !== generation) return false;
     pageReady = ready === true;
     syncOwnership();
     publish();
+    return pageReady;
   } };
 }
 

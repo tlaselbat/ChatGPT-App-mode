@@ -6,6 +6,8 @@ const { isChatGptUrl, isLoginUrl, isExternalUrl, hostProfile, isTrustedPermissio
   allowControlOriginInCsp, canApplyDocumentResult, tryCreateWindow } = require('./policy.cjs');
 const { installBrowserShortcuts } = require('./shortcuts.cjs');
 const { installWindowControls } = require('./controls-host.cjs');
+const { injectPage } = require('./injection.cjs');
+const { readConfig, safeBounds } = require('./config.cjs');
 const sourceRoot = path.resolve(__dirname, '..');
 const option = (args, name) => args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 const root = path.resolve(option(process.argv, 'app-mode-root') || sourceRoot);
@@ -24,24 +26,6 @@ let fixturePath;
 const liveReview = process.argv.includes('--live-review');
 const permissionGrants = new Map();
 const navigationGenerations = new WeakMap();
-
-function readConfig() {
-  return JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
-}
-
-function safeBounds(args, config) {
-  const size = option(args, 'window-size')?.match(/^(\d+),(\d+)$/);
-  const pos = option(args, 'window-position')?.match(/^(-?\d+),(-?\d+)$/);
-  const width = Math.max(390, Math.min(4096, Number(size?.[1] || config.window?.width || 1280)));
-  const height = Math.max(300, Math.min(4096, Number(size?.[2] || config.window?.height || 900)));
-  const candidate = { x: Number(pos?.[1] || 80), y: Number(pos?.[2] || 40), width, height };
-  const area = screen.getDisplayMatching(candidate).workArea;
-  candidate.width = Math.min(width, area.width);
-  candidate.height = Math.min(height, area.height);
-  candidate.x = Math.max(area.x, Math.min(candidate.x, area.x + area.width - candidate.width));
-  candidate.y = Math.max(area.y, Math.min(candidate.y, area.y + area.height - candidate.height));
-  return candidate;
-}
 
 function openExternal(url) {
   if (isExternalUrl(url)) shell.openExternal(url).catch(() => {});
@@ -89,11 +73,11 @@ function guardNavigation(contents) {
 }
 
 function createWindow(args) {
-  const config = readConfig();
+  const config = readConfig(path.join(root, 'config.json'));
   const requested = option(args, 'url') || config.url || 'https://chatgpt.com/';
   const url = isChatGptUrl(requested) ? requested : 'https://chatgpt.com/';
   const win = new BrowserWindow({
-    ...safeBounds(args, config), minWidth: 390, minHeight: 300,
+    ...safeBounds(args, config, screen), minWidth: 390, minHeight: 300,
     title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'AppMode-hex-selected.ico'),
     backgroundColor: '#212121', autoHideMenuBar: true, show: false,
     titleBarStyle: 'hidden',
@@ -114,24 +98,27 @@ function createWindow(args) {
   chat.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
   chat.on('did-finish-load', async () => {
     if (!isChatGptUrl(chat.getURL())) return;
-    try {
-      // Main-process injection is restricted to exact ChatGPT origins. No API
-      // is exposed to the page; these are the same unprivileged site overrides.
-      const css = fs.readFileSync(path.join(sourceRoot, 'extension/styles/chatgpt-overrides.css'), 'utf8');
-      const manifestPath = path.join(sourceRoot, 'extension/manifest.json');
-      const scriptFiles = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).content_scripts[0].js;
-      let script = scriptFiles.map(file => fs.readFileSync(path.join(sourceRoot, 'extension', file), 'utf8')).join('\n');
-      const compactSidebar = config.layout?.compactSidebar !== false;
-      script = `window.__APP_MODE_COMPACT_SIDEBAR__=${JSON.stringify(compactSidebar)};\n${script}`;
-      if (fixturePath && /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')) {
-        script = script.replaceAll('127.0.0.1:17863', `127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}`);
-      }
-      const hostCss = fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8');
-      await chat.insertCSS(css + '\n' + hostCss);
-      await chat.executeJavaScript(script);
-      await chat.executeJavaScript(fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8'));
-      await controls.pageReady();
-    } catch { /* The trusted controls remain available if page selectors change. */ }
+    const generation = navigationGenerations.get(chat);
+    let css, script, headerScript;
+    await injectPage({
+      current: () => !win.isDestroyed() && !chat.isDestroyed() &&
+        navigationGenerations.get(chat) === generation && isChatGptUrl(chat.getURL()),
+      load: () => {
+        const pageCss = fs.readFileSync(path.join(sourceRoot, 'extension/styles/chatgpt-overrides.css'), 'utf8');
+        const manifest = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'extension/manifest.json'), 'utf8'));
+        script = manifest.content_scripts[0].js.map(file => fs.readFileSync(path.join(sourceRoot, 'extension', file), 'utf8')).join('\n');
+        script = `window.__APP_MODE_COMPACT_SIDEBAR__=${JSON.stringify(config.layout?.compactSidebar !== false)};\n${script}`;
+        if (fixturePath && /^\d+$/.test(process.env.APP_MODE_HOST_TEST_PORT || '')) {
+          script = script.replaceAll('127.0.0.1:17863', `127.0.0.1:${process.env.APP_MODE_HOST_TEST_PORT}`);
+        }
+        css = pageCss + '\n' + fs.readFileSync(path.join(__dirname, 'header.css'), 'utf8');
+        headerScript = fs.readFileSync(path.join(__dirname, 'header.js'), 'utf8');
+      },
+      css: () => chat.insertCSS(css),
+      scripts: () => chat.executeJavaScript(script),
+      header: () => chat.executeJavaScript(headerScript),
+      navigation: async () => { if (await controls.pageReady() !== true) throw Error('not-ready'); },
+    });
   });
   let shown = false;
   const show = () => {

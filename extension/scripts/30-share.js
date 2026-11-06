@@ -38,8 +38,8 @@
     return !text || /^[.\u00b7\u2026\u22ef\u22ee]{1,5}$/.test(text);
   }
 
-  c.ensureShareMenu = function ensureShareMenu() {
-    const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+  c.ensureShareMenu = function ensureShareMenu(resolvedHeader) {
+    const header = resolvedHeader === undefined ? findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]') : resolvedHeader;
     // Site assumptions: the conversation's own Share and options controls are
     // header actions with these accessible names/test IDs. The testid may sit
     // on the control or on a wrapper; the control itself may be a button, a

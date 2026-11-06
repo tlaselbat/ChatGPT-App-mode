@@ -597,6 +597,9 @@ test('native title buttons stay left aligned when sidebar spacers precede the le
       if(expanded){const spacer=document.createElement('div');spacer.id='native-sidebar-spacer';spacer.setAttribute('aria-hidden','true');spacer.style.width='240px';document.querySelector('header').prepend(spacer);}
     },expanded);
     await expect.poll(()=>page.locator('.leading').getAttribute('data-app-mode-header-control-branch')).toBe('leading');
+    // The leading marker survives from the previous iteration. Wait for the
+    // newly inserted spacer's reconciliation before measuring its geometry.
+    if (expanded) await expect(page.locator('#native-sidebar-spacer')).toHaveAttribute('data-app-mode-header-spacer', '');
     const g=await page.evaluate(()=>{
       const title=document.querySelector('#native-title').getBoundingClientRect(),header=document.querySelector('header').getBoundingClientRect(),actions=document.querySelector('.actions').getBoundingClientRect();
       const buttons=[...document.querySelectorAll('header button')].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);
@@ -2828,4 +2831,49 @@ test('content script reinjection is idempotent and keeps a single owned control 
   await expect(page.locator('[data-app-mode-share-menu-item]')).toHaveCount(0);
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'unsupported');
   expect(await page.evaluate(() => window.__APP_MODE_OVERRIDE_RUNTIME__?.initialized)).toBe(true);
+});
+
+test('sidebar labels are literal and burst reconciliation remains bounded', async ({ page }) => {
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: fixture }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
+  await page.goto('about:blank');
+  await page.setContent(fixture);
+  await injectOverrides(page);
+  await expect(page.locator('#chatgpt-app-mode-pin-toggle')).toHaveCount(1);
+  const result = await page.evaluate(async () => {
+    const c = window.__APP_MODE_CONTEXT__;
+    const labels = ['Account (Work)', 'Profile [main]', 'A+B', 'A.B', 'A\\B', '\u7528\u6237 caf\u00e9', 'Open profile menu'];
+    const checked = [];
+    c.navigationAdapter.activate = async regex => { checked.push(regex.test(window.syntheticLabel) && !regex.test(window.syntheticLabel + ' extra')); return true; };
+    const action = document.createElement('button'); action.setAttribute('data-app-mode-sidebar-action', ''); document.body.append(action);
+    for (const label of labels) {
+      window.syntheticLabel = label; action.setAttribute('aria-label', label); action.click(); await Promise.resolve();
+    }
+    action.remove();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    let calls = 0; const original = c.ensureShareMenu;
+    c.ensureShareMenu = (...args) => { calls++; return original(...args); };
+    const container = document.createElement('div'); document.querySelector('main').append(container);
+    for (let i = 0; i < 100; i++) { container.append(document.createElement('span')); await Promise.resolve(); }
+    await new Promise(resolve => setTimeout(resolve, 150));
+    return { checked, calls, pins: document.querySelectorAll('#chatgpt-app-mode-pin-toggle').length };
+  });
+  expect(result.checked).toEqual(Array(7).fill(true));
+  expect(result.calls).toBeLessThan(10);
+  expect(result.pins).toBe(1);
+});
+
+test('caption completion preserves newer modal blocking state', async ({ page }) => {
+  const caption = await captionStripFixture(page);
+  await caption.evaluate(() => {
+    window.appModeControls.action = () => new Promise(resolve => { window.completeSyntheticAction = resolve; });
+    window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } });
+  });
+  const search = caption.locator('[data-action="open-search"]');
+  await search.click();
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: true } }));
+  await caption.evaluate(() => window.completeSyntheticAction(true));
+  await expect(search).toBeDisabled();
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } }));
+  await expect(search).toBeEnabled();
 });

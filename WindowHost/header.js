@@ -234,7 +234,11 @@
     queued = true;
     requestAnimationFrame(layout);
   }
-  new MutationObserver(schedule).observe(document.documentElement, {
+  new MutationObserver(records => {
+    if (records.every(record => record.target?.closest?.('[data-app-mode-theme-probe]') ||
+        (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node => node.nodeType === 1 && node.hasAttribute('data-app-mode-theme-probe'))))) return;
+    schedule();
+  }).observe(document.documentElement, {
     childList: true, subtree: true, attributes: true,
     attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'inert', 'role', 'aria-pressed', 'aria-selected', 'aria-checked', 'data-state'],
   });

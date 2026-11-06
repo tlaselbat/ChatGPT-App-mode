@@ -39,7 +39,7 @@
     if (sidebarAction) {
       event.preventDefault(); event.stopPropagation();
       const label = sidebarAction.id === 'app-mode-compact-sidebar' ? /^(open|show|hide|close) sidebar$/i :
-        new RegExp(`^${sidebarAction.getAttribute('aria-label')}$`, 'i');
+        new RegExp(`^${(sidebarAction.getAttribute('aria-label') || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
       if (sidebarAction.getAttribute('aria-busy') !== 'true') {
         sidebarAction.setAttribute('aria-busy', 'true');
         const section = sidebarAction.getAttribute('data-app-mode-rail-section');
@@ -91,13 +91,22 @@
 
   init();
 
-  observer = new MutationObserver(() => {
-    markBody();
-    ensurePinButton();
-    ensureShareMenu();
-    navigationController.schedule();
-    reportCurrentSession();
-    setTitle();
+  let reconciliationQueued = false;
+  observer = new MutationObserver(records => {
+    if (records.every(record => record.target?.closest?.('[data-app-mode-theme-probe]') ||
+        (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node => node.nodeType === 1 && node.hasAttribute('data-app-mode-theme-probe'))))) return;
+    if (reconciliationQueued) return;
+    reconciliationQueued = true;
+    requestAnimationFrame(() => {
+      reconciliationQueued = false;
+      markBody();
+      const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+      ensurePinButton(header);
+      ensureShareMenu(header);
+      navigationController.schedule();
+      reportCurrentSession();
+      setTitle();
+    });
   });
 
   observer.observe(document.documentElement, {
@@ -117,8 +126,7 @@
   window.setInterval(reportCurrentSession, 3000);
   window.setInterval(() => {
     setTitle();
-    ensurePinButton();
-    navigationController.schedule();
+    if (!document.getElementById(pinButtonId)) { ensurePinButton(); navigationController.schedule(); }
   }, 1000);
   window.setInterval(() => {
     const button = document.getElementById(pinButtonId);

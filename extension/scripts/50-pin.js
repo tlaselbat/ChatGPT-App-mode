@@ -74,13 +74,13 @@
     });
   }
 
-  c.ensurePinButton = function ensurePinButton() {
+  c.ensurePinButton = function ensurePinButton(resolvedHeader) {
     if (!document.body) return;
     // ChatGPT selectors are best-effort. A dedicated flow toolbar is used if
     // the site removes or renames its header; never float over conversation text.
     // Client navigation can keep previous pages mounted but hidden. Never
     // attach to their headers or leave a fallback inside their main element.
-    const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
+    const header = resolvedHeader === undefined ? findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]') : resolvedHeader;
     const existing = document.getElementById(pinButtonId);
     if (existing) {
       const toolbar = existing.parentElement;
