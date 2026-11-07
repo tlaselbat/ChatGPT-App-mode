@@ -42,6 +42,42 @@
     ensureHomeLayout();
   }
 
+  // One bounded host startup wait. Optional adapters may be unsupported; the
+  // required contract is an installed runtime, styled body and mounted page.
+  c.whenReady = function whenReady() {
+    return new Promise(resolve => {
+      let timer, finished = false;
+      // A completely covered/minimized renderer can suspend animation frames.
+      // Keep the rendering opportunity bounded after DOM/style readiness, so
+      // an installed adapter is not revoked merely because its view is covered.
+      const afterFrame = callback => {
+        let frame, fallback;
+        const run = () => { cancelAnimationFrame(frame); clearTimeout(fallback); if (!finished) callback(); };
+        frame = requestAnimationFrame(run);
+        fallback = setTimeout(run, 100);
+      };
+      const finish = value => { finished = true; clearTimeout(timer); c.checkReady = null; c.cancelReadiness = null; window.removeEventListener('pagehide', cancel); resolve(value); };
+      const cancel = () => finish(false);
+      c.cancelReadiness = cancel;
+      c.checkReady = () => {
+        if (!document.body?.classList.contains(markerClass) || !c.installed) return;
+        const shell = document.querySelector('[data-app-shell-responsive-sidebar]');
+        if (shell && !findVisiblePageElement('main, [role="main"]')) return;
+        c.checkReady = null;
+        afterFrame(() => {
+          if (finished) return;
+          init();
+          hostNavigation.publish();
+          c.reconcileHeader?.();
+          afterFrame(() => finish(true));
+        });
+      };
+      timer = setTimeout(cancel, 15000);
+      window.addEventListener('pagehide', cancel, { once: true });
+      c.checkReady();
+    });
+  }
+
   c.getCurrentChatId = function getCurrentChatId() {
     const match = window.location.pathname.match(/\/c\/([A-Za-z0-9-]+)/);
     return match ? match[1] : "";

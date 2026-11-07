@@ -244,5 +244,6 @@
   });
   window.addEventListener('resize', schedule);
   window.addEventListener('scroll', schedule, { capture: true, passive: true });
+  if (window.__APP_MODE_CONTEXT__) window.__APP_MODE_CONTEXT__.reconcileHeader = layout;
   layout();
 })();

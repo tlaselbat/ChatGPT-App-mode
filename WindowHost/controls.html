@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="controls.css">
   <title>Window controls</title>
 </head>
-<body>
+<body data-presentation="loading">
   <div class="titlebar" role="banner" aria-label="ChatGPT App Mode">
     <div class="navigation" role="group" aria-label="ChatGPT navigation">
       <button type="button" data-action="toggle-sidebar" aria-label="Open sidebar" aria-expanded="false" title="Open sidebar" hidden>
@@ -37,6 +37,10 @@
       </button>
     </div>
   </div>
+  <main class="loading-surface" aria-live="polite" aria-busy="true">
+    <p id="loading-message">Loading ChatGPT…</p>
+    <button type="button" data-action="reload" hidden>Reload</button>
+  </main>
   <script src="controls.js"></script>
 </body>
 </html>

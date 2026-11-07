@@ -108,7 +108,7 @@ async function overlayPixels(page, clip) {
 test('trusted titlebar navigation keeps responsive hit regions, focus and native-control independence', async ({ page }, testInfo) => {
   const caption = await captionStripFixture(page);
   await caption.evaluate(() => window.updateCaptionState({ theme: { background: 'rgb(20, 20, 20)', color: 'rgb(240, 240, 240)', accent: 'rgb(180, 200, 250)' } }));
-  const toggle = caption.getByRole('button', { name: 'Open sidebar', exact: true });
+  const toggle = caption.locator('[data-action="toggle-sidebar"]');
   await expect(toggle).toBeHidden();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } }));
   for (const width of [390, 480, 680, 937, 1280]) {
@@ -128,43 +128,42 @@ test('trusted titlebar navigation keeps responsive hit regions, focus and native
     expect(await caption.locator('.titlebar-drag').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(36);
     await caption.screenshot({ path: testInfo.outputPath(`trusted-navigation-expanded-${width}.png`) });
     await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false, identity: false } }));
-    await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeVisible();
+    await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeHidden();
   }
   await toggle.focus(); await caption.keyboard.press('Enter');
-  await caption.getByRole('button', { name: 'Search', exact: true }).focus(); await caption.keyboard.press('Space');
-  await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar', 'open-search']);
-  const searchBefore = await caption.locator('[data-action="open-search"]').boundingBox();
+  await expect.poll(() => caption.evaluate(() => window.syntheticCaptionActions)).toEqual(['toggle-sidebar']);
   const toggleBefore = await caption.locator('[data-action="toggle-sidebar"]').boundingBox();
   const captionsBefore = await caption.locator('.controls').boundingBox();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: true } }));
-  // Sidebar and Search keep their slots across navigation states.
-  expect(Math.abs((await caption.locator('[data-action="open-search"]').boundingBox()).x - searchBefore.x)).toBeLessThanOrEqual(2);
+  // The single title-bar sidebar toggle keeps its slot across native states.
   expect(Math.abs((await caption.locator('[data-action="toggle-sidebar"]').boundingBox()).x - toggleBefore.x)).toBeLessThanOrEqual(2);
   expect(await caption.locator('.controls').boundingBox()).toEqual(captionsBefore);
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'docked', toggle: true, search: true, blocked: false, identity: false } }));
-  await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeVisible();
+  await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeHidden();
   await expect(caption.getByRole('button', { name: 'Close sidebar', exact: true })).toHaveAttribute('aria-expanded', 'true');
   for (const theme of [
     { background: 'rgb(250, 250, 250)', color: 'rgb(20, 20, 20)', accent: 'rgb(0, 80, 190)' },
     { background: 'rgb(20, 20, 20)', color: 'rgb(240, 240, 240)', accent: 'rgb(180, 200, 250)' },
   ]) {
     await caption.evaluate(theme => window.updateCaptionState({ theme }), theme);
-    const search = caption.getByRole('button', { name: 'Search', exact: true });
-    await search.focus();
-    await expect(search).toHaveCSS('color', theme.color);
-    await expect(search).toHaveCSS('outline-color', theme.accent);
+    await toggle.focus();
+    await expect(toggle).toHaveCSS('color', theme.color);
+    await expect(toggle).toHaveCSS('outline-color', theme.accent);
   }
-  // An active Search dialog keeps its entry point visible but noninteractive.
+  // An unrelated modal disables the title-bar toggle without moving it.
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, searchActive: true, blocked: true } }));
   const activeSearch = caption.locator('[data-action="open-search"]');
-  await expect(activeSearch).toBeVisible();
+  await expect(activeSearch).toBeHidden();
+  await expect(toggle).toBeDisabled();
   await expect(activeSearch).toBeDisabled();
   await expect(activeSearch).toHaveAttribute('data-active');
-  const activeBox = await activeSearch.boundingBox();
-  expect(Math.abs(activeBox.x - searchBefore.x)).toBeLessThanOrEqual(2);
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, searchActive: false, blocked: false } }));
   await expect(activeSearch).toBeEnabled();
   await expect(activeSearch).not.toHaveAttribute('data-active');
+  await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'drawer', toggle: true, search: false, blocked: false } }));
+  await expect(toggle).toBeVisible(); await expect(toggle).toBeEnabled();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect((await toggle.boundingBox()).x).toBe(toggleBefore.x);
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'unavailable', toggle: false, search: false, blocked: false } }));
   await expect(caption.getByRole('button', { name: 'Search', exact: true })).toBeHidden();
   await caption.getByRole('button', { name: 'Always on top' }).click();
@@ -647,7 +646,7 @@ test('conversation-only title ignores the native sidebar-width grid of invisible
       });
       samples.push(g);
       expect(g.tabs).toBe(0);expect(g.overlaps).toBe(false);expect(g.bounded).toBe(true);expect(g.overflow).toBe(false);
-      expect(g.nativeStyle).toEqual({font:'14px',weight:'600',height:36,padding:width<=480?'5px':'7px'});
+      expect(g.nativeStyle).toEqual({font:'14px',weight:'600',height:36,padding:'7px'});
       await page.locator('#native-conversation-title').click();
       await page.screenshot({path:testInfo.outputPath(`conversation-only-${width}-${expanded?'expanded':'collapsed'}.png`)});
     }
@@ -914,7 +913,36 @@ async function navigationEvaluator(page) {
   };
 }
 
-test('trusted navigation delegates native actions and conditionally condenses only recognized sidebar headers', async ({ page }) => {
+test('sidebar retains supported presentation during replacement and ignores stale hidden shells', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true);
+  const evaluate = await navigationEvaluator(page);
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'ready');
+  const rail = page.locator('#app-mode-compact-sidebar-actions');
+  await expect(rail).toHaveCount(1);
+  await page.evaluate(() => {
+    const stale = document.querySelector('#section-shell').cloneNode(true);
+    stale.id = 'stale-shell'; stale.hidden = true; document.body.prepend(stale);
+  });
+  expect(await evaluate(() => window.__APP_MODE_CONTEXT__.navigationAdapter.read().root.id)).toBe('section-shell');
+  await page.evaluate(() => { window.removedOpener = document.querySelector('#section-shell #section-opener'); window.removedOpener.remove(); });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'pending');
+  await expect(rail).toHaveCount(1);
+  await page.evaluate(() => document.querySelector('#section-shell header').prepend(window.removedOpener));
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'ready');
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeEnabled();
+  await page.evaluate(() => document.querySelector('#stale-shell').remove());
+  await page.evaluate(() => {
+    const replacement = document.body.cloneNode(true); replacement.classList.remove('faux-chatgpt-app-mode'); document.body.replaceWith(replacement);
+  });
+  await expect(page.locator('body')).toHaveClass(/faux-chatgpt-app-mode/);
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'ready');
+  await expect(rail).toHaveCount(1);
+  await page.locator('#section-opener').evaluate(e => e.remove());
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'unsupported');
+  await expect(rail).toHaveCount(0);
+});
+
+test('trusted navigation delegates native actions and retains only one sidebar toggle', async ({ page }) => {
   await navigationSectionsFixture(page, true);
   await page.evaluate(() => {
     const identity = document.createElement('button'); identity.id = 'native-identity';
@@ -944,11 +972,11 @@ test('trusted navigation delegates native actions and conditionally condenses on
     });
     c.navigationController.schedule();
   });
-  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '40px');
   await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('padding-inline-start', '12px');
   await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
-  expect((await page.locator('aside [data-primary]').first().boundingBox()).y).toBe(before.y - 12);
-  await expect(page.locator('aside [data-app-mode-host-search-original]')).toBeHidden();
+  expect((await page.locator('aside [data-primary]').first().boundingBox()).y).toBe(before.y);
+  await expect(page.locator('aside [aria-label="Search"]')).toBeVisible();
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(true);
   await page.locator('#native-identity').evaluate(element => element.disabled = true);
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
@@ -963,14 +991,14 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await page.getByRole('menu').evaluate(element => element.remove());
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
   await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
-  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '28px');
+  await expect(page.locator('[data-app-mode-host-nav-header]')).toHaveCSS('height', '40px');
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(false);
   // While its native dialog is open, Search stays capable rather than
   // degrading to the rail fallback, and a repeated request is a no-op
   // instead of poisoning capability tracking.
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(true);
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().searchActive)).toBe(true);
-  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]')).toHaveAttribute('data-app-mode-host-search-original', '');
+  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]')).not.toHaveAttribute('data-app-mode-host-search-original');
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
   await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
   await page.keyboard.press('Escape');
@@ -979,6 +1007,9 @@ test('trusted navigation delegates native actions and conditionally condenses on
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
   await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]')).toBeVisible();
+  expect((await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').boundingBox()).y).toBe(2);
+  expect(await page.locator('#app-mode-compact-sidebar-actions button').first().getAttribute('aria-label')).toBe('Search');
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(false);
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
@@ -1005,9 +1036,8 @@ test('trusted navigation delegates native actions and conditionally condenses on
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(false);
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('document.body.remove()'))).toBe(false);
   await page.setViewportSize({ width: 390, height: 850 });
-  await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toBeVisible();
-  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(false);
-  await page.locator('[data-app-mode-modal-sidebar-toggle]').click();
+  await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toBeHidden();
+  expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await page.evaluate(() => document.querySelector('#section-opener').remove());
   await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-host-navigation-owned');
@@ -1083,14 +1113,14 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
     const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true; c.navigationController.schedule();
   });
   await expect.poll(capability).toBe(true);
-  await expect(rail).toBeHidden();
+  await expect(rail).toBeVisible();
   expect(await page.evaluate(() => window.nativeToggles)).toBe(0);
   await page.locator('#native-search').evaluate(element => element.disabled = true);
   await expect.poll(capability).toBe(false);
   await expect(rail).toBeVisible();
   await page.evaluate(() => window.mountNativeSearch());
   await expect.poll(capability).toBe(true);
-  await expect(rail).toBeHidden();
+  await expect(rail).toBeVisible();
   await page.locator('#native-search').evaluate(element => element.remove());
   await page.locator('aside').evaluate(element => element.innerHTML = '<button aria-label="Search" id="native-search">Hidden stale Search</button>');
   await expect.poll(capability).toBe(false);
@@ -1102,7 +1132,7 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(page.getByRole('textbox')).toHaveCount(0);
   await page.evaluate(() => window.__APP_MODE_CONTEXT__.navigationAdapter.toggle());
   await expect.poll(capability).toBe(true);
-  await expect(rail).toBeHidden();
+  await expect(rail).toBeVisible();
   await page.evaluate(() => { history.pushState({}, '', '#synthetic-navigation'); document.querySelector('#native-search').remove(); });
   await expect.poll(capability).toBe(false);
   await expect(rail).toBeVisible();
@@ -1120,7 +1150,7 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(page.getByRole('textbox', { name: 'Native search input' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect.poll(capability).toBe(true);
-  await expect(rail).toBeHidden();
+  await expect(rail).toBeVisible();
   await page.evaluate(async () => { const c = window.__APP_MODE_CONTEXT__; if (c.navigationAdapter.read().state !== 'compact') await c.navigationAdapter.toggle(); c.hostNavigation.visible = false; c.navigationController.schedule(); });
   await expect(rail).toBeVisible();
 });
@@ -1192,7 +1222,7 @@ test('responsive navigation ignores retained desktop controls after narrowing an
     expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width <= 700 ? 'drawer' : 'docked');
     if (width <= 700) {
-      await page.locator('#browser-sidebar-popover [aria-label="Close sidebar"]').click();
+      expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
       const search = page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]');
       await expect(search).toBeVisible(); await search.click();
     } else expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('open-search'))).toBe(true);
@@ -1671,7 +1701,11 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
           sidebarHeader: box(panel.querySelector('[data-app-mode-nav-header]')), scroll: box(panel.querySelector('[data-app-mode-nav-scroll]')),
           account: box(panel.querySelector('.section-footer')), overflow: document.documentElement.scrollWidth > innerWidth };
       });
-      expect(geometry.rail.width).toBe(0);
+      // The fixed rail retains its box so opacity can reverse smoothly; it
+      // contributes no layout width and is inaccessible while expanded.
+      expect(geometry.rail.width).toBe(52);
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveAttribute('inert', '');
       expect(geometry.sidebar.x).toBeGreaterThanOrEqual(0);
       expect(geometry.sidebar.x).toBeLessThanOrEqual(1);
       expect(geometry.sidebar.right).toBeLessThanOrEqual(cssWidth + 1);
@@ -1855,6 +1889,146 @@ test('sidebar boundary stays at the workspace origin throughout opening and clos
   for (const sample of samples) expect(sample.top, JSON.stringify(sample)).toBe(0);
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
   await expect(page.locator('.shell')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
+});
+
+test('sidebar transitions reflow the workspace continuously and reverse without moving the toggle', async ({ page }, testInfo) => {
+  await navigationSectionsFixture(page, true, false);
+  // Current live markup uses transparent React wrappers around its flex item.
+  await page.evaluate(() => {
+    const main = document.querySelector('main');
+    for (let i = 0; i < 3; i++) {
+      const wrapper = document.createElement('div'); wrapper.style.display = 'contents';
+      main.parentElement.insertBefore(wrapper, main); wrapper.append(main);
+    }
+  });
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  const evaluate = await navigationEvaluator(page);
+  const sample = () => evaluate(async () => {
+    const c = window.__APP_MODE_CONTEXT__;
+    const workspace = document.querySelector('[data-app-mode-workspace]');
+    const toggle = document.querySelector('#app-mode-compact-sidebar');
+    const frames = [], start = performance.now();
+    const read = () => { const r = workspace.getBoundingClientRect(), t = toggle.getBoundingClientRect();
+      return { x: r.x, right: r.right, y: r.y, height: r.height, toggleX: t.x, toggleY: t.y }; };
+    frames.push({ t: 0, ...read() });
+    c.navigationAdapter.toggle();
+    // Let the mutation observer enqueue reconciliation before sampling paint.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => { const frame = () => {
+      frames.push({ t: performance.now() - start, ...read() });
+      if (performance.now() - start < 320) requestAnimationFrame(frame); else resolve();
+    }; requestAnimationFrame(frame); });
+    return frames;
+  });
+  for (const direction of ['open', 'close']) {
+    const frames = await sample();
+    fs.writeFileSync(testInfo.outputPath(`transition-${direction}.json`), JSON.stringify(frames));
+    const first = frames[0], last = frames.at(-1);
+    expect(Math.abs(last.x - first.x)).toBeGreaterThan(180);
+    // A genuine intermediate layout, with a fixed far edge and no scale.
+    expect(frames.some(f => f.t < 220 && Math.abs(f.x - first.x) > 8 && Math.abs(f.x - last.x) > 8)).toBe(true);
+    expect(Math.abs(frames[1].x - first.x)).toBeLessThan(60);
+    for (const f of frames) {
+      expect(f.right).toBeCloseTo(first.right, 0); expect(f.y).toBe(first.y); expect(f.height).toBe(first.height);
+      expect(f.toggleX).toBe(first.toggleX); expect(f.toggleY).toBe(first.toggleY);
+    }
+  }
+  await evaluate(async () => {
+    await window.__APP_MODE_CONTEXT__.navigationAdapter.toggle();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const animation = window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation;
+    if (animation) { animation.pause(); animation.currentTime = 110; }
+  });
+  await page.screenshot({ path: testInfo.outputPath('workspace-transition-midpoint.png') });
+  await evaluate(async () => {
+    window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation?.finish();
+    await window.__APP_MODE_CONTEXT__.navigationAdapter.toggle();
+  });
+  // Toggle again before each 220ms presentation completes.
+  await evaluate(async () => {
+    for (let i = 0; i < 7; i++) {
+      await window.__APP_MODE_CONTEXT__.navigationAdapter.toggle();
+      await new Promise(resolve => setTimeout(resolve, 35));
+    }
+  });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await page.locator('#app-mode-compact-sidebar').focus(); await page.keyboard.press('Enter');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeFocused();
+  await expect.poll(() => page.locator('main').evaluate(e => getComputedStyle(e).getPropertyValue('--app-mode-navigation-offset').trim())).toBe('0px');
+  await page.screenshot({ path: testInfo.outputPath('compact-after-reversal.png') });
+});
+
+test('sidebar transition presentation cancels on responsive replacement and reduced motion', async ({ page }, testInfo) => {
+  await navigationSectionsFixture(page, true, false, true);
+  const evaluate = await navigationEvaluator(page);
+  await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
+  await page.locator('#app-mode-compact-sidebar').click();
+  await page.setViewportSize({ width: 680, height: 850 });
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+  await expect.poll(() => evaluate(() => !!window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation)).toBe(false);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+  for (const width of [390, 699, 700, 900, 1280]) {
+    await page.setViewportSize({ width, height: 850 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.locator('#app-mode-compact-sidebar').focus(); await page.keyboard.press('Enter');
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width < 700 ? 'drawer' : 'docked');
+    expect(await evaluate(() => !!window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation)).toBe(false);
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('transition-duration', '0s');
+    await page.screenshot({ path: testInfo.outputPath(`expanded-${width}.png`) });
+    if (width < 700) await page.keyboard.press('Escape'); else await page.keyboard.press('Enter');
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test('compact selection follows native semantics and conservative SPA routes without stale flyout selection', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true);
+  const active = page.locator('#app-mode-compact-sidebar-actions [data-app-mode-rail-active]');
+  const selected = async label => {
+    await expect(active).toHaveCount(label ? 1 : 0);
+    if (label) { await expect(active).toHaveAttribute('aria-label', label); await expect(active).toHaveAttribute('aria-current', 'page'); }
+  };
+  const route = path => page.evaluate(path => history.pushState({}, '', path), path);
+  await selected('New chat');
+  // No DOM mutation or popstate: Navigation API must handle push/replaceState.
+  for (const [path, label] of [['/scheduled', 'Scheduled'], ['/library', 'Library'], ['/g/g-synthetic/project', 'Projects'], ['/c/unmounted', null], ['/g/g-synthetic/c/unmounted', null], ['/unsupported', null]]) {
+    await route(path); await selected(label);
+  }
+  await route('/c/synthetic-recents-0'); await selected('Recents');
+  await page.locator('[data-app-mode-rail-section="pinned"]').focus();
+  await page.keyboard.press('Enter');
+  await selected('Recents'); // Open/focused flyout is not page selection.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-app-mode-rail-section="pinned"]')).toBeFocused();
+  await selected('Recents');
+  await page.evaluate(() => {
+    const duplicate = document.querySelector('[data-section="recents"] a').cloneNode(true);
+    document.querySelector('[data-section="pinned"] .group\\/nav-section > div:last-child').append(duplicate);
+  });
+  await selected(null); // Same conversation in two sections is ambiguous.
+  await page.evaluate(() => document.querySelector('[data-section="pinned"] a:last-child').setAttribute('aria-current', 'page'));
+  await selected('Pinned'); // Explicit native current state wins over membership.
+  await page.evaluate(() => window.syntheticSidebarRender());
+  await selected('Recents');
+  await page.locator('#app-mode-compact-sidebar').click();
+  await page.locator('#app-mode-compact-sidebar').click();
+  await selected('Recents');
+  await route('/synthetic-plugin-page');
+  await page.evaluate(() => {
+    const plugin = [...document.querySelectorAll('.sidebar-navigation button')].find(e => e.textContent === 'Plugins');
+    plugin.setAttribute('aria-selected', 'true');
+    // Unrelated current links outside navigation never win selection.
+    document.querySelector('main').insertAdjacentHTML('beforeend', '<a href="/library" aria-current="page">Library</a>');
+  });
+  await selected('Plugins');
+  await page.evaluate(() => document.querySelector('[aria-selected="true"]').removeAttribute('aria-selected'));
+  await selected(null);
+  await page.evaluate(() => history.replaceState({}, '', '/library'));
+  await selected('Library');
+  await page.goBack(); await selected('Recents');
 });
 
 test('disabled compact navigation preserves native controls and layout', async ({ page }) => {
@@ -2118,14 +2292,82 @@ for (const popup of Object.keys(shareTriggerVariants)) test(`Share moves into it
   await expect(entry).toHaveCount(0);
   await page.keyboard.press('Escape');
   await trigger.evaluate(node => node.remove());
-  await expect(share).toBeVisible();
+  await expect(page.locator('[data-app-mode-overflow]')).toBeVisible();
+  await expect(share).toBeHidden();
+  await page.locator('[data-app-mode-overflow]').click();
+  await page.getByRole('menuitem', { name: 'Share', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.syntheticShareCalls)).toBe(3);
+  await page.getByRole('dialog').evaluate(node => node.remove());
   await page.evaluate(() => {
     const unrelated = document.createElement('div'); unrelated.setAttribute('role', 'menu'); unrelated.innerHTML = '<button role="menuitem">Unrelated action</button>'; document.body.append(unrelated);
   });
   await expect(entry).toHaveCount(0);
 });
 
-test('standardized action row normalizes the site header in place without moving nodes', async ({ page }) => {
+test('responsive overflow rejects hidden options, survives replacement, and keeps Share functional', async ({ page }, testInfo) => {
+  const html = fixture.replace(/<div class="header-actions">[\s\S]*?<\/div><\/header>/,
+    `<div class="header-actions"><div style="display:none">${shareButton().replace('id="share-action"', 'id="stale-share"')}</div>${shareButton()}<div style="display:none"><button aria-label="Conversation options">···</button></div></div></header>`);
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{}' }));
+  await page.goto('https://chatgpt.com/c/responsive-overflow');
+  await page.addStyleTag({ content: headerLayoutCss });
+  await page.evaluate(headerLayoutScript);
+  await page.evaluate(() => {
+    window.shareCalls = 0;
+    document.addEventListener('click', e => { if (e.target.closest('#share-action')) window.shareCalls++; });
+  });
+  const overflow = page.locator('[data-app-mode-overflow]');
+  for (const scheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const width of [1280, 900, 680, 640, 620, 481, 480, 390, 1280]) {
+      await page.setViewportSize({ width, height: 850 });
+      await expect(overflow).toHaveCount(1); await expect(overflow).toBeVisible();
+      await expect(page.locator('#share-action')).toBeHidden();
+      await overflow.focus(); await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitem', { name: 'Share', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape'); await expect(overflow).toBeFocused();
+      await overflow.click(); await page.getByRole('menuitem', { name: 'Share', exact: true }).click();
+      expect(await page.evaluate(() => window.shareCalls)).toBeGreaterThan(0);
+      const bounds = await overflow.boundingBox(); expect(bounds.width).toBe(32);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      if ([390, 481, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath(`overflow-${scheme}-${width}.png`) });
+    }
+  }
+  await overflow.click(); await page.locator('main').click({ position: { x: 100, y: 100 } });
+  await expect(page.locator('[data-app-mode-overflow-menu]')).toHaveCount(0);
+  await page.evaluate(() => { const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true)); history.pushState({}, '', '/c/replaced-overflow'); });
+  await expect(overflow).toHaveCount(1); await overflow.click();
+  await page.getByRole('menuitem', { name: 'Share', exact: true }).click();
+  await page.locator('#share-action').evaluate(e => { e.disabled = true; });
+  await expect(overflow).toBeDisabled();
+  await page.locator('#share-action').evaluate(e => e.remove());
+  await expect(overflow).toHaveCount(0);
+});
+
+test('Share fallback restores the native entry point when delegated activation produces no response', async ({ page }) => {
+  const html = fixture.replace(/<div class="header-actions">[\s\S]*?<\/div><\/header>/,
+    `<div class="header-actions">${shareButton()}</div></header>`);
+  await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{}' }));
+  await page.goto('https://chatgpt.com/c/native-pointer-share');
+  await page.evaluate(() => document.querySelector('#share-action').addEventListener('pointerdown', () => {
+    const dialog = document.createElement('div'); dialog.setAttribute('role', 'dialog'); dialog.textContent = 'Synthetic native dialog'; document.body.append(dialog);
+  }));
+  await page.locator('[data-app-mode-overflow]').click();
+  await page.getByRole('menuitem', { name: 'Share', exact: true }).click();
+  await expect(page.locator('#share-action')).toBeVisible({ timeout: 6000 });
+  await expect(page.locator('[data-app-mode-overflow]')).toHaveCount(0);
+  await expect(page.locator('body')).toHaveAttribute('data-app-mode-share-status', 'degraded');
+  await page.locator('#share-action').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('dialog').evaluate(e => e.remove());
+  await page.evaluate(() => { history.pushState({}, '', '/c/replaced-native-share'); document.querySelector('header').setAttribute('data-state', 'new-route'); });
+  await expect(page.locator('[data-app-mode-overflow]')).toHaveCount(1);
+  await page.evaluate(() => { const header = document.querySelector('header'); header.replaceWith(header.cloneNode(true)); });
+  await expect(page.locator('[data-app-mode-overflow]')).toHaveCount(1);
+});
+
+test('standardized action row normalizes the site header in place without moving nodes', async ({ page }, testInfo) => {
   const html = fixture.replace('<span class="header-title">',
     '<div class="header-leading" style="display:flex;gap:6px"><button aria-label="New chat"><svg viewBox="0 0 24 24"><path d="M5 19h14M8 16l1-5L18 2l4 4-9 9z" fill="none" stroke="currentColor"/></svg></button>' +
     '<button aria-label="Sidebar"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" fill="none" stroke="currentColor"/></svg></button></div><span class="header-title">');
@@ -2190,9 +2432,10 @@ test('standardized action row normalizes the site header in place without moving
   }
   expect(geometry.overlap ?? false).toBe(false);
   expect(geometry.overflow).toBe(false);
-  // Sidebar is the leading control even though the site renders it second;
-  // the action group is right-aligned; Pin belongs to the separate host strip.
-  expect(geometry.sidebar.left).toBeLessThanOrEqual(geometry.newChat.left);
+  // New chat is retained but hidden in the header; navigation owns that action.
+  await expect(header.locator('[aria-label="New chat"]')).toHaveCount(1);
+  await expect(header.locator('[aria-label="New chat"]')).toBeHidden();
+  expect(geometry.newChat.width).toBe(0);
   expect(geometry.options.right).toBeLessThanOrEqual(geometry.header.right);
   expect(geometry.options.right).toBeGreaterThanOrEqual(geometry.header.right - 24);
   expect(geometry.pin.width).toBe(0);
@@ -2205,9 +2448,8 @@ test('standardized action row normalizes the site header in place without moving
       button.addEventListener('click', () => window.actionLog.push(button.getAttribute('aria-label') || button.id));
     }
   });
-  await header.locator('[aria-label="New chat"]').click();
   await header.locator('[aria-label="Conversation options"]').click();
-  await expect.poll(() => page.evaluate(() => window.actionLog)).toEqual(['New chat', 'Conversation options']);
+  await expect.poll(() => page.evaluate(() => window.actionLog)).toEqual(['Conversation options']);
   // React-style replacement: the reconciler re-marks the new header once,
   // without duplicating markers or reparenting its controls.
   await page.evaluate(() => {
@@ -2215,6 +2457,12 @@ test('standardized action row normalizes the site header in place without moving
   });
   await expect(header).toHaveAttribute('data-app-mode-header-layout', '');
   await expect(page.locator('[data-app-mode-header-layout]')).toHaveCount(1);
+  await expect(header.locator('[aria-label="New chat"]')).toBeHidden();
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 850 });
+    await expect(header.locator('[aria-label="New chat"]')).toBeHidden();
+    await header.screenshot({ path: testInfo.outputPath(`header-without-new-chat-${width}.png`) });
+  }
   // Removing the header releases every layout marker; the page falls back to
   // its own structure with no leftover app-managed artifacts.
   await page.evaluate(() => document.querySelector('header').remove());
@@ -2870,11 +3118,11 @@ test('caption completion preserves newer modal blocking state', async ({ page })
     window.appModeControls.action = () => new Promise(resolve => { window.completeSyntheticAction = resolve; });
     window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } });
   });
-  const search = caption.locator('[data-action="open-search"]');
-  await search.click();
+  const toggle = caption.locator('[data-action="toggle-sidebar"]');
+  await toggle.click();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: true } }));
   await caption.evaluate(() => window.completeSyntheticAction(true));
-  await expect(search).toBeDisabled();
+  await expect(toggle).toBeDisabled();
   await caption.evaluate(() => window.updateCaptionState({ navigation: { state: 'compact', toggle: true, search: true, blocked: false } }));
-  await expect(search).toBeEnabled();
+  await expect(toggle).toBeEnabled();
 });

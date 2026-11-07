@@ -1,5 +1,7 @@
 /* Mirrors the shared header control tokens; the host supplies theme values. */
 :root {
+  color-scheme: light dark;
+  --app-mode-opaque-base: light-dark(#f4f4f4, #212121);
   --app-mode-control-color: #ddd;
   --app-mode-control-border: color-mix(in srgb, currentColor 24%, transparent);
   --app-mode-control-bg: color-mix(in srgb, currentColor 6%, transparent);
@@ -8,7 +10,14 @@
 * { box-sizing: border-box; }
 /* Follow the page's sampled control surface so the app-owned bar reads as
    the same themed surface as the secondary row below it. */
-html, body { width: 100%; height: 100%; margin: 0; background: var(--app-mode-control-bg); }
+html, body { width: 100%; height: 100%; margin: 0; }
+html { background-color: var(--app-mode-opaque-base); }
+body { background-color: var(--app-mode-control-bg); color: var(--app-mode-control-color); font: 14px system-ui, sans-serif; }
+.loading-surface { position: absolute; inset: 40px 0 0; display: grid; place-content: center; justify-items: center; background-color: var(--app-mode-opaque-base); background-image: linear-gradient(var(--app-mode-control-bg), var(--app-mode-control-bg)); }
+body[data-fullscreen="true"] .titlebar { display: none; }
+body[data-fullscreen="true"] .loading-surface { top: 0; }
+body[data-presentation="ready"] .loading-surface { display: none; }
+.loading-surface button { width: auto; min-width: 88px; height: 32px; padding-inline: 16px; }
 .titlebar {
   display: flex;
   align-items: stretch;
@@ -49,7 +58,6 @@ button {
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
   -webkit-app-region: no-drag;
 }
-body[data-compact="true"] button { width: 28px; flex-basis: 28px; }
 button:hover:not(:disabled) { background: var(--app-mode-control-hover); border-color: var(--app-mode-control-hover-border, color-mix(in srgb, currentColor 30%, transparent)); }
 button:active:not(:disabled) { background: var(--app-mode-control-pressed, color-mix(in srgb, currentColor 16%, transparent)); }
 button[data-action="close"]:hover:not(:disabled) { color: white; border-color: transparent; background: #c42b1c; }

@@ -211,31 +211,3 @@ body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-ce
 body.faux-chatgpt-app-mode [data-app-mode-header-layout][data-app-mode-header-centering="remaining"] [data-app-mode-header-mode-branch] {
   min-width: 80px !important;
 }
-@media (max-width: 480px) {
-  /* Defined narrow fallback: side groups stop sharing equal width so the
-     switch never overlaps them; it centers in whatever space remains. */
-  body.faux-chatgpt-app-mode [data-app-mode-header-control-branch] { flex: 0 0 auto !important; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-icon] { width: 28px !important; min-width: 28px !important; max-width: 28px; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] button {
-    min-width: 28px;
-    height: 28px;
-    padding-inline: 5px;
-  }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-pin-button {
-    width: 28px;
-    flex-basis: 28px;
-  }
-  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] {
-    flex-basis: 112px;
-    width: 112px !important;
-  }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] [data-app-mode-header-tabs] :where(button, [role="tab"], [role="radio"]) {
-    height: 24px;
-    min-width: 0;
-    padding-inline: 4px;
-  }
-}
-@media (max-width: 420px) {
-  body.faux-chatgpt-app-mode [data-app-mode-header-tabs] { min-width: 80px !important; flex-basis: 96px; width: 96px !important; }
-  body.faux-chatgpt-app-mode [data-app-mode-header-layout] .chatgpt-app-mode-pin-button { width: 28px; flex-basis: 28px; }
-}

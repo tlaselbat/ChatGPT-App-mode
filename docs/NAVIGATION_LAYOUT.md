@@ -8,8 +8,26 @@ not rerun or extend that verification.
 
 ## Codex-inspired surface
 
+Application-owned caption and contextual-action geometry is shared across all
+supported widths; there is no alternate 480px/420px chrome. Chat/Work uses
+available-space measurement to avoid collisions. Native content reflow and
+docked-to-drawer navigation remain responsive. A briefly missing native opener
+retains the validated sidebar presentation with forwarding disabled for at most
+250ms; unsupported layouts then release native entry points.
+
+Conversation options prefer the visible native trigger. Where the current
+header exposes only native Share, one App Mode ellipsis presents that action
+and invokes the original Share button. It does not invent other conversation
+actions. Native Share remains mounted and is suppressed only while the
+replacement is available; header replacement and native dialogs retain their
+normal lifecycle and accessible focus behavior.
+If a delegated Share invocation produces no native dialog within three seconds,
+the original header Share is restored and compatibility becomes degraded.
+Navigation to another route or replacement of the native action permits a new
+attempt. This recovery does not recreate sharing or publish a link.
+
 The navigation controller implements a compact 52px activity rail mirroring
-the expanded sidebar: the primary actions (New chat, Search, Scheduled,
+the expanded sidebar: the primary actions (Search, New chat, Scheduled,
 Library, Plugins, Explore), a divider-separated Pinned/Projects/Recents
 section group, and an account footer. Section shortcuts present a shared
 nonmodal flyout when the compact native panel retains supported destination
@@ -22,10 +40,13 @@ at short window heights while the account footer stays anchored via `position: s
 When a rendered docked panel or modal drawer supplies expanded navigation, the
 compact rail is hidden and its shell reservation is removed. The expanded
 sidebar therefore begins at the page origin and the workspace reclaims the
-52px width. In Electron, the trusted title-bar toggle delegates to the existing native
-adapter, and the page toggle remains mounted as a reversible hostless/fullscreen
-fallback. The native drawer keeps its own close control inside its focus trap;
-title-bar navigation is suppressed during that drawer or another blocking modal.
+52px width. In Electron, the sole visible sidebar toggle sits at the far left of
+the trusted title bar and delegates to the native adapter in compact, docked and
+drawer states. Page and drawer toggle nodes remain mounted but suppressed while
+that control is available; hostless/fullscreen or unavailable-host states restore
+the page fallback. Other blocking modals disable the title-bar toggle. Search
+stays in native expanded navigation and leads the compact rail in the matching
+top row, above New chat. Escape and backdrop drawer dismissal remain native.
 
 The responsive docked width is keyed to the site's own
 `data-app-shell-sidebar-open="true"` attribute, not our state marker. It
@@ -36,8 +57,25 @@ in a second fixed-width model. The native modal drawer opens at the page
 origin, retaining its dismissal, scrim, and focus trap; docked navigation
 occupies its own column without a modal scrim.
 
-Rail buttons gain a `data-app-mode-rail-active` selected state when the site's
-`aria-current` link matches their label. The single rendered content `main`
+Rail selection prefers native `aria-current`/`aria-selected` inside recognized
+navigation, then exact same-origin native links and verified primary routes
+(`/`, `/scheduled`, `/library`). A project landing route selects Projects;
+conversation routes require exact membership in one native section. Conflicting
+section membership and unknown destinations remain unselected. Flyout expansion,
+focus and hover do not select a page. Selection reconciles after semantic DOM
+changes and Navigation API history events, including DOM-free SPA navigation.
+The selected rail button exposes `aria-current="page"` and
+`data-app-mode-rail-active`.
+
+Sidebar presentation keeps native width animation and width-based detection
+authoritative. At recognized flex workspace boundaries, a reversible 220ms
+animated margin compensates for abrupt native or App Mode layout changes;
+it does not scale content, animate native detection widths, or retain removed
+native nodes. The rail fades out in 100ms and in over 120ms, becoming inert
+immediately during expansion. The toggle stays fixed. Reversal starts from the
+current workspace position; resizing, root replacement and reduced motion cancel
+the correction. Unsupported layout structures retain native geometry. The
+single rendered content `main`
 is marked `data-app-mode-workspace` and painted as the rounded workspace.
 There is no unconditional workspace top spacer for a second header row;
 ambiguous structure stays native. Surface, radius, and spacing values live

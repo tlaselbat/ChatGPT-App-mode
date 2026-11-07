@@ -305,9 +305,9 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       const event={sender:contents,senderFrame:contents.mainFrame};
       const prefs=contents.getLastWebPreferences();
       const results={sandbox:prefs.sandbox,contextIsolation:prefs.contextIsolation,nodeIntegration:prefs.nodeIntegration,
-        accepted:['minimize','maximize','restore','close','pin','toggle-sidebar','open-search'].every(action=>validateControlRequest(event,[action],context)),
+        accepted:['minimize','maximize','restore','close','pin','reload','toggle-sidebar','open-search'].every(action=>validateControlRequest(event,[action],context)),
         malformed:[[],['unknown'],[null],[{}],[1],['close','extra'],[['close']],['open-search',{selector:'input'}],['toggle-sidebar','document.body.remove()'],['https://chatgpt.com/']].every(args=>!validateControlRequest(event,args,context)),
-        remoteRejected:['close','toggle-sidebar','open-search'].every(action=>{
+        remoteRejected:['close','reload','toggle-sidebar','open-search'].every(action=>{
           const remote=win.contentView.children.find(child=>child!==view).webContents;
           return !validateControlRequest({sender:remote,senderFrame:remote.mainFrame},[action],context);
         }),
@@ -378,14 +378,18 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       // DOM click dispatch returns before the async IPC invocation completes.
       // Wait for both native state and the published accessible state, rather
       // than racing the first main-process read against the click handler.
+      let nativeState, renderedState;
       for (let attempt = 0; attempt < 50; attempt++) {
-        const nativeState = await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop());
-        const renderedState = await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`);
+        nativeState = await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop());
+        renderedState = await controlsEval(`document.querySelector('[data-action="pin"]').getAttribute('aria-pressed')`);
         if (nativeState === expected && renderedState === String(expected)) return;
         await page.waitForTimeout(50);
       }
-      assert.fail(`Native Pin did not synchronize to ${expected}`);
+      assert.fail(`Native Pin did not synchronize to ${expected} (native=${nativeState}, rendered=${renderedState})`);
     };
+    // The guarded activation helper temporarily pins its own fixture. Wait
+    // for its restoration before testing the next toggle's expected state.
+    await waitPinState(false);
     await controlsEval(`document.querySelector('[data-action="pin"]').click()`);
     await waitPinState(true);
     assert.equal(await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isAlwaysOnTop()), true);
@@ -661,18 +665,16 @@ test('native header host preserves sandbox, custom controls, window actions, nav
       }
     }
 
-    // Conversation headers expose five page actions plus three host actions.
-    // Exercise that denser variant separately from the home mode-switch header.
+    // Exercise conversation headers separately from the home mode-switch row,
+    // retaining native action nodes while suppressing duplicate entry points.
     await page.evaluate(html=>{document.querySelector('header').innerHTML=html;},fs.readFileSync(path.join(__dirname,'fixtures/full-header.html'),'utf8'));
     await page.waitForSelector('header #chatgpt-app-mode-pin-toggle', { state: 'attached' });
     await page.evaluate(() => {
       const leading = document.querySelector('.fixture-leading');
       leading.prepend(leading.querySelector('[aria-label="New chat"]'));
     });
-    assert.equal(await page.evaluate(() => {
-      const leading = document.querySelector('.fixture-leading');
-      return leading.querySelector('[aria-label="Sidebar"]').getBoundingClientRect().left < leading.querySelector('[aria-label="New chat"]').getBoundingClientRect().left;
-    }), true, 'Sidebar precedes New chat visually even when the site renders New chat first');
+    assert.equal(await page.locator('header [aria-label="New chat"]').count(), 1, 'Keep the original native action node');
+    assert.equal(await page.locator('header [aria-label="New chat"]').isVisible(), false, 'New chat belongs to sidebar navigation');
     await page.evaluate(()=>{
       window.syntheticHeaderActions=[];
       for(const button of document.querySelectorAll('.fixture-leading button,.fixture-actions button'))button.addEventListener('click',()=>window.syntheticHeaderActions.push(button.getAttribute('aria-label')));
@@ -708,7 +710,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
           overflow:document.documentElement.scrollWidth>innerWidth};
       });
       const diagnostics=layout.actionsRight?null:await page.evaluate(()=>({viewport:innerWidth,headerRight:document.querySelector('header').getBoundingClientRect().right,actionRight:document.querySelector('[aria-label="More options"]').getBoundingClientRect().right,pinWidth:document.getElementById('chatgpt-app-mode-pin-toggle').getBoundingClientRect().width}));
-      assert.deepEqual(layout,{count:3,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
+      assert.deepEqual(layout,{count:2,height:40,aligned:true,bounded:true,overlap:false,order:true,actionsRight:true,spacersGone:true,titleBetween:true,titleReadable:true,overflow:false},JSON.stringify({zoom,width,layout,diagnostics}));
       // The relocated Share is intentionally display:none; activate it by
       // dispatch like the in-page handler, click the visible controls normally.
       for(const label of ['Sidebar','New chat','More options','Share'])await page.locator(`header [aria-label="${label}"]`).dispatchEvent('click');
@@ -756,17 +758,17 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.getByRole('textbox', { name: 'Native host search' }).waitFor();
     assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.blocked) { off(); resolve(true); } }); })");
-    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), false, 'Title-bar Search stays mounted while its dialog is open');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), true, 'Search belongs to the sidebar');
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").disabled'), true, 'Title-bar Search is inert while its dialog is open');
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hasAttribute("data-active")'), true);
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true, 'Repeated Search requests are no-ops, not capability failures');
-    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), false, 'Repeated requests do not swap controls');
-    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').evaluate(e => getComputedStyle(e).display), 'none', 'Rail Search stays suppressed while the dialog is open');
+    assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), true, 'Repeated requests do not add a title-bar duplicate');
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').getAttribute('data-app-mode-host-search-original'), null);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.identity && !state.navigation.blocked) { off(); resolve(true); } }); })");
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").disabled'), false, 'Search is interactive again after dismissal');
-    assert.equal(await controlsEval('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.activeElement === document.querySelector("[data-action=open-search]")))))'), true, 'Search dismissal restores focus to the visible trusted entry point');
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search');
     await page.locator('#native-host-identity').evaluate(element => element.hidden = true);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (!state.navigation.identity && state.navigation.state === 'docked') { off(); resolve(true); } }); })");
     assert.equal(await controlsEval('document.querySelector(".titlebar-drag").getBoundingClientRect().width >= 36'), true);
@@ -775,7 +777,8 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'docked');
-    assert.equal(await page.locator('#app-mode-compact-sidebar-actions').isVisible(), false);
+    await page.locator('#app-mode-compact-sidebar-actions').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions').getAttribute('inert'), '');
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true);
     assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), false);

@@ -68,7 +68,7 @@ async function run(win, request, sourceRoot, outputRoot) {
     chat.sendInputEvent({type:'keyUp',keyCode:'Escape'});
     return {status:'review-overlay-dismissed'};
   }
-  if (request.action === 'size' && [390,448,480,489,680,690,937,1024,1047,1063,1280].includes(request.width)) {
+  if (request.action === 'size' && [390,448,480,481,489,620,640,680,690,900,937,1024,1047,1063,1280].includes(request.width)) {
     win.setBounds({ width:request.width,height:1000 }); return {status:'resized',width:request.width};
   }
   if (request.action === 'zoom' && [0.8,1,1.1,1.25,1.5].includes(request.factor)) {

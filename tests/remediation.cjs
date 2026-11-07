@@ -55,7 +55,7 @@ test('server process ownership rejects incidental arguments and revalidates befo
 
 test('injection reports fixed stages, stops partial initialization and rejects stale documents', async () => {
   const { injectPage } = require('../WindowHost/injection.cjs');
-  const stages = ['load', 'css', 'scripts', 'header', 'navigation'];
+  const stages = ['load', 'css', 'scripts', 'header', 'navigation', 'reconcile'];
   for (let failed = 0; failed < stages.length; failed++) {
     const calls = [], codes = [];
     const options = { current: () => true, diagnose: code => codes.push(code) };
@@ -68,6 +68,17 @@ test('injection reports fixed stages, stops partial initialization and rejects s
   assert.equal(later, false);
   for (let reload = 0; reload < 3; reload++) {
     assert.equal(await injectPage(Object.fromEntries([['current', () => true], ...stages.map(name => [name, async () => {}])])), true);
+  }
+  for (const staleAt of stages) {
+    let active = true;
+    const calls = [], codes = [];
+    const options = { current: () => active, diagnose: code => codes.push(code) };
+    for (const name of stages) options[name] = async () => {
+      calls.push(name); if (name === staleAt) { active = false; throw Error('discarded-document'); }
+    };
+    assert.equal(await injectPage(options), false);
+    assert.deepEqual(calls, stages.slice(0, stages.indexOf(staleAt) + 1));
+    assert.deepEqual(codes, [], 'Stale failures must not diagnose the replacement document');
   }
 });
 
@@ -98,8 +109,12 @@ test('caption IPC rejects stale, remote, detached, cross-window and malformed re
   const win = { isDestroyed: () => false, contentView: { children: [view] } }; owner = win;
   const context = { win, view, controlsUrl: url }, event = { sender: contents, senderFrame: contents.mainFrame };
   assert.equal(validate(event, ['pin'], context), true);
+  assert.equal(validate(event, ['reload'], context), true);
   for (const args of [[], ['unknown'], ['close', 'extra'], [null], ['open-search', {}]]) assert.equal(validate(event, args, context), false);
   assert.equal(validate({ ...event, sender: {} }, ['pin'], context), false);
+  assert.equal(validate({ ...event, sender: {} }, ['reload'], context), false);
+  assert.equal(validate({ ...event, senderFrame: { url } }, ['reload'], context), false);
+  assert.equal(validate(event, ['reload', 'https://example.com'], context), false);
   assert.equal(validate({ ...event, senderFrame: { url } }, ['pin'], context), false);
   assert.equal(validate(event, ['pin'], { ...context, controlsUrl: url + '#other' }), false);
   win.contentView.children = []; assert.equal(validate(event, ['pin'], context), false);

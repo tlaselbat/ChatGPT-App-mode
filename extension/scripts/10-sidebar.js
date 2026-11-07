@@ -4,6 +4,9 @@
   if (!c || !c.initialized || c.reinjection) return;
   with (c) {
   c.nativeSidebarControl = function nativeSidebarControl(label, { interactive = true, rendered = true } = {}) {
+    const roots = [...document.querySelectorAll('[data-app-shell-responsive-sidebar]')];
+    const activeRoot = roots.find(root => root.getClientRects().length && !root.closest('[inert], [aria-hidden="true"]')) ||
+      roots.find(root => root.getClientRects().length);
     const renderedControl = element => {
       // Discovery must be read-only: changing suppression attributes here
       // forces layout and can retrigger observers waiting for native controls.
@@ -26,6 +29,8 @@
       return !!box && box.width > 0 && box.height > 0;
     };
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
+      (!activeRoot || activeRoot.contains(element) || !!element.closest('#browser-sidebar-popover') ||
+        (activeRoot.parentElement?.contains(element) && !element.closest('[data-app-shell-responsive-sidebar]'))) &&
       !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar, #app-mode-navigation-flyout') &&
       label.test(accessibleName(element) || element.textContent.trim()) &&
       !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
@@ -68,7 +73,7 @@
       // remains the capability signal; removal or replacement still fails.
       const search = found || (dialog && this.searchControl?.isConnected ? this.searchControl : null);
       if (!supported) this.searchControl = null;
-      return { state: supported ? model.state : 'unavailable', toggle: supported && model.state !== 'drawer',
+      return { state: supported ? model.state : 'unavailable', toggle: supported,
         search: supported && !!search && !this.rejectedSearch.has(search) &&
           ((!model.blocked && model.state !== 'drawer') || !!dialog),
         searchActive: !!dialog, blocked: model.blocked, identity: !!navigationAdapter.identity(model) };
@@ -206,6 +211,13 @@
       return !!focused;
     }
     return true;
+  }
+
+  c.focusSidebarSearch = function focusSidebarSearch() {
+    const model = navigationAdapter.read();
+    if (model.blocked) return;
+    const target = model.state === 'compact' ? document.querySelector('#app-mode-compact-sidebar-actions [aria-label="Search"]') : nativeSidebarControl(/^Search$/i);
+    if (target?.getClientRects().length && getComputedStyle(target).visibility !== 'hidden' && !target.closest('[inert], [aria-hidden="true"]')) target.focus({ preventScroll: true });
   }
 
   // A rail section shortcut expands the native sidebar through the same
@@ -346,6 +358,7 @@
       const preferred = opening ? /^(open|show) sidebar$/i : /^(hide|close) sidebar$/i;
       const control = this.find(preferred) || this.find(/^(open|show|hide|close) sidebar$/i);
       if (!control) return false;
+      navigationController.captureGeometry();
       control.click();
       // ChatGPT can retain its desktop open flag after switching to a drawer
       // breakpoint without mounting a panel. The first toggle clears that
@@ -362,15 +375,65 @@
       }
       return !!await waitForNavigation(() => this.read().state === 'compact');
     },
+    activeDestination(model = this.read()) {
+      if (!model.root) return null;
+      const primary = new Set(['New chat', 'Search', 'Scheduled', 'Library', 'Plugins', 'Explore']);
+      // Only verified page routes have a label-independent fallback. Explore
+      // and Search can be menus/dialogs; opening them is not page selection.
+      const routes = new Map([['/', 'New chat'], ['/scheduled', 'Scheduled'], ['/library', 'Library']]);
+      const path = location.pathname.replace(/\/$/, '') || '/';
+      const conversation = /^\/(?:g\/[^/]+\/)?c\/[^/]+$/.test(path);
+      const project = /^\/g\/[^/]+\/project$/.test(path);
+      const panels = [...model.root.querySelectorAll('aside.app-shell-left-panel')];
+      if (model.drawer) panels.push(model.drawer);
+      if (model.rail) panels.push(model.rail);
+      const current = new Set(), matching = new Set();
+      for (const panel of panels) {
+        const navigation = panel === model.rail ? panel : panel.querySelector('.sidebar-navigation');
+        if (!navigation) continue;
+        const sections = this.sections(panel);
+        for (const control of navigation.querySelectorAll('a[href], button, [role="link"], [role="tab"]')) {
+          if (control.disabled || control.getAttribute('aria-disabled') === 'true' ||
+              control.hasAttribute('data-app-mode-nav-disclosure')) continue;
+          const section = sections.find(entry => entry.section.contains(control));
+          const label = (accessibleName(control) || control.textContent).trim();
+          let url = null;
+          if (control.hasAttribute('href')) {
+            try { url = new URL(control.getAttribute('href'), location.href); } catch { continue; }
+            if (url.origin !== location.origin || url.search || url.hash) continue;
+          }
+          const exact = url && (url.pathname.replace(/\/$/, '') || '/') === path;
+          let key = null;
+          if (section) {
+            // A conversation is not automatically Recent, Pinned, or a project.
+            // Require its exact native link in one recognized section.
+            if (exact && (conversation || project) && ['pinned', 'projects', 'recents'].includes(section.key)) key = section.key;
+          } else if (!control.closest('section') && primary.has(label)) {
+            const canonical = [...routes].find(([, value]) => value === label)?.[0];
+            if ((!url || exact) && (!canonical || canonical === path) && !conversation && !project) key = label;
+          }
+          if (!key) continue;
+          if (exact) matching.add(key);
+          if (['page', 'true'].includes(control.getAttribute('aria-current')) || control.getAttribute('aria-selected') === 'true') current.add(key);
+        }
+      }
+      // Conflicting native selections are ambiguous, not a reason to guess.
+      if (current.size) return current.size === 1 ? [...current][0] : null;
+      if (matching.size) return matching.size === 1 ? [...matching][0] : null;
+      if (location.search || location.hash) return null;
+      return project ? 'projects' : routes.get(path) || null;
+    },
     read() {
-      const root = document.querySelector('[data-app-shell-responsive-sidebar]');
+      const roots = [...document.querySelectorAll('[data-app-shell-responsive-sidebar]')];
+      const root = roots.find(element => element.getClientRects().length && !element.closest('[inert], [aria-hidden="true"]')) ||
+        roots.find(element => element.getClientRects().length) || null;
       const rendered = element => element && element.getBoundingClientRect().width > 0 &&
         getComputedStyle(element).visibility !== 'hidden';
       const drawer = document.querySelector('#browser-sidebar-popover[role="dialog"]');
-      const docked = [...document.querySelectorAll('aside.app-shell-left-panel')].find(element =>
+      const docked = [...(root?.querySelectorAll('aside.app-shell-left-panel') || [])].find(element =>
         !element.closest('[role="dialog"]') && rendered(element) && element.getBoundingClientRect().width > 52.5);
-      const rail = document.querySelector('nav[class~="group/sidebar-rail"], nav[data-testid="sidebar-rail"]');
-      const reservedPanel = [...document.querySelectorAll('aside.app-shell-left-panel')].some(element =>
+      const rail = root?.querySelector('nav[class~="group/sidebar-rail"], nav[data-testid="sidebar-rail"]');
+      const reservedPanel = [...(root?.querySelectorAll('aside.app-shell-left-panel') || [])].some(element =>
         !element.closest('[role="dialog"]') && rendered(element));
       const reservedRail = reservedPanel || (rail && rail.getBoundingClientRect().width > 0 &&
         [...rail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1);
@@ -391,6 +454,56 @@
     preferences: null,
     flyout: null,
     pendingFlyoutFocus: null,
+    geometry: null,
+    geometryAnimation: null,
+    geometryCaptured: false,
+    captureGeometry() {
+      const workspace = this.geometry?.workspace;
+      if (workspace?.isConnected) {
+        this.geometry.x = workspace.getBoundingClientRect().x;
+        this.geometryCaptured = true;
+      }
+    },
+    cancelGeometry() {
+      this.geometryAnimation?.cancel();
+      this.geometryAnimation = null;
+    },
+    reconcileGeometry(model, workspace) {
+      const previous = this.geometry;
+      const intent = model.root.getAttribute('data-app-shell-sidebar-open');
+      const compatible = previous?.root === model.root && previous.workspace === workspace &&
+        previous.width === innerWidth && previous.height === innerHeight;
+      const changed = compatible && (previous.state !== model.state || previous.intent !== intent);
+      // React's transparent layout wrappers do not create CSS boxes; the
+      // workspace is still a flex item of their first boxed ancestor.
+      let parent = workspace?.parentElement;
+      while (parent && parent !== model.root && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
+      if (!compatible || matchMedia('(prefers-reduced-motion: reduce)').matches) this.cancelGeometry();
+      else if (changed && workspace && getComputedStyle(workspace).flexGrow !== '0' &&
+          parent && getComputedStyle(parent).display === 'flex' && getComputedStyle(parent).flexDirection === 'row') {
+        // Correct only the workspace's layout offset, never the native panel's
+        // measured width. Native animation/detection remains authoritative.
+        // An animated margin lets flex reflow text/composer without scaling it.
+        this.cancelGeometry();
+        const delta = previous.x - workspace.getBoundingClientRect().x;
+        if (Math.abs(delta) > .5) {
+          this.geometryAnimation = workspace.animate({ '--app-mode-navigation-offset': [`${delta}px`, '0px'] },
+            { duration: 220, easing: 'cubic-bezier(.4, 0, .6, 1)' });
+          const animation = this.geometryAnimation;
+          // Native mounting can occupy most of this frame. Hold the starting
+          // layout until the next frame so its cost cannot consume the tween
+          // before the first corrected position is painted.
+          animation.pause(); animation.currentTime = 0;
+          requestAnimationFrame(() => { if (this.geometryAnimation === animation) animation.play(); });
+          animation.addEventListener('finish', () => {
+            if (this.geometryAnimation === animation) this.geometryAnimation = null;
+          }, { once: true });
+        }
+      }
+      this.geometry = { root: model.root, workspace, state: model.state, intent,
+        width: innerWidth, height: innerHeight, x: workspace?.getBoundingClientRect().x };
+      this.geometryCaptured = false;
+    },
     closeFlyout(restore = false, keepNative = false) {
       const active = this.flyout;
       if (!active) return;
@@ -549,7 +662,17 @@
     },
     reconcileSections(panel, own) {
       const next = new Map();
-      for (const entry of navigationAdapter.sections(panel)) {
+      const entries = navigationAdapter.sections(panel);
+      // Read scroll geometry before writing section markers. Interleaving
+      // these reads/writes forced repeated layout during native expansion.
+      const scrolls = new Map(entries.map(entry => {
+        let scroll = entry.section.parentElement;
+        while (scroll && scroll !== entry.navigation && !['auto', 'scroll'].includes(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+        return [entry.section, scroll];
+      }));
+      const navigations = new Set();
+      const capability = entries.length ? hostNavigation.read() : null;
+      for (const entry of entries) {
         const { section, heading, content, key, navigation } = entry;
         if (!entry.native) {
           let control = heading.querySelector('[data-app-mode-nav-disclosure]');
@@ -572,27 +695,26 @@
         own(navigation, 'data-app-mode-sidebar-navigation');
         const wrapper = panel.firstElementChild;
         if (wrapper?.contains(navigation) && wrapper.style.width && wrapper.style.minWidth) own(wrapper, 'data-app-mode-sidebar-width-wrapper');
-        let scroll = section.parentElement;
-        while (scroll && scroll !== navigation && !['auto', 'scroll'].includes(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+        const scroll = scrolls.get(section);
         if (scroll && scroll !== navigation) {
           own(scroll, 'data-app-mode-nav-scroll');
           for (let node = section.parentElement; node && node !== scroll; node = node.parentElement) {
             if (node.querySelectorAll('section').length === 1) own(node, 'data-app-mode-nav-group-wrapper');
           }
         }
+        next.set(section, entry);
+        if (navigations.has(navigation)) continue;
+        navigations.add(navigation);
         const header = navigation.querySelector('[class~="h-toolbar"]');
         if (header && !header.contains(section)) {
           own(header, 'data-app-mode-nav-header');
-          const model = navigationAdapter.read();
-          const hosted = hostNavigation.ready && hostNavigation.visible && model.state === 'docked' && hostNavigation.read().state !== 'unavailable';
+          const hosted = hostNavigation.ready && hostNavigation.visible && capability.toggle;
           const controls = [...header.querySelectorAll('button, a, [role="button"], input, select, textarea, summary, [tabindex], [contenteditable="true"]')];
           const known = controls.length > 0 && controls.every(control =>
             /^(open|show|hide|close) sidebar$|^Search$/i.test(accessibleName(control)) ||
             (control.getAttribute('aria-haspopup') === 'menu' && /^ChatGPT\b/.test(control.textContent.trim())));
           if (hosted && known) {
             own(header, 'data-app-mode-host-nav-header');
-            for (const control of controls) if (/^Search$/i.test(accessibleName(control)) && hostNavigation.read().search &&
-                hostNavigation.searchControl === control) own(control, 'data-app-mode-host-search-original');
           }
         }
         const account = [...navigation.querySelectorAll('button, [role="button"]')].find(element =>
@@ -602,7 +724,6 @@
         for (const list of navigation.querySelectorAll('[class~="group/nav-list"]')) {
           if (!list.closest('section')) own(list, 'data-app-mode-nav-primary');
         }
-        next.set(section, entry);
       }
       for (const [section, entry] of this.sections) {
         if (!entry.native && next.get(section)?.control !== entry.control) entry.control.remove();
@@ -627,6 +748,8 @@
       this.owned = next;
     },
     reset() {
+      this.cancelGeometry(); this.geometry = null; this.geometryCaptured = false;
+      clearTimeout(this.replacementTimer); this.replacementTimer = null; this.replacementExpired = false;
       this.closeFlyout(false, true);
       this.cancelShortcut?.();
       this.reconcileSections(null, () => {});
@@ -639,6 +762,9 @@
   };
 
   c.ensureCompactSidebar = function ensureCompactSidebar() {
+    // Reversing or advancing a native animation starts at its current visual
+    // position, rather than the previous frame's cached correction.
+    if (navigationController.geometryAnimation && !navigationController.geometryCaptured) navigationController.captureGeometry();
     const model = navigationController.read();
     navigationController.reconcileFlyout(model);
     const { root, rail: nativeRail, docked: dockedPanel, state } = model;
@@ -646,12 +772,28 @@
     const nativeToggle = navigationAdapter.find(/^(open|show|hide|close) sidebar$/i, { interactive: false }) ||
       model.drawer?.querySelector('button[aria-label="Hide sidebar" i], button[aria-label="Close sidebar" i]');
     const retainBlockedLayout = model.blocked && navigationController.root === root && navigationController.state !== null;
+    // React can remove an opener before mounting its responsive replacement.
+    // Keep validated presentation briefly, with forwarding controls disabled;
+    // a genuinely unsupported layout still releases all native fallbacks.
+    const replacing = compactSidebarEnabled && navigationController.state !== null && (!root || !nativeToggle) && !retainBlockedLayout;
+    if (replacing && !navigationController.replacementExpired) {
+      for (const control of document.querySelectorAll('#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button')) if (!control.disabled) control.disabled = true;
+      if (!navigationController.replacementTimer) navigationController.replacementTimer = setTimeout(() => {
+        navigationController.replacementExpired = true; navigationController.schedule();
+      }, 250);
+      setCompatibility('sidebar', 'pending'); hostNavigation.publish();
+      return;
+    }
     if (!compactSidebarEnabled || !root || (nativeToggle && nativeToggle === hostNavigation.rejectedToggle) || (!nativeToggle && !retainBlockedLayout)) {
       navigationController.reset();
       setCompatibility('sidebar', !compactSidebarEnabled ? 'disabled' : 'unsupported');
       return;
     }
     setCompatibility('sidebar', 'ready');
+    if (navigationController.replacementTimer) {
+      for (const control of document.querySelectorAll('#app-mode-compact-sidebar, #app-mode-compact-sidebar-actions button')) if (control.disabled) control.disabled = false;
+    }
+    clearTimeout(navigationController.replacementTimer); navigationController.replacementTimer = null; navigationController.replacementExpired = false;
     const next = new Map();
     const own = (element, attribute, value = '') => {
       if (!element) return;
@@ -686,7 +828,8 @@
         const action = document.createElement('button'); action.type = 'button';
         action.setAttribute('data-app-mode-sidebar-action', ''); action.setAttribute('aria-label', label); action.title = label;
         action.innerHTML = icon;
-        menu.append(action);
+        // Align Search with the native expanded sidebar's header row.
+        if (label === 'Search') menu.prepend(action); else menu.append(action);
       }
       // Navigation-section shortcuts mirror the expanded sidebar's own
       // sections. Semantically matched native icon geometry.
@@ -722,27 +865,23 @@
       account.innerHTML = '<svg viewBox="0 0 20 20" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10 10.989a7.105 7.105 0 0 1 7.076 6.482.666.666 0 0 1-1.325.115 5.775 5.775 0 0 0-11.504 0 .666.666 0 0 1-1.324-.115 7.104 7.104 0 0 1 7.076-6.482"/><path fill-rule="evenodd" clip-rule="evenodd" d="M10 1.756a3.986 3.986 0 1 1-.002 7.971A3.986 3.986 0 0 1 10 1.756m0 1.33a2.656 2.656 0 1 0 0 5.31 2.656 2.656 0 0 0 0-5.31"/></svg>';
       menu.append(account);
     }
-    // Route-aware selection: mirror the site's aria-current link onto the
-    // matching rail action when its accessible name lines up.
-    const current = [...document.querySelectorAll('[aria-current="page"], a[aria-current]')]
-      .find(element => element.getClientRects().length && (accessibleName(element) || element.textContent.trim()));
+    const activeDestination = navigationAdapter.activeDestination(model);
     for (const action of menu.querySelectorAll('[data-app-mode-sidebar-action]')) {
-      const label = action.getAttribute('aria-label') || '';
-      const selected = !!current && !!label &&
-        new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
-          .test(accessibleName(current) || current.textContent.trim());
+      const selected = !!activeDestination && activeDestination ===
+        (action.getAttribute('data-app-mode-rail-section') || action.getAttribute('aria-label'));
       action.toggleAttribute('data-app-mode-rail-active', selected);
+      if (selected) { if (action.getAttribute('aria-current') !== 'page') action.setAttribute('aria-current', 'page'); }
+      else action.removeAttribute('aria-current');
     }
     own(document.body, 'data-app-mode-navigation-state', state);
     if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().state !== 'unavailable') own(document.body, 'data-app-mode-host-navigation-owned');
-    if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().search) {
-      own(menu.querySelector('[aria-label="Search"]'), 'data-app-mode-host-search-original');
-    }
     if (model.blocked) {
       own(document.body, 'data-app-mode-navigation-blocked');
       own(toggle, 'inert');
       own(menu, 'inert');
     }
+    // A fading rail must leave keyboard/pointer navigation immediately.
+    if (state !== 'compact') own(menu, 'inert');
     own(nativeRail, 'data-app-mode-native-sidebar');
     own(dockedPanel, 'data-app-mode-docked-sidebar');
     own(dockedPanel?.parentElement, 'data-app-mode-docked-sidebar-parent');
@@ -755,6 +894,7 @@
     }
     const modalClose = model.drawer?.querySelector('button[aria-label="Hide sidebar" i], button[aria-label="Close sidebar" i]');
     own(modalClose, 'data-app-mode-modal-sidebar-toggle');
+    if (hostNavigation.ready && hostNavigation.visible && hostNavigation.read().toggle) own(modalClose, 'data-app-mode-sidebar-original');
     // Only compact navigation needs the 52px rail reservation. A rendered
     // docked panel or drawer is the expanded navigation surface, so it starts
     // at the page origin and the workspace gets that width back.
@@ -801,7 +941,7 @@
       ...(dockedPanel?.querySelectorAll('button') || [])
     ]);
     for (const control of duplicates) {
-      if (/^(open|show|hide|close) sidebar$/i.test(accessibleName(control)) &&
+      if (/^(?:(open|show|hide|close) sidebar|sidebar)$/i.test(accessibleName(control)) &&
           !control.closest('[role="dialog"]')) own(control, 'data-app-mode-sidebar-original');
     }
     if (nativeToggle && !nativeToggle.closest('[role="dialog"]')) own(nativeToggle, 'data-app-mode-sidebar-original');
@@ -824,6 +964,7 @@
     }
     const previous = navigationController.state;
     navigationController.apply(next);
+    navigationController.reconcileGeometry(model, contentMains.length === 1 ? contentMains[0] : null);
     navigationController.state = state;
     navigationController.root = root;
     if (previous === 'drawer' && state !== 'drawer' &&

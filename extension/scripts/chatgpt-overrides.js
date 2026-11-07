@@ -8,6 +8,9 @@
   // Delegate in the capture phase: React may clone/replace the header nodes,
   // discarding per-button listeners, or handle bubbled header clicks itself.
   document.addEventListener("click", (event) => {
+    const nativeSidebarToggle = event.target.closest?.('button, a, [role="button"]');
+    if (nativeSidebarToggle && /^(open|show|hide|close) sidebar$/i.test(accessibleName(nativeSidebarToggle))) navigationController.captureGeometry();
+    if (c.shareOverflow?.menu && !c.shareOverflow.menu.contains(event.target) && !c.shareOverflow.button.contains(event.target)) closeShareOverflow();
     const flyout = navigationController.flyout;
     if (flyout?.kind === 'native') {
       if (event.isTrusted && flyout.openedDisclosure?.contains(event.target)) flyout.openedDisclosure = null;
@@ -58,6 +61,13 @@
   // Include the added entry in the site's menu keyboard navigation without
   // relying on a framework's private roving-focus registry.
   document.addEventListener('keydown', event => {
+    if (c.shareOverflow?.menu && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); closeShareOverflow(true); return;
+    }
+    if (c.shareOverflow?.menu && event.key === 'Tab') closeShareOverflow(true);
+    if (c.shareOverflow?.menu?.contains(event.target) && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault(); c.shareOverflow.menu.querySelector('button').focus(); return;
+    }
     const flyout = navigationController.flyout;
     if (flyout?.kind === 'native' && event.key === 'Escape') {
       if (event.target instanceof Element && event.target.closest('[role="menu"], [role="listbox"]')) return;
@@ -95,6 +105,8 @@
   observer = new MutationObserver(records => {
     if (records.every(record => record.target?.closest?.('[data-app-mode-theme-probe]') ||
         (record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every(node => node.nodeType === 1 && node.hasAttribute('data-app-mode-theme-probe'))))) return;
+    // Reconcile native layout in the next paint, not a second nested frame.
+    navigationController.schedule();
     if (reconciliationQueued) return;
     reconciliationQueued = true;
     requestAnimationFrame(() => {
@@ -103,16 +115,16 @@
       const header = findVisiblePageElement('#page-header, #conversation-header, header, [role="banner"], [data-testid="page-header"]');
       ensurePinButton(header);
       ensureShareMenu(header);
-      navigationController.schedule();
       reportCurrentSession();
       setTitle();
+      c.checkReady?.();
     });
   });
 
   observer.observe(document.documentElement, {
     childList: true,
     attributes: true,
-    attributeFilter: ["class", "style", "hidden", "href", "aria-hidden", "inert", "aria-expanded", "aria-label", "aria-controls", "aria-haspopup", "data-testid", "id", "data-state", "disabled", "aria-disabled", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
+    attributeFilter: ["class", "style", "hidden", "href", "aria-hidden", "inert", "aria-current", "aria-selected", "aria-expanded", "aria-label", "aria-controls", "aria-haspopup", "data-testid", "id", "data-state", "disabled", "aria-disabled", "data-app-shell-responsive-sidebar", "data-app-shell-sidebar-open"],
     subtree: true
   });
 
@@ -146,7 +158,10 @@
   });
   window.addEventListener("popstate", init);
   window.addEventListener("hashchange", init);
-  window.addEventListener("resize", () => navigationController.schedule());
+  // Includes pushState/replaceState even when a SPA keeps the same DOM.
+  window.navigation?.addEventListener('currententrychange', () => navigationController.schedule());
+  matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => navigationController.cancelGeometry());
+  window.addEventListener("resize", () => { closeShareOverflow(); ensureShareMenu(); navigationController.schedule(); });
 
     installed = true;
   }
