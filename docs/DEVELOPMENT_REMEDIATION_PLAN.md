@@ -29,7 +29,7 @@ DEFERRED, REJECTED. A historical report is not a current reproduction.
 | V-04 | P1 / CI evidence | No artifact upload at entry | 1 / primary | IMPLEMENTED | Allowlisted synthetic attachments only, seven-day failure retention; hosted execution explicitly unverified |
 | V-05 | P1 / regression detection | New fixture and capture contracts | 1 / primary | VERIFIED | Actual four-pixel and missing-chrome negative probes fail; valid states pass |
 | P-02 | P2 / transitions | Exact 1024x728 reproduction and native transition matrix; see Phase Two report | 2 / primary | VERIFIED | Exercised isolated states; no confirmed production defect; live compatibility remains unverified |
-| P-03 | P2 / selection | Existing conservative selection and SPA tests | 3 / future owner | DEFERRED | Assess current evidence before any change |
+| P-03 | P2 / selection | Existing tests plus two theme cases with 26 checks each; see Phase Three report | 3 / primary | VERIFIED | Local fixture scope only; no production defect reproduced; authenticated compatibility unverified |
 | P-04 | P2 / DOM compatibility | Site-dependent adapters, unsupported-markup fallback | 4 / future owner | UNVERIFIED | Confirm specific current defects before hardening |
 | P-05 | P2 / startup | fbe1c9d startup readiness and recovery tests | 5 / future owner | DEFERRED | Reuse completed implementation; measure any remaining defect |
 | P-06 | P2 / keyboard and window behavior | Roadmap proposal | 6 / future owner | DEFERRED | Owning-window actions, no duplicate shortcuts, preserved security |
@@ -156,3 +156,19 @@ Production behavior and compact selection are unchanged. New checks and two just
 fixture baselines are local to `codex/sidebar-transition-verification`; no remote operation
 or Phase Three work was performed. Authenticated site animation and physical acceptance
 remain unverified; this is isolated native-host/fixture evidence.
+
+## Phase Three follow-up
+
+See [Compact selection verification](COMPACT_SELECTION_VERIFICATION.md). The accepted
+Phase Two commit is preserved; the Phase Three branch adds only test coverage and reporting.
+The focused live sidebar check was attempted first but could not establish a responsive
+isolated review connection or visible authentication. Live verification is unavailable,
+not a passed check. No production/profile workaround or application correction was applied.
+
+| ID | Priority / component | Evidence | Phase / owner | Status | Acceptance |
+| --- | --- | --- | --- | --- | --- |
+| L-02 | P2 / authenticated sidebar compatibility | Isolated review transport unavailable; authentication unconfirmed | Live follow-up / primary | UNVERIFIED | Real-site widths, themes, zoom, reversal, focus and resize still require accessible isolated review |
+| S-03 | P2 / compact selection | Two passing theme cases, native membership/conflict and 26 checks each | 3 / primary | VERIFIED | Exercised synthetic semantics, routes, reload/rerender, transitions, focus and fixture contrast |
+
+All accepted baselines and production selection behavior are unchanged. No remote action,
+merge, release, deployment or Phase Four work occurred.
