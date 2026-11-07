@@ -32,5 +32,13 @@ jobs:
       - run: npm test
       - run: npm run test:runtime
       - run: npm run test:host
+      - name: Retain synthetic visual failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-visual-evidence
+          path: test-results/visual-evidence/
+          retention-days: 7
+          if-no-files-found: warn
       # The two foreground/tray interaction checks are explicitly skipped in
       # noninteractive mode. Full local test:all remains the desktop gate.

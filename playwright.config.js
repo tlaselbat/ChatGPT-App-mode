@@ -1,6 +1,11 @@
 const { defineConfig } = require('@playwright/test');
 
+if (process.env.CI && process.argv.some(arg => arg.startsWith('--update-snapshots') && arg !== '--update-snapshots=none')) {
+  throw new Error('CI must compare approved snapshots; baseline updates are local review operations.');
+}
+
 module.exports = defineConfig({
+  updateSnapshots: 'none',
   testDir: './tests',
   fullyParallel: false,
   workers: 1,
@@ -16,6 +21,7 @@ module.exports = defineConfig({
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['./tests/helpers/visual-evidence-reporter.cjs'],
   ],
   outputDir: 'test-results/runs',
   use: {

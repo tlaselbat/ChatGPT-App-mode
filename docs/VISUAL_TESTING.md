@@ -1,5 +1,89 @@
 # Visual testing workflow
 
+## Structured synthetic visual verification
+
+Run `npm run test:visual -- --update-snapshots=none` for the twelve Chromium goldens
+and four composed Electron scenarios. The new Chromium suite always uses Playwright's
+bundled browser; `APP_MODE_CHROMIUM_EXE` remains available to the original suite only.
+Both suites retain the existing 50-pixel limit. The original four baselines and test
+names are preserved. Shared navigation markup and native capture helpers are under
+`tests/helpers/`; production injection and security policies are unchanged.
+
+The synthetic scenarios cover desktop home/conversations, expanded/compact navigation,
+project navigation, Search, 390px light/dark, 480/481px home, 680px conversation and
+selected navigation with keyboard focus. Dimensions are CSS pixels for Chromium.
+Electron uses 1280×900 and 390×850 DIP windows, a 680×700 loading window, and a fullscreen
+window whose measured size is the current display size. Page zoom is 1. These are not
+physical mixed-DPI acceptance checks.
+
+Native capture targets the exact fixture window media-source ID and validates its
+dimensions, independent view roles/bounds, a cyan trusted-chrome marker and a green
+remote-content marker. Loading must obscure the green marker and magenta underlay;
+fullscreen must hide the chrome marker. Markers and animation suppression are applied
+by the test harness only. The trusted document's CSP is retained. Empty, incomplete
+or incorrectly owned captures fail rather than establishing visual success.
+
+Native goldens require an explicit exact environment fingerprint. For this milestone:
+
+```powershell
+$env:APP_MODE_NATIVE_GOLDENS = '10.0.26200-electron-44.10.0-scale-1'
+npm run test:visual -- --update-snapshots=none
+Remove-Item Env:APP_MODE_NATIVE_GOLDENS
+```
+
+Other OS/runtime/display-scale combinations report native golden comparison as
+`unavailable`; composition/geometry assertions still run on Windows. Non-Windows native
+tests are explicitly skipped. Hosted CI runs composition checks but never substitutes
+Windows Server images for the approved Windows 11 goldens. Fullscreen comparisons also
+depend on display dimensions; a different display requires separate review. A passed
+test process with unavailable native comparisons is incomplete visual coverage.
+
+Every run creates `test-results/visual-evidence/<UTC timestamp>-<pid>/manifest.json`
+and `index.md`. The schema version is 1. It records commit/dirty state, environment,
+configuration, planned scenarios, attempts, measured geometry, stage results and relative
+image/diff/trace links. Unexecuted scenarios and missing checks remain `unavailable`.
+`overall` describes the test process; `coverageResult` separately identifies incomplete
+visual coverage. A synthetic actual image is retained per scenario; traces are retained
+on failures, with explicit trace lifecycle management for the new persistent context.
+New runs use separate directories, so later runs do not erase prior review evidence.
+
+To locate the latest review:
+
+```powershell
+Get-ChildItem test-results/visual-evidence -Directory | Sort-Object Name -Descending | Select-Object -First 1
+```
+
+CI uploads only named synthetic image/trace attachments copied into this evidence tree
+on failure, with seven-day retention. Profiles, arbitrary JSON attachments, authenticated
+live evidence and the entire runs directory are excluded. The original HTML report is
+still available locally. A locally validated workflow does not establish hosted upload
+success; that requires a later authorized CI run.
+
+Generate or update only a targeted new baseline with
+`npm test -- tests/visual/chromium.spec.js --grep "<scenario>" --update-snapshots`.
+For native baselines, set the exact environment fingerprint and target `native.spec.js`.
+Inspect every changed image and relevant diff, confirm fixture state, then rerun with
+`--update-snapshots=none`. CI rejects baseline-update arguments. Never increase tolerance
+or regenerate unrelated snapshots to conceal a failure. Report inspected images,
+changed regions, clipping/overlap findings and unavailable states.
+
+Controlled negative probes (expected exit code 1; never use update mode):
+
+```powershell
+$env:APP_MODE_VISUAL_PROBE = 'geometry'
+npm test -- tests/visual/chromium.spec.js --grep home-expanded-light --update-snapshots=none
+Remove-Item Env:APP_MODE_VISUAL_PROBE
+$env:APP_MODE_COMPOSITION_PROBE = 'missing-chrome'
+npm test -- tests/visual/native.spec.js --grep desktop --update-snapshots=none
+Remove-Item Env:APP_MODE_COMPOSITION_PROBE
+node --test tests/visual-contracts.cjs
+```
+
+The first probe shifts the workspace four pixels against its approved golden. The
+second removes the trusted marker from an actual composed window capture. Contract
+tests additionally reject missing content, wrong ownership/dimensions, loading leakage
+and unsafe evidence attachments. Restore normal environment variables before integration.
+
 ## Choose checks for the change
 
 Choose checks by the behavior changed. Documentation changes need diff and reference inspection. Extension changes need the affected fixture checks; runtime and native Electron changes need their respective suites. Combine checks when a change crosses those areas. Use `npm run test:all` for releases or changes spanning extension, runtime, and host.
