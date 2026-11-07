@@ -172,3 +172,23 @@ not a passed check. No production/profile workaround or application correction w
 
 All accepted baselines and production selection behavior are unchanged. No remote action,
 merge, release, deployment or Phase Four work occurred.
+
+## Phase Four follow-up
+
+See [DOM compatibility verification](DOM_COMPATIBILITY_VERIFICATION.md). The clean
+accepted Phase Three baseline is preserved on a new local branch. A fresh unchanged
+review-tool launch restored the loopback endpoint and visible authenticated blank-home
+access; the prior process was no longer running. The exact historical endpoint failure
+remains unproven. Persistent profiles were preserved and no infrastructure correction
+was needed. The full live sidebar matrix and live Share remain unverified.
+
+| ID | Priority / component | Evidence | Phase / owner | Status | Acceptance |
+| --- | --- | --- | --- | --- | --- |
+| D-04 | P2 / native action discovery | Duplicate Search in ordinary main content won discovery at 390 and 1280 | 4 / primary | VERIFIED focused | Exclude ordinary content, menus and unrelated dialogs; regression selects and invokes the connected native source without decoy clicks |
+| D-04-L | P2 / DOM lifecycle coverage | Home replacement/SPA/unsupported markup/reinjection and delayed Share after header replacement | 4 / primary | VERIFIED focused | Existing cleanup, cancellation and fallback protections sufficient; no home/Share/coordinator correction |
+| L-02 | P2 / authenticated sidebar compatibility | Current authenticated blank-home access restored; responsive/transition matrix not completed | Live follow-up / primary | UNVERIFIED | Keep real-site widths, themes, zoom, reversal, focus and resize as separate remaining acceptance |
+
+Full integration results and local delivery status are recorded in the Phase Four
+report. Native composition assertions and environment-controlled pixel comparisons
+remain distinct. Physical mixed-DPI, Pin/opacity endurance, U-01 and authenticated
+live Share remain outstanding. No remote operation or Phase Five work is authorized.
