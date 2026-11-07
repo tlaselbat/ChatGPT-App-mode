@@ -30,6 +30,8 @@ jobs:
         shell: pwsh
         run: ./tools/check-syntax.ps1
       - run: npm test
+        env:
+          APP_MODE_VISUAL_PROBE: geometry
       - run: npm run test:runtime
       - run: npm run test:host
       - name: Retain synthetic visual failure evidence
