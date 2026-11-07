@@ -203,6 +203,14 @@ function Get-AppModeWindowArgs {
             } catch { }
         }
     }
+    # Marked host bounds are already screen DIPs. WinForms work areas here
+    # may be physical pixels; Electron performs display-aware DIP clamping.
+    if ($bounds.PSObject.Properties['coordinateSpace'] -and $bounds.coordinateSpace -eq 'electron-dip') {
+        "--window-size=$($bounds.width),$($bounds.height)"
+        "--window-position=$($bounds.x),$($bounds.y)"
+        if ($maximized) { '--start-maximized' }
+        return
+    }
     try {
         Add-Type -AssemblyName System.Windows.Forms
         $rectangle = [Drawing.Rectangle]::new([int]$bounds.x, [int]$bounds.y, [int]$bounds.width, [int]$bounds.height)

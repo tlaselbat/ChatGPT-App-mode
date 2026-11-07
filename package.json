@@ -6,7 +6,7 @@
   "scripts": {
     "test": "playwright test",
     "test:runtime": "node --test tests/runtime.cjs tests/release.cjs tests/remediation.cjs",
-    "test:host": "node --test --test-concurrency=1 tests/window-host.cjs tests/review-actions.cjs",
+    "test:host": "node --test --test-concurrency=1 tests/window-host.cjs tests/review-actions.cjs tests/geometry.cjs",
     "test:all": "npm test && npm run test:runtime && npm run test:host",
     "test:headed": "playwright test --headed",
     "test:update": "playwright test --update-snapshots",

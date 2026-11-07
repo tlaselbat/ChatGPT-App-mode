@@ -8,6 +8,7 @@ const { installBrowserShortcuts } = require('./shortcuts.cjs');
 const { installWindowControls } = require('./controls-host.cjs');
 const { injectPage } = require('./injection.cjs');
 const { readConfig, safeBounds } = require('./config.cjs');
+const { installPlacement } = require('./placement.cjs');
 const sourceRoot = path.resolve(__dirname, '..');
 const option = (args, name) => args.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 const root = path.resolve(option(process.argv, 'app-mode-root') || sourceRoot);
@@ -76,15 +77,21 @@ function createWindow(args) {
   const config = readConfig(path.join(root, 'config.json'));
   const requested = option(args, 'url') || config.url || 'https://chatgpt.com/';
   const url = isChatGptUrl(requested) ? requested : 'https://chatgpt.com/';
+  const bounds = safeBounds(args, config, screen);
   const win = new BrowserWindow({
-    ...safeBounds(args, config, screen), minWidth: 390, minHeight: 300,
+    ...bounds, minWidth: 390, minHeight: 300,
     title: 'ChatGPT', icon: path.join(sourceRoot, 'assets', 'AppMode-hex-selected.ico'),
     backgroundColor: '#212121', autoHideMenuBar: true, show: false,
     titleBarStyle: 'hidden',
     webPreferences: { session: browserSession, sandbox: true, contextIsolation: true,
       nodeIntegration: false, webviewTag: false, navigateOnDragDrop: false },
   });
+  // On Windows hidden-title-bar construction can include fractional-DPI
+  // nonclient margins. setBounds and getNormalBounds share the DIP rectangle
+  // contract; apply it after native frame initialization, before showing.
+  win.setBounds(bounds);
   win.removeMenu();
+  installPlacement(win, root, bounds);
   // The remote page runs in its own view below the application-owned title
   // bar, so the title bar's geometry never depends on ChatGPT markup and the
   // controls surface never covers page controls. Same sandbox preferences.
@@ -95,9 +102,9 @@ function createWindow(args) {
   const chat = chatView.webContents;
   guardNavigation(chat);
   const controls = installWindowControls(win, chatView, { isChatGptUrl });
-  chat.on('page-title-updated', event => { event.preventDefault(); win.setTitle('ChatGPT'); });
+  chat.on('page-title-updated', event => { event.preventDefault(); if (!win.isDestroyed()) win.setTitle('ChatGPT'); });
   chat.on('did-finish-load', async () => {
-    if (!isChatGptUrl(chat.getURL())) return;
+    if (win.isDestroyed() || chat.isDestroyed() || !isChatGptUrl(chat.getURL())) return;
     const generation = navigationGenerations.get(chat);
     let css, script, headerScript;
     await injectPage({

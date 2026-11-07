@@ -282,7 +282,8 @@ try {
             try {
                 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
                 Update-SessionRetention $config
-                Save-AppModeWindowPlacement -Config $config -AppRoot $AppRoot
+                # Electron persists its own normal bounds in screen DIPs.
+                # A Win32 placement writer would add invisible frame margins.
             } catch { }
         }
         # Socket acceptance/read completion wakes immediately; maintenance uses
