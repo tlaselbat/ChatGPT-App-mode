@@ -49,7 +49,9 @@ test('real Electron geometry survives ten persisted relaunches and window-state 
   function link(from, to) { fs.mkdirSync(to, { recursive: true }); for (const e of fs.readdirSync(from, { withFileTypes: true })) {
     if (e.isDirectory()) link(path.join(from, e.name), path.join(to, e.name)); else fs.linkSync(path.join(from, e.name), path.join(to, e.name));
   } }
-  link(path.join(repo, 'node_modules/electron/dist'), path.join(root, 'node_modules/electron/dist'));
+  // Resolve the package entry point first: on a clean installation Electron
+  // materializes its binary lazily. Do not depend on another test running first.
+  link(path.dirname(require('electron')), path.join(root, 'node_modules/electron/dist'));
   const file = path.join(root, 'logs/window-state.json'), config = path.join(root, 'config.json');
   fs.writeFileSync(config, JSON.stringify({ installRoot: root, url: 'https://chatgpt.com/', rememberWindowPlacement: true, window: { width: 680, height: 850 } }));
   fs.mkdirSync(path.dirname(file), { recursive: true });
