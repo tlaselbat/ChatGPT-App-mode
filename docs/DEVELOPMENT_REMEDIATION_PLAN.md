@@ -28,7 +28,7 @@ DEFERRED, REJECTED. A historical report is not a current reproduction.
 | V-03 | P1 / evidence | Existing output requires manual discovery | 1 / primary | VERIFIED | Versioned manifest, partial results, linked review index, explicit unavailable states |
 | V-04 | P1 / CI evidence | No artifact upload at entry | 1 / primary | IMPLEMENTED | Allowlisted synthetic attachments only, seven-day failure retention; hosted execution explicitly unverified |
 | V-05 | P1 / regression detection | New fixture and capture contracts | 1 / primary | VERIFIED | Actual four-pixel and missing-chrome negative probes fail; valid states pass |
-| P-02 | P2 / transitions | Existing baseline implementation and tests | 2 / future owner | DEFERRED | Reproduce remaining issue before changes; do not reimplement accepted behavior |
+| P-02 | P2 / transitions | Exact 1024x728 reproduction and native transition matrix; see Phase Two report | 2 / primary | VERIFIED | Exercised isolated states; no confirmed production defect; live compatibility remains unverified |
 | P-03 | P2 / selection | Existing conservative selection and SPA tests | 3 / future owner | DEFERRED | Assess current evidence before any change |
 | P-04 | P2 / DOM compatibility | Site-dependent adapters, unsupported-markup fallback | 4 / future owner | UNVERIFIED | Confirm specific current defects before hardening |
 | P-05 | P2 / startup | fbe1c9d startup readiness and recovery tests | 5 / future owner | DEFERRED | Reuse completed implementation; measure any remaining defect |
@@ -139,3 +139,20 @@ the commit records the implementation and this report. No remote action was take
 Phase Zero is verified. Phase One meets its local acceptance checks. Hosted artifact
 upload/retention execution remains unverified and requires a later authorized hosted
 run; full hosted-CI acceptance is therefore pending. Phase Two was not started.
+
+## Phase Two follow-up
+
+Phases Zero and One were accepted by the user after the hosted normal and controlled
+artifact runs; that acceptance supersedes the earlier pending-hosted wording above.
+Phase Two is documented in [Sidebar transition verification](SIDEBAR_TRANSITION_VERIFICATION.md).
+
+| ID | Priority / component | Evidence | Phase / owner | Status | Acceptance |
+| --- | --- | --- | --- | --- | --- |
+| T-02-F | P2 / synthetic native fixture | Global navigation function shadowed the platform API, causing partial injection | 2 / primary | VERIFIED | Rename fixture function; legacy variant fails the new guard; corrected native actions pass |
+| T-02-C | P2 / composition readiness | First-ready rail fade could be captured; no full-injection assertion | 2 / primary | VERIFIED | Require installed runtime, host navigation and settled rail; inspect two intentional native golden corrections |
+| T-02-M | P2 / transition measurements | Pending DOM reads and capture metrics can masquerade as visible jumps | 2 / primary | VERIFIED | Preserve pending records; verify docked compositor endpoints/intermediates and final eight-case matrix |
+
+Production behavior and compact selection are unchanged. New checks and two justified native
+fixture baselines are local to `codex/sidebar-transition-verification`; no remote operation
+or Phase Three work was performed. Authenticated site animation and physical acceptance
+remain unverified; this is isolated native-host/fixture evidence.

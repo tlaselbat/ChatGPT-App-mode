@@ -39,6 +39,16 @@ for (const [id, width, height, theme] of [
     });
     await page.evaluate(() => { const marker = document.createElement('div'); marker.style.cssText = 'position:fixed;left:200px;top:150px;width:24px;height:24px;background:rgb(0,187,0);z-index:2147483647'; document.body.append(marker); });
     await expect(controls.locator('body')).toHaveAttribute('data-presentation', id === 'loading' ? 'loading' : 'ready');
+    if (id !== 'loading') {
+      // A composition capture must not silently accept partial injection or
+      // the first paint of the rail's intentional initialization fade.
+      expect(await page.evaluate(() => typeof window.navigation?.addEventListener)).toBe('function');
+      await expect.poll(() => page.evaluate(() => window.__APP_MODE_CONTEXT__?.installed === true && window.__APP_MODE_CONTEXT__?.hostNavigation?.ready === true)).toBe(true);
+      await expect(page.locator('body')).toHaveAttribute('data-app-mode-host-navigation-owned', '');
+      await expect(controls.locator('[data-action="toggle-sidebar"]')).toBeVisible();
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', id === 'desktop' ? '0' : '1');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('visibility', id === 'desktop' ? 'hidden' : 'visible');
+    }
     const owner = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
     if (id === 'fullscreen') {
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));

@@ -24,7 +24,7 @@ class VisualEvidenceReporter {
     const artifacts = [];
     for (const [i, a] of result.attachments.entries()) {
       // Only explicitly attached synthetic images/traces/geometry, never directories/profiles.
-      if (!a.path || !/\.(png|zip|json)$/.test(a.path) || !/^(?:synthetic-(?:actual|composition|trace)|screenshot|trace)$|-(?:expected|actual|diff)\.png$/.test(a.name || '')) continue;
+      if (!a.path || !/\.(png|zip|json)$/.test(a.path) || !/^(?:synthetic-(?:actual|composition|trace|geometry)|screenshot|trace)$|-(?:expected|actual|diff)\.png$/.test(a.name || '')) continue;
       const name = i + '-' + path.basename(a.path).replace(/[^a-z0-9._-]/gi, '-');
       fs.copyFileSync(a.path, path.join(dir, name));
       artifacts.push(path.relative(this.directory, path.join(dir, name)).split(path.sep).join('/'));

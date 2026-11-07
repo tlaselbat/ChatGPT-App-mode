@@ -25,14 +25,14 @@ function navigationHtml(native = false, open = true, retained = false) {
       const rows=Array.from({length:key==='recents'?45:3},(_,i)=>'<a href="'+(key==='projects'?'/g/g-synthetic/project':'/c/synthetic-'+key+'-'+i)+'"><span>'+label+' synthetic navigation entry '+i+' with a long title</span></a>').join('');
       return '<section class="group/nav-section" data-section="'+key+'"><div class="group/nav-section"><div class="group/nav-section-title"><div>'+heading+'</div></div><div '+(controlled&&!state.sections[key]?'hidden':'')+'>'+rows+'</div></div></section>';
     }
-    function navigation(drawer) {
+    function navigationMarkup(drawer) {
       return '<div class="sidebar-navigation"><div class="h-toolbar"><strong>ChatGPT</strong><button aria-label="Search">Search</button>'+(drawer?'<button aria-label="Close sidebar" id="drawer-close">Close</button>':'')+'</div><div class="group/nav-list"><a href="/" data-primary>New chat</a></div><div class="nav-scroll"><div class="group/nav-list"><a href="/scheduled" data-primary>Scheduled</a><a href="/library" data-primary>Library</a><button>Plugins</button><button>Explore</button></div>'+Object.keys(labels).map(section).join('')+'<section class="group/nav-section" data-section="unknown"><div><div class="group/nav-section-title"><a href="/library">Unknown native group</a></div><div><a href="/library">Unrecognized action</a></div></div></section></div><div class="section-footer"><button aria-label="User menu" aria-haspopup="menu" id="native-account">Synthetic account</button></div></div>';
     }
     function render() {
       document.querySelector('aside')?.remove();document.querySelector('#section-portal')?.remove();
       if(!state.open&&!${JSON.stringify(retained)})return;
-      if(innerWidth>=700||!state.open){const aside=document.createElement('aside');aside.className='app-shell-left-panel';if(!state.open){aside.style.cssText='width:52px;flex-basis:52px';aside.inert=true;aside.setAttribute('aria-hidden','true')}aside.innerHTML='<div style="min-width:340px;width:340px;max-width:100%;height:100%">'+navigation(false)+'</div>';document.querySelector('#section-shell').prepend(aside)}
-      else{const portal=document.createElement('div');portal.id='section-portal';portal.innerHTML='<div class="native-scrim codex-dialog-overlay" aria-hidden="true"></div><div id="browser-sidebar-popover" role="dialog" aria-modal="true">'+navigation(true)+'</div>';document.body.append(portal)}
+      if(innerWidth>=700||!state.open){const aside=document.createElement('aside');aside.className='app-shell-left-panel';if(!state.open){aside.style.cssText='width:52px;flex-basis:52px';aside.inert=true;aside.setAttribute('aria-hidden','true')}aside.innerHTML='<div style="min-width:340px;width:340px;max-width:100%;height:100%">'+navigationMarkup(false)+'</div>';document.querySelector('#section-shell').prepend(aside)}
+      else{const portal=document.createElement('div');portal.id='section-portal';portal.innerHTML='<div class="native-scrim codex-dialog-overlay" aria-hidden="true"></div><div id="browser-sidebar-popover" role="dialog" aria-modal="true">'+navigationMarkup(true)+'</div>';document.body.append(portal)}
     }
     function toggle(){state.open=!state.open;document.querySelector('#section-shell').setAttribute('data-app-shell-sidebar-open',String(state.open));render()}
     document.querySelector('#section-opener').onclick=toggle;

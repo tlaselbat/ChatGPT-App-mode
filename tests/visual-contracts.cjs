@@ -27,16 +27,18 @@ test('failure manifests preserve unavailable checks and copy only allowlisted sy
   const png = path.join(scratch, 'synthetic.png'); fs.writeFileSync(png, 'synthetic-contract');
   const profile = path.join(scratch, 'profile.sqlite'); fs.writeFileSync(profile, 'synthetic-contract');
   const profileJson = path.join(scratch, 'profile.json'); fs.writeFileSync(profileJson, '{}');
+  const geometry = path.join(scratch, 'frames.json'); fs.writeFileSync(geometry, '{"x":60}');
   reporter.onTestEnd({ title: 'contract interrupted synthetic scenario', location: { file: path.resolve('tests/visual/contract.spec.js') } },
-    { status: 'interrupted', retry: 0, attachments: [{ name: 'synthetic-actual', path: png }, { name: 'profile', path: profile }, { name: 'profile', path: profileJson }] });
+    { status: 'interrupted', retry: 0, attachments: [{ name: 'synthetic-actual', path: png }, { name: 'synthetic-geometry', path: geometry }, { name: 'profile', path: profile }, { name: 'profile', path: profileJson }] });
   reporter.onEnd({ status: 'failed' });
   const manifest = JSON.parse(fs.readFileSync(path.join(reporter.directory, 'manifest.json')));
   assert.equal(manifest.schemaVersion, 1);
   const row = manifest.scenarios[0];
   assert.equal(row.status, 'failed');
   for (const key of ['behavioralResult', 'geometryResult', 'visualResult']) assert.equal(row[key], 'unavailable');
-  assert.equal(row.artifacts.length, 1);
+  assert.equal(row.artifacts.length, 2);
   assert.ok(row.artifacts[0].endsWith('.png'));
+  assert.ok(row.artifacts[1].endsWith('.json'));
   assert.ok(!JSON.stringify(manifest).includes(scratch));
   assert.ok(fs.readFileSync(path.join(reporter.directory, 'index.md'), 'utf8').includes('unavailable'));
   assert.equal(manifest.scenarios[1].scenario, 'never executed');
