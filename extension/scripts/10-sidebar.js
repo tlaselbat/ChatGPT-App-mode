@@ -461,15 +461,30 @@
     pendingFlyoutFocus: null,
     geometry: null,
     geometryAnimation: null,
+    geometryFrame: null,
     geometryCaptured: false,
+    rebaseGeometry(workspace) {
+      if (!this.geometryAnimation || !workspace?.isConnected) return;
+      // Native width motion can continue underneath our correction. Keep
+      // the same animation clock, but rebase its offset on that live layout.
+      const offset = parseFloat(getComputedStyle(workspace).getPropertyValue('--app-mode-navigation-offset')) || 0;
+      const layoutX = workspace.getBoundingClientRect().x - offset;
+      if (Math.abs(layoutX - this.geometryAnimationBaseX) > .5) {
+        this.geometryAnimation.effect.setKeyframes({ '--app-mode-navigation-offset': [`${this.geometryAnimationStartX - layoutX}px`, '0px'] });
+        this.geometryAnimationBaseX = layoutX;
+      }
+    },
     captureGeometry() {
       const workspace = this.geometry?.workspace;
       if (workspace?.isConnected) {
+        this.rebaseGeometry(workspace);
         this.geometry.x = workspace.getBoundingClientRect().x;
         this.geometryCaptured = true;
       }
     },
     cancelGeometry() {
+      cancelAnimationFrame(this.geometryFrame);
+      this.geometryFrame = null;
       this.geometryAnimation?.cancel();
       this.geometryAnimation = null;
     },
@@ -484,7 +499,9 @@
       let parent = workspace?.parentElement;
       while (parent && parent !== model.root && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
       if (!compatible || matchMedia('(prefers-reduced-motion: reduce)').matches) this.cancelGeometry();
-      else if (changed && workspace && getComputedStyle(workspace).flexGrow !== '0' &&
+      // A width-based state may catch up after native motion has already
+      // started. Only a new intent warrants starting another correction.
+      else if (changed && previous.intent !== intent && workspace && getComputedStyle(workspace).flexGrow !== '0' &&
           parent && getComputedStyle(parent).display === 'flex' && getComputedStyle(parent).flexDirection === 'row') {
         // Correct only the workspace's layout offset, never the native panel's
         // measured width. Native animation/detection remains authoritative.
@@ -492,16 +509,30 @@
         this.cancelGeometry();
         const delta = previous.x - workspace.getBoundingClientRect().x;
         if (Math.abs(delta) > .5) {
+          this.geometryAnimationStartX = previous.x;
+          this.geometryAnimationBaseX = workspace.getBoundingClientRect().x;
           this.geometryAnimation = workspace.animate({ '--app-mode-navigation-offset': [`${delta}px`, '0px'] },
             { duration: 220, easing: 'cubic-bezier(.4, 0, .6, 1)' });
           const animation = this.geometryAnimation;
+          // CSS/native width transitions need not emit DOM mutations. Sample
+          // their layout until this existing animation completes or is replaced;
+          // this updates its keyframes, not a second movement/timing system.
+          const rebase = () => {
+            if (this.geometryAnimation !== animation) return;
+            this.rebaseGeometry(workspace);
+            this.geometryFrame = requestAnimationFrame(rebase);
+          };
+          this.geometryFrame = requestAnimationFrame(rebase);
           // Native mounting can occupy most of this frame. Hold the starting
           // layout until the next frame so its cost cannot consume the tween
           // before the first corrected position is painted.
           animation.pause(); animation.currentTime = 0;
           requestAnimationFrame(() => { if (this.geometryAnimation === animation) animation.play(); });
           animation.addEventListener('finish', () => {
-            if (this.geometryAnimation === animation) this.geometryAnimation = null;
+            if (this.geometryAnimation === animation) {
+              this.geometryAnimation = null;
+              cancelAnimationFrame(this.geometryFrame); this.geometryFrame = null;
+            }
           }, { once: true });
         }
       }
