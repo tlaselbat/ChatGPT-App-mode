@@ -23,7 +23,7 @@ module.exports = defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['./tests/helpers/visual-evidence-reporter.cjs'],
   ],
-  outputDir: 'test-results/runs',
+  outputDir: process.env.APP_MODE_TEST_OUTPUT_DIR || 'test-results/runs',
   use: {
     headless: false,
     screenshot: 'only-on-failure',

@@ -43,6 +43,9 @@ async function startFrames(page) {
       const main = document.querySelector('main').getBoundingClientRect(), rail = document.querySelector('#app-mode-compact-sidebar-actions');
       const sidebar = document.querySelector('aside')?.getBoundingClientRect();
       window.transitionFrames.push({ t: performance.now() - start, x: main.x, right: main.right, sidebarRight: sidebar?.right,
+        nativeLayoutX: main.x - (parseFloat(getComputedStyle(document.querySelector('main')).getPropertyValue('--app-mode-navigation-offset')) || 0),
+        offset: parseFloat(getComputedStyle(document.querySelector('main')).getPropertyValue('--app-mode-navigation-offset')) || 0,
+        intent: document.querySelector('[data-app-shell-responsive-sidebar]')?.getAttribute('data-app-shell-sidebar-open'),
         state: document.body.dataset.appModeNavigationState, railOpacity: Number(getComputedStyle(rail).opacity), railInert: rail.inert,
         pendingReconciliation: window.__APP_MODE_CONTEXT__.navigationController.queued,
         animation: !!window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation, overflow: document.documentElement.scrollWidth - innerWidth });
@@ -51,7 +54,7 @@ async function startFrames(page) {
   });
 }
 
-async function finishFrames(page, info, name) {
+async function finishFrames(page, info, name, nativeTween = false) {
   const frames = await page.evaluate(() => { window.transitionFrameEnd = 0; return window.transitionFrames; });
   const file = info.outputPath(name + '-frames.json'); fs.writeFileSync(file, JSON.stringify(frames, null, 2));
   await info.attach('synthetic-geometry', { path: file, contentType: 'application/json' });
@@ -65,15 +68,19 @@ async function finishFrames(page, info, name) {
   // Input tasks can mutate the DOM between a frame and this timer. Keep
   // those pending samples as diagnostics, not as evidence of presented paint.
   const reconciled = frames.filter(f => !f.pendingReconciliation);
+  for (const frame of reconciled) expect(frame.x).toBeGreaterThanOrEqual(0);
   const span = Math.max(...reconciled.map(f => f.x)) - Math.min(...reconciled.map(f => f.x));
   for (let i = 1; i < reconciled.length; i++) {
     const dt = reconciled[i].t - reconciled[i - 1].t;
-    expect(Math.abs(reconciled[i].x - reconciled[i - 1].x)).toBeLessThanOrEqual(Math.max(12, span * dt / 220 * 3 + 2));
+    // The retained-panel case has a second, native layout movement. Account
+    // for that measured displacement separately from correction velocity.
+    const nativeStep = nativeTween ? Math.abs(reconciled[i].nativeLayoutX - reconciled[i - 1].nativeLayoutX) : 0;
+    expect(Math.abs(reconciled[i].x - reconciled[i - 1].x)).toBeLessThanOrEqual(nativeStep + Math.max(12, span * dt / 220 * 3 + 2));
   }
   return frames;
 }
 
-async function compositorRecorder(page, app) {
+async function compositorRecorder(page, app, nativeTween = false) {
   const session = await page.context().newCDPSession(page);
   let frames = [];
   let initialX;
@@ -88,7 +95,7 @@ async function compositorRecorder(page, app) {
       await session.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
       await expect.poll(() => frames.length).toBeGreaterThan(0);
     },
-    async finish(info, name) {
+    async finish(info, name, reversal = false) {
       await session.send('Page.stopScreencast');
       const viewportWidth = await page.evaluate(() => innerWidth);
       const pixels = await app.evaluate(({ nativeImage }, { frames, viewportWidth }) => frames.map(frame => {
@@ -101,14 +108,19 @@ async function compositorRecorder(page, app) {
       }), { frames, viewportWidth });
       expect(pixels.length).toBeGreaterThan(3);
       for (const frame of pixels) expect(frame.markerPixels).toBeGreaterThan(8);
+      for (const frame of pixels) expect(frame.x).toBeGreaterThanOrEqual(0);
       const start = pixels[0].t; for (const frame of pixels) frame.t -= start;
       const file = info.outputPath(name + '-compositor.json'); fs.writeFileSync(file, JSON.stringify(pixels, null, 2));
       await info.attach('synthetic-geometry', { path: file, contentType: 'application/json' });
       const first = pixels[0].x, last = pixels.at(-1).x, span = Math.max(...pixels.map(f => f.x)) - Math.min(...pixels.map(f => f.x));
       expect(Math.abs(first - initialX)).toBeLessThanOrEqual(1);
       expect(Math.abs(last - await page.locator('main').evaluate(e => e.getBoundingClientRect().x))).toBeLessThanOrEqual(1);
-      expect(pixels.some(f => Math.abs(f.x - first) > 5 && Math.abs(f.x - last) > 5)).toBe(true);
-      for (let i = 1; i < pixels.length; i++) expect(Math.abs(pixels[i].x - pixels[i - 1].x)).toBeLessThanOrEqual(Math.max(12, span * (pixels[i].t - pixels[i - 1].t) / 220 * 3 + 2));
+      expect(pixels.some(f => Math.abs(f.x - first) > 5 && (reversal || Math.abs(f.x - last) > 5))).toBe(true);
+      // Capture timestamps can bunch independently of native CSS frame updates.
+      // The added native-tween case checks velocity with rAF geometry above;
+      // its compositor evidence checks clipping, movement and exact endpoints.
+      // Preserve the original eight cases' existing pixel-velocity assertion.
+      if (!nativeTween) for (let i = 1; i < pixels.length; i++) expect(Math.abs(pixels[i].x - pixels[i - 1].x)).toBeLessThanOrEqual(Math.max(12, span * (pixels[i].t - pixels[i - 1].t) / 220 * 3 + 2));
       const middle = pixels.reduce((best, frame, index) => Math.abs(frame.x - (first + last) / 2) < Math.abs(pixels[best].x - (first + last) / 2) ? index : best, 0);
       const image = info.outputPath(name + '-intermediate.png');
       fs.writeFileSync(image, Buffer.from(frames[middle].png, 'base64'));
@@ -121,8 +133,9 @@ async function compositorRecorder(page, app) {
 const scenarios = [
   [390, 'light', 1], [480, 'dark', 1], [481, 'light', 1], [680, 'dark', 1],
   [1024, 'light', 1], [1280, 'dark', 1], [1024, 'dark', 1.25], [1280, 'light', 1.25],
+  [1024, 'dark', 1, 'native-width-tween'],
 ];
-for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${width} ${theme} zoom ${zoom}`, async ({}, info) => {
+for (const [width, theme, zoom, variant] of scenarios) test(`native sidebar transition ${width} ${theme} zoom ${zoom}${variant ? ' ' + variant : ''}`, async ({}, info) => {
   test.setTimeout(60000);
   let app;
   let paint;
@@ -141,6 +154,19 @@ for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${
     html = html.replace('<style>', '<style>main{position:relative}');
     html = html.replace('</main>', '<div aria-hidden="true" style="position:absolute;left:0;top:70px;width:4px;height:10px;background:#ff00ff;z-index:2147483647;pointer-events:none"></div></main>');
     html = html.replace('function toggle(){', 'function toggle(){window.syntheticToggleCalls=(window.syntheticToggleCalls||0)+1;');
+    if (variant === 'native-width-tween') {
+      // Current ChatGPT retains a panel while its native width changes. The
+      // original fixture replaces it synchronously and cannot expose overlap
+      // between that layout motion and App Mode's workspace compensation.
+      const start = html.indexOf('function render() {');
+      const end = html.indexOf('function toggle()', start);
+      html = html.slice(0, start) + `function render() {
+        if(innerWidth<700){document.querySelector('aside')?.remove();document.querySelector('#section-portal')?.remove();if(state.open){const p=document.createElement('div');p.id='section-portal';p.innerHTML='<div class="native-scrim codex-dialog-overlay" aria-hidden="true"></div><div id="browser-sidebar-popover" role="dialog" aria-modal="true">'+navigationMarkup(true)+'</div>';document.body.append(p)}return}
+        document.querySelector('#section-portal')?.remove();
+        let a=document.querySelector('aside');if(!a){a=document.createElement('aside');a.className='app-shell-left-panel';a.innerHTML=navigationMarkup(false);document.querySelector('#section-shell').prepend(a)}
+        a.style.cssText='width:'+(state.open?280:52)+'px;min-width:'+(state.open?280:52)+'px;max-width:'+(state.open?280:52)+'px;flex-basis:'+(state.open?280:52)+'px;transition:width 220ms,min-width 220ms,max-width 220ms,flex-basis 220ms';
+      }\n` + html.slice(end);
+    }
     // Native fixture behavior owns its own modal focus trap. App Mode must
     // preserve it, then restore its trusted toggle when Escape dismisses it.
     html = html.replace('</body>', `<script>
@@ -159,11 +185,16 @@ for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${
     page = app.windows().find(p => p.url().startsWith('https://chatgpt.com'));
     expect(await page.evaluate(() => typeof window.navigation?.addEventListener)).toBe('function');
     await expect.poll(() => page.evaluate(() => window.__APP_MODE_CONTEXT__?.installed && window.__APP_MODE_CONTEXT__?.hostNavigation?.ready)).toBe(true);
+    if (variant && process.env.APP_MODE_REVERSAL_PROBE === 'stale-layout') {
+      const source = require('node:child_process').execFileSync('git', ['show', '8e2f8d1:extension/scripts/10-sidebar.js'], { cwd: root, encoding: 'utf8' });
+      const legacy = source.slice(source.indexOf('    captureGeometry() {'), source.indexOf('    closeFlyout('));
+      await page.evaluate(methods => { const controller = window.__APP_MODE_CONTEXT__.navigationController; controller.cancelGeometry(); Object.assign(controller, (0, eval)('({' + methods + '})')); }, legacy);
+    }
     const toggle = controls.locator('[data-action="toggle-sidebar"]'); await expect(toggle).toBeVisible();
     if (zoom !== 1) await app.evaluate(({ BrowserWindow }, zoom) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.setZoomFactor(zoom), zoom);
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: theme });
     const expanded = (await page.evaluate(() => innerWidth)) < 700 ? 'drawer' : 'docked';
-    if (expanded === 'docked') paint = await compositorRecorder(page, app);
+    if (expanded === 'docked') paint = await compositorRecorder(page, app, !!variant);
     await settle(page, width === 1024 && zoom === 1 ? 'docked' : 'compact');
     measurements.push({ phase: 'initial', ...await geometry(page, app) });
     if (width === 1024 && zoom === 1) {
@@ -171,6 +202,15 @@ for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${
       await toggle.click(); await settle(page, 'compact');
     }
     const toggleBox = await toggle.boundingBox();
+    if (variant) {
+      await startFrames(page); await paint.start();
+      for (let i = 0; i < 6; i++) { await toggle.click(); await page.waitForTimeout(65); }
+      await settle(page, 'compact');
+      await expect(page.locator('aside')).toHaveCSS('width', '52px');
+      await page.waitForTimeout(100);
+      await finishFrames(page, info, 'original-rapid-reproduction', true);
+      await paint.finish(info, 'original-rapid-reproduction', true);
+    }
     for (const action of ['opening', 'closing']) {
       await startFrames(page);
       if (paint) await paint.start();
@@ -181,9 +221,12 @@ for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${
       if (!paint) await capture(action + '-intermediate');
       await settle(page, action === 'opening' ? expanded : 'compact');
       await page.waitForTimeout(100);
-      const frames = await finishFrames(page, info, action);
+      const frames = await finishFrames(page, info, action, !!variant);
       if (paint) await paint.finish(info, action);
-      if (expanded === 'docked') expect(frames.some(f => f.animation && Math.abs(f.x - frames[0].x) > 1 && Math.abs(f.x - frames.at(-1).x) > 1)).toBe(true);
+      if (expanded === 'docked') {
+        if (variant) expect(frames.some(f => Math.abs(f.x - frames[0].x) > 1 && Math.abs(f.x - frames.at(-1).x) > 1)).toBe(true);
+        else expect(frames.some(f => f.animation && Math.abs(f.x - frames[0].x) > 1 && Math.abs(f.x - frames.at(-1).x) > 1)).toBe(true);
+      }
       const current = await geometry(page, app); measurements.push({ phase: action, ...current });
       expect(await toggle.boundingBox()).toEqual(toggleBox);
       expect(current.scrollWidth).toBeLessThanOrEqual(current.viewport.width);
@@ -195,10 +238,13 @@ for (const [width, theme, zoom] of scenarios) test(`native sidebar transition ${
     }
     if ([680, 1024].includes(width) && zoom === 1) {
       await startFrames(page);
-      for (let i = 0; i < 6; i++) { const count = await page.evaluate(() => window.syntheticToggleCalls || 0); await toggle.click(); await expect.poll(() => page.evaluate(() => window.syntheticToggleCalls)).toBe(count + 1); await page.waitForTimeout(35); }
+      if (variant) await paint.start();
+      for (let i = 0; i < 6; i++) { const count = await page.evaluate(() => window.syntheticToggleCalls || 0); await toggle.click(); await expect.poll(() => page.evaluate(() => window.syntheticToggleCalls)).toBe(count + 1); await page.waitForTimeout(variant ? 65 : 35); }
       await settle(page, 'compact');
-      const rapid = await finishFrames(page, info, 'rapid-reversal');
-      if (expanded === 'docked') expect(rapid.some(frame => frame.animation)).toBe(true);
+      if (variant) { await expect(page.locator('aside')).toHaveCSS('width', '52px'); await page.waitForTimeout(100); }
+      const rapid = await finishFrames(page, info, 'rapid-reversal', !!variant);
+      if (variant) await paint.finish(info, 'rapid-reversal', true);
+      if (expanded === 'docked' && !variant) expect(rapid.some(frame => frame.animation)).toBe(true);
       await toggle.click(); await settle(page, expanded);
       if (expanded === 'drawer') {
         const drawer = page.locator('#browser-sidebar-popover');

@@ -90,6 +90,18 @@ Choose checks by the behavior changed. Documentation changes need diff and refer
 
 Run setup only when dependencies or browsers are missing or need updating. Run pre-edit tests when needed to reproduce an issue or establish an unknown baseline. Once relevant checks pass, repeat or broaden them only after further changes, failures, or unresolved concerns.
 
+To preserve earlier disposable evidence while running the complete aggregate gate, set
+`APP_MODE_TEST_OUTPUT_DIR` to a new directory such as
+`test-results/runs/live-stability-integration`, run `npm run test:all`, then unset it.
+Without this test-only override, the existing default output path is unchanged.
+
+The retained-native-panel reversal regression can be isolated with
+`npm test -- tests/visual/sidebar-transition.spec.js --grep native-width-tween`.
+For its controlled negative comparison, set `APP_MODE_REVERSAL_PROBE=stale-layout`;
+the test loads only the three original geometry methods from accepted commit
+`8e2f8d1` and must fail the same clipping assertion. Unset the probe before normal
+verification. It never updates baselines or changes production source files.
+
 ## Offline automated checks
 
 Install dependencies with `npm ci` and the fixture browser with `npx playwright install chromium` when needed, or set `APP_MODE_CHROMIUM_EXE` to a local chrome.exe. Preserve the lockfile and browser version during visual comparisons unless updating them is part of the task.
