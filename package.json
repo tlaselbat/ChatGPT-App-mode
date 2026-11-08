@@ -5,13 +5,14 @@
   "description": "ChatGPT App Mode launcher and offline visual test harness.",
   "scripts": {
     "test": "playwright test",
-    "test:runtime": "node --test tests/runtime.cjs tests/release.cjs tests/remediation.cjs",
+    "test:runtime": "node --test tests/runtime.cjs tests/release.cjs tests/remediation.cjs tests/visual-contracts.cjs",
     "test:host": "node --test --test-concurrency=1 tests/window-host.cjs tests/review-actions.cjs tests/geometry.cjs tests/startup.cjs",
     "test:all": "npm test && npm run test:runtime && npm run test:host",
     "test:headed": "playwright test --headed",
     "test:update": "playwright test --update-snapshots",
     "test:report": "playwright show-report playwright-report",
-    "live:audit": "node tools/live-audit.js"
+    "live:audit": "node tools/live-audit.js",
+    "test:visual": "playwright test tests/visual/"
   },
   "keywords": [],
   "author": "",

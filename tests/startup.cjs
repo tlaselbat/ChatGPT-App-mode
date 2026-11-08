@@ -26,25 +26,7 @@ async function launch(html) {
   return { app, controls, page, scratch };
 }
 
-async function windowCapture(app, file) {
-  const result = await app.evaluate(async ({ BrowserWindow, desktopCapturer }) => {
-    const win = BrowserWindow.getAllWindows()[0];
-    const size = win.getSize();
-    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: size[0], height: size[1] } });
-    const source = sources.find(source => source.id === win.getMediaSourceId());
-    if (!source || source.thumbnail.isEmpty()) throw Error('Native window capture unavailable');
-    const image = source.thumbnail, data = image.toBitmap();
-    let magenta = 0, green = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i] > 220 && data[i + 1] < 40 && data[i + 2] > 220) magenta++;
-      if (data[i] < 40 && data[i + 1] > 90 && data[i + 2] < 40) green++;
-    }
-    return { png: image.toPNG().toString('base64'), magenta, green, size: image.getSize() };
-  });
-  fs.writeFileSync(file, Buffer.from(result.png, 'base64'));
-  delete result.png;
-  return result;
-}
+const { windowCapture } = require('./helpers/window-capture.cjs');
 
 const delayed = `<!doctype html><style>body{margin:0;background:#ff00ff!important;color:black}body.faux-chatgpt-app-mode{--app-mode-titlebar-bg:rgba(200,200,200,.25)}main{height:600px;background:green}</style>
 <div data-app-shell-responsive-sidebar="true">UNSTYLED FIXTURE</div><script>

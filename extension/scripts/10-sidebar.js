@@ -31,6 +31,11 @@
     return [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
       (!activeRoot || activeRoot.contains(element) || !!element.closest('#browser-sidebar-popover') ||
         (activeRoot.parentElement?.contains(element) && !element.closest('[data-app-shell-responsive-sidebar]'))) &&
+      // Duplicate labels in page content and unrelated dialogs are not
+      // navigation controls. Keep the native drawer and contextual header.
+      !element.closest('[role="menu"]') &&
+      (!element.closest('[role="dialog"]') || element.closest('[role="dialog"]').id === 'browser-sidebar-popover') &&
+      (!element.closest('main') || !!element.closest('header, [role="banner"], #page-header, #conversation-header, [data-testid="page-header"], aside.app-shell-left-panel, nav[class~="group/sidebar-rail"]')) &&
       !element.closest('#app-mode-compact-sidebar-actions, #app-mode-compact-sidebar, #app-mode-navigation-flyout') &&
       label.test(accessibleName(element) || element.textContent.trim()) &&
       !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
