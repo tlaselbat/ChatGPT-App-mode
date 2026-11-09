@@ -2,6 +2,8 @@
 
 Windows launcher for ChatGPT built on a pinned Electron window host. A dedicated 40 DIP Electron title bar owns identity, dragging, Pin, and caption controls above ChatGPT's native contextual header. Page zoom affects only ChatGPT content. See [header ownership and view bounds](docs/ARCHITECTURE.md#native-header-host) for the isolated-view layout and [known limitations](docs/KNOWN_LIMITATIONS.md) for Windows Snap coverage.
 
+The project is in active feature development, not release-candidate preparation. See [development status and proposed next features](docs/DEVELOPMENT_STATUS.md). Physical release certification is deferred until the owner schedules a release; those checks remain unresolved and do not block unrelated development.
+
 ## Install and configure
 
 1. Install Node.js 22.12 or newer.

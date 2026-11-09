@@ -99,8 +99,9 @@ test('optional shell registration cannot block launch, new session, shortcut, or
 test('caption IPC rejects stale, remote, detached, cross-window and malformed requests without desktop input', () => {
   const module = { exports: {} };
   let owner;
+  const hostRequire = require('node:module').createRequire(path.join(__dirname, '../WindowHost/controls-host.cjs'));
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../WindowHost/controls-host.cjs'), 'utf8'), {
-    module, require: name => name === 'electron' ? { BrowserWindow: { fromWebContents: () => owner } } : require(name),
+    module, require: name => name === 'electron' ? { BrowserWindow: { fromWebContents: () => owner } } : hostRequire(name),
   });
   const validate = module.exports.validateControlRequest;
   const url = 'file:///synthetic/controls.html';

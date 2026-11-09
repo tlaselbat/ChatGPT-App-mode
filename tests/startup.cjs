@@ -28,6 +28,129 @@ async function launch(html) {
 
 const { windowCapture } = require('./helpers/window-capture.cjs');
 
+test('keyboard traversal crosses trusted and remote boundaries without escaping native modals', { timeout: 90000 }, async () => {
+  const { navigationHtml } = require('./helpers/navigation-fixture.cjs');
+  const html = navigationHtml(true, false).replace('</body>', '<button id="keyboard-first" tabindex="2" style="position:fixed;left:380px;top:120px;z-index:1">First native destination</button></body>');
+  const { app, controls, page, scratch } = await launch(html);
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const read = () => app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    return Promise.all(w.contentView.children.map(async v => ({
+      role: v.webContents.getURL().endsWith('/controls.html') ? 'controls' : 'remote',
+      focused: v.webContents.isFocused(),
+      active: await v.webContents.executeJavaScript(`(()=>{const a=document.activeElement,r=a.getBoundingClientRect();return {tag:a.tagName,id:a.id,action:a.dataset.action,role:a.getAttribute('role'),visible:a.matches(':focus-visible'),inViewport:r.width>0&&r.height>0&&r.x>=0&&r.y>=0&&r.right<=innerWidth&&r.bottom<=innerHeight}})()`),
+    })));
+  });
+  const expectFocus = async (role, key) => {
+    try { await expect.poll(async () => {
+      const row = (await read()).find(r => r.role === role);
+      return row.focused && row.active.visible && row.active.inViewport && (row.active.id === key || row.active.action === key);
+    }).toBe(true); } catch (error) { console.log('Keyboard focus mismatch', JSON.stringify({ role, key, actual: await read() })); throw error; }
+  };
+  const key = async (keyCode, modifiers = []) => {
+    await app.evaluate(({ BrowserWindow }, { keyCode, modifiers }) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      const current = w.contentView.children.find(v => v.webContents.isFocused());
+      if (!current) throw Error('No focused owned view');
+      current.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+      if (keyCode === 'Enter' || keyCode === 'Space') current.webContents.sendInputEvent({ type: 'char', keyCode: keyCode === 'Enter' ? '\r' : ' ', modifiers });
+      current.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+    }, { keyCode, modifiers });
+    await pause(80);
+  };
+  const seed = async (role, selector) => app.evaluate(async ({ BrowserWindow }, { role, selector }) => {
+    const w = BrowserWindow.getAllWindows()[0]; w.show(); w.focus();
+    const v = w.contentView.children.find(v => v.webContents.getURL().endsWith('/controls.html') === (role === 'controls'));
+    v.webContents.focus(); await v.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+  }, { role, selector });
+  try {
+    await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'ready');
+    await page.evaluate(() => { const last = document.createElement('button'); last.id = 'keyboard-last'; last.textContent = 'Last native destination'; last.style.cssText = 'position:fixed;left:380px;top:180px;z-index:1'; document.body.append(last); });
+    await page.evaluate(() => { document.body.tabIndex = -1; });
+    await seed('remote', 'body'); await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    await page.evaluate(() => document.body.removeAttribute('tabindex'));
+    await seed('controls', '[data-action="close"]');
+    await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    await key('Tab', ['shift']); await expectFocus('controls', 'close');
+    await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    await seed('remote', '#keyboard-last');
+    await key('Tab'); await expectFocus('controls', 'toggle-sidebar');
+    await key('Tab'); await expectFocus('controls', 'pin');
+    await key('Tab', ['shift']); await expectFocus('controls', 'toggle-sidebar');
+    await key('Tab', ['shift']); await expectFocus('remote', 'keyboard-last');
+    // If native code redirects focus during the asynchronous boundary handoff,
+    // its new destination must win instead of a stale request stealing focus.
+    await page.evaluate(() => {
+      const redirect = event => {
+        if (event.target.getAttribute('aria-label') !== 'Window controls') return;
+        document.removeEventListener('focusin', redirect);
+        queueMicrotask(() => document.querySelector('#keyboard-first').focus());
+      };
+      document.addEventListener('focusin', redirect);
+    });
+    await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    // A native-style modal trap gets every original key; guards must be inert.
+    await page.evaluate(() => {
+      const modal = document.createElement('div'); modal.id = 'keyboard-modal'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+      modal.style.cssText = 'position:fixed;inset:80px;background:Canvas;z-index:100';
+      modal.innerHTML = '<button id="modal-only">Native modal</button>';
+      modal.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); modal.querySelector('button').focus(); } });
+      document.body.append(modal); modal.querySelector('button').focus();
+    });
+    await key('Tab'); await expectFocus('remote', 'modal-only');
+    await key('Tab', ['shift']); await expectFocus('remote', 'modal-only');
+    await page.evaluate(() => document.querySelector('#keyboard-modal').remove());
+    await expect(controls.locator('[data-action="toggle-sidebar"]')).toBeEnabled();
+    await seed('controls', '[data-action="toggle-sidebar"]');
+    await key('Enter');
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+    await key('Escape'); await expectFocus('controls', 'toggle-sidebar');
+    await key('Space');
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
+    await key('Escape'); await expectFocus('controls', 'toggle-sidebar');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1280, 700));
+    await key('Enter'); await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
+    await seed('controls', '[data-action="toggle-sidebar"]');
+    await key('Space'); await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
+    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.minimize(); w.restore(); w.focus(); });
+    await seed('controls', '[data-action="close"]');
+    await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    await page.evaluate(() => { history.pushState({}, '', '/library'); const b = document.createElement('button'); b.id = 'spa-last'; b.textContent = 'New SPA destination'; b.style.cssText = 'position:fixed;left:380px;top:240px;z-index:1'; document.body.append(b); });
+    await seed('remote', '#spa-last'); await key('Tab'); await expectFocus('controls', 'toggle-sidebar');
+    // An aborted navigation retains the usable document, so its keyboard
+    // boundaries must remain live even though no replacement finished loading.
+    const aborted = await app.evaluate(async ({ BrowserWindow }, html) => {
+      const r = BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents.getURL().startsWith('https://chatgpt.com')).webContents;
+      const protocol = r.session.protocol, previous = r.getURL();
+      let release;
+      await protocol.unhandle('https');
+      await protocol.handle('https', request => request.url === 'https://chatgpt.com/keyboard-abort' ?
+        new Promise(resolve => { release = resolve; }) : new Response('Blocked', { status: 403 }));
+      const navigation = r.loadURL('https://chatgpt.com/keyboard-abort').then(() => false, () => true);
+      for (let i = 0; i < 100 && !release; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      if (!release) throw Error('Synthetic aborted request was not intercepted');
+      r.stop();
+      const rejected = await navigation;
+      release(new Response(html));
+      // stop() retains the real document but does not reliably emit the -3
+      // did-fail-load signal with custom fixture protocols. Deliver that fixed
+      // lifecycle signal to exercise the host's existing retained-page branch.
+      r.emit('did-fail-load', {}, -3, 'synthetic cancellation', 'https://chatgpt.com/keyboard-abort', true);
+      await protocol.unhandle('https');
+      await protocol.handle('https', request => new Response(new URL(request.url).origin === 'https://chatgpt.com' ? html : 'Blocked',
+        { status: new URL(request.url).origin === 'https://chatgpt.com' ? 200 : 403, headers: { 'content-type': 'text/html' } }));
+      return { rejected, retained: r.getURL() === previous };
+    }, html);
+    assert.deepEqual(aborted, { rejected: true, retained: true });
+    await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'ready');
+    await seed('controls', '[data-action="close"]'); await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    await page.reload(); await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'ready');
+    await seed('controls', '[data-action="close"]'); await key('Tab'); await expectFocus('remote', 'keyboard-first');
+    const composition = await windowCapture(app, path.join(scratch, 'keyboard-composition.png'));
+    fs.writeFileSync(path.join(scratch, 'keyboard-evidence.json'), JSON.stringify({ composition, focus: await read() }, null, 2));
+  } finally { await app.close(); }
+});
+
 const delayed = `<!doctype html><style>body{margin:0;background:#ff00ff!important;color:black}body.faux-chatgpt-app-mode{--app-mode-titlebar-bg:rgba(200,200,200,.25)}main{height:600px;background:green}</style>
 <div data-app-shell-responsive-sidebar="true">UNSTYLED FIXTURE</div><script>
 window.releaseShell=()=>{const main=document.createElement('main');main.innerHTML='<header><button aria-label="Share">Share</button></header><p>Customized fixture</p>';document.querySelector('[data-app-shell-responsive-sidebar]').append(main);};
@@ -90,8 +213,23 @@ test('opaque startup covers composited content until readiness and recovers rend
   const launched = await launch(delayed);
   const { app, controls, scratch } = launched;
   let { page } = launched;
+  const tabFromLast = async recovery => {
+    await app.evaluate(async ({ BrowserWindow }, recovery) => {
+      const w = BrowserWindow.getAllWindows()[0]; w.show(); w.focus();
+      const c = w.contentView.children.find(v => v.webContents.getURL().endsWith('/controls.html')).webContents;
+      c.focus();
+      await c.executeJavaScript(`document.querySelector('[data-action="${recovery ? 'reload' : 'close'}"]').focus()`);
+      c.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' }); c.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+    }, recovery);
+    await new Promise(resolve => setTimeout(resolve, 150));
+  };
+  const focusedRole = () => app.evaluate(({ BrowserWindow }) => {
+    const v = BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents.isFocused());
+    return v?.webContents.getURL().endsWith('/controls.html') ? 'controls' : v ? 'remote' : 'none';
+  });
   try {
     await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'loading');
+    await tabFromLast(false); await expect.poll(focusedRole).toBe('controls');
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(255, 0, 255)');
     const initial = await windowCapture(app, path.join(scratch, 'startup-loading.png'));
     assert.equal(initial.magenta, 0, 'Opaque local view must completely obscure the remote magenta fixture');
@@ -126,6 +264,8 @@ test('opaque startup covers composited content until readiness and recovers rend
     });
     await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'recovery');
     await expect(controls.getByRole('button', { name: 'Reload', exact: true })).toBeFocused();
+    await tabFromLast(true); await expect.poll(focusedRole).toBe('controls');
+    await controls.getByRole('button', { name: 'Reload', exact: true }).focus();
     await controls.keyboard.press('Enter');
     await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'loading');
     await expect.poll(() => app.windows().some(p => !p.isClosed() && p.url().startsWith('https://chatgpt.com'))).toBe(true);
@@ -147,6 +287,13 @@ test('opaque startup covers composited content until readiness and recovers rend
     await replacement.waitForLoadState('load'); await replacement.evaluate(() => window.releaseShell());
     await expect(controls.locator('body')).toHaveAttribute('data-presentation', 'ready');
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.length), 2);
+    await tabFromLast(false); await expect.poll(focusedRole).toBe('remote');
+    await app.evaluate(({ BrowserWindow }) => {
+      const r = BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents.getURL().startsWith('https://chatgpt.com')).webContents;
+      r.sendInputEvent({ type: 'keyDown', keyCode: 'Tab', modifiers: ['shift'] });
+      r.sendInputEvent({ type: 'keyUp', keyCode: 'Tab', modifiers: ['shift'] });
+    });
+    await expect.poll(focusedRole).toBe('controls');
     fs.writeFileSync(path.join(scratch, 'capture-results.json'), JSON.stringify({ initial, ready }, null, 2));
   } finally { await app.close(); }
 });

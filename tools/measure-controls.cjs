@@ -10,6 +10,7 @@ function measure(revision) {
   class Contents extends EventEmitter {
     constructor() { super(); this.ipc = { handle() {}, removeHandler() {} }; this.mainFrame = { executeJavaScript: async () => true }; }
     isDestroyed() { return false; }
+    isLoadingMainFrame() { return false; }
     getURL() { return this.url || 'https://chatgpt.com/'; }
     setZoomMode() {}
     getZoomFactor() { return 1; }
@@ -33,9 +34,10 @@ function measure(revision) {
   const file = 'WindowHost/controls-host.cjs';
   const source = revision ? execFileSync('git', ['show', `${revision}:${file}`], { encoding: 'utf8' }) : fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   const module = { exports: {} };
+  const hostRequire = require('node:module').createRequire(path.join(__dirname, '../WindowHost/controls-host.cjs'));
   vm.runInNewContext(source, { module, __dirname: path.join(__dirname, '../WindowHost'), setImmediate, setTimeout, clearTimeout,
     require: name => name === 'electron' ? { BrowserWindow: {}, WebContentsView: View, screen,
-      session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, webRequest: { onBeforeRequest() {} } }) } } : require(name) });
+      session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, webRequest: { onBeforeRequest() {} } }) } } : hostRequire(name) });
   const chat = new View(); win.contentView.addChildView(chat);
   const controls = module.exports.installWindowControls(win, chat, { isChatGptUrl: () => true });
   controls.view.webContents.emit('did-finish-load');

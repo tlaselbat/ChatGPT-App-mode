@@ -2,6 +2,7 @@ const { BrowserWindow, WebContentsView, session, screen, nativeTheme } = require
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
+const { installKeyboardTraversal } = require('./keyboard-traversal.cjs');
 
 const ACTION_CHANNEL = 'app-mode-controls:action';
 const STATE_CHANNEL = 'app-mode-controls:state';
@@ -127,6 +128,9 @@ function installWindowControls(win, chatView, { isChatGptUrl, reload = () => fal
   let ownership = null;
   let presentation = 'loading';
   let recoveryFocus = false;
+  const keyboard = installKeyboardTraversal(win, view, chatView, () =>
+    loaded && pageReady && presentation === 'ready' && !win.isFullScreen() && !navigation.blocked &&
+    !chat.isDestroyed() && isChatGptUrl(chat.getURL()) && contents.getURL() === controlsUrl);
   function syncOwnership() {
     const visible = loaded && !disposed && !win.isDestroyed() && !win.isFullScreen();
     if (!pageReady || chat.isDestroyed() || !isChatGptUrl(chat.getURL()) || ownership === visible) return;
@@ -290,6 +294,7 @@ function installWindowControls(win, chatView, { isChatGptUrl, reload = () => fal
   bindChat();
   win.once('closed', () => {
     disposed = true;
+    keyboard.dispose();
     generation++;
     for (const name of nativeEvents) win.removeListener(name, layout);
     screen.removeListener('display-metrics-changed', layout);
@@ -321,7 +326,7 @@ function installWindowControls(win, chatView, { isChatGptUrl, reload = () => fal
     pageReady = false; ownership = null; navigation = EMPTY_NAVIGATION; publish();
   }, replaceChatView(next) {
     bindChat(true); generation++; pageReady = false; ownership = null; navigationPending = false;
-    chatView = next; chat = next.webContents; bindChat(); lastLayout = ''; layout();
+    chatView = next; chat = next.webContents; keyboard.replaceRemote(next); bindChat(); lastLayout = ''; layout();
   }, async pageReady() {
     if (disposed || chat.isDestroyed() || !isChatGptUrl(chat.getURL())) return false;
     const current = generation;
