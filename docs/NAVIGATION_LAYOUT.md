@@ -1,8 +1,36 @@
 # Navigation layout and implementation history
 
-The sections through Acceptance criteria describe the accepted implementation.
-Later milestone sections preserve earlier measurements and test results, not
-current layout specifications. See [verification evidence and coverage limits](LIVE_UI_AUDIT.md)
+## Persistent desktop rail
+
+The default presentation keeps the 52px rail visible and interactive in both
+compact and docked desktop states. Docked navigation starts beside the rail;
+its width does not count as a rail reservation. Recognized native compact
+columns or separate in-flow rails retain their existing reservation, while
+fixed overlays do not reserve layout width. The workspace correction retains
+its existing 220ms clock and native-width rebasing.
+
+The rail offers Scheduled, Library, Plugins and Explore, plus native-backed
+account access when a visible native account row is unavailable. Search, New
+chat and native Pinned/Projects/Recents sections remain in the native panel.
+Recognized desktop utility rows are reversibly suppressed while their rail
+forwarders are available. Their invisible native triggers retain an anchor box
+aligned to the activated rail button, so native popups do not anchor at the
+page origin; owned anchor properties are removed when suppression is released.
+An activation with no established native destination or popup releases the
+original and returns focus to it when appropriate.
+Unknown controls remain native. Modal drawers retain native utility controls,
+focus trapping and dismissal, and hide/inert the background rail.
+
+`window.__APP_MODE_PERSISTENT_RAIL__ = false` before shared-script initialization
+selects the previous compact-only presentation, including section shortcuts.
+This is an internal page-context validation rollback, not a persisted setting
+or a second sidebar-state controller. The existing compact-sidebar disable
+override still restores entirely native navigation. Rollback tests retain the
+previous presentation's interaction assertions.
+
+The sections below through Acceptance criteria describe that previous
+compact-only presentation. Later milestone sections preserve earlier
+measurements and test results, not current verification evidence. See [verification evidence and coverage limits](LIVE_UI_AUDIT.md)
 for the last reported accepted baseline; this documentation reconciliation does
 not rerun or extend that verification.
 

@@ -30,11 +30,15 @@ for (const theme of ['light', 'dark']) test(`compact selection retains native au
   const evidence = { environment: 'chromium-selection-fixture', appearance: theme, behavioralResult: 'unavailable', geometryResult: 'unavailable', visualResult: 'skipped', reason: 'Selection images are inspected manually; accepted goldens are unchanged', scenarios: [] };
   const rail = page.locator('#app-mode-compact-sidebar-actions');
   const active = rail.locator('[data-app-mode-rail-active]');
+  let readDestination;
   const select = async (label, scenario) => {
+    const destination = ['Pinned', 'Projects', 'Recents'].includes(label) ? label.toLowerCase() : label;
+    await expect.poll(readDestination).toBe(destination);
+    label = ['Scheduled', 'Library', 'Plugins', 'Explore'].includes(label) ? label : null;
     await expect(active).toHaveCount(label ? 1 : 0);
     await expect(rail.locator('[aria-current="page"]')).toHaveCount(label ? 1 : 0);
     if (label) { await expect(active).toHaveAttribute('aria-label', label); await expect(active).toHaveAttribute('aria-current', 'page'); }
-    evidence.scenarios.push({ scenario, selected: label, result: 'passed' });
+    evidence.scenarios.push({ scenario, destination, selected: label, result: 'passed' });
   };
   const route = async pathname => { await page.evaluate(path => history.pushState({}, '', path), pathname); };
   const capture = async name => { const file = info.outputPath(name + '.png'); await page.screenshot({ path: file, animations: 'disabled', caret: 'hide' }); await info.attach('synthetic-actual', { path: file, contentType: 'image/png' }); };
@@ -47,6 +51,18 @@ for (const theme of ['light', 'dark']) test(`compact selection retains native au
     await page.goto('https://chatgpt.com/');
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-sidebar-status', 'ready');
     await expect(page.locator('[data-selection-project-member]')).toHaveCount(1);
+    const session = await page.context().newCDPSession(page);
+    const contexts = new Set();
+    session.on('Runtime.executionContextCreated', ({ context }) => contexts.add(context.id));
+    session.on('Runtime.executionContextDestroyed', ({ executionContextId }) => contexts.delete(executionContextId));
+    session.on('Runtime.executionContextsCleared', () => contexts.clear());
+    await session.send('Runtime.enable');
+    readDestination = async () => {
+      for (const contextId of contexts) {
+        const { result } = await session.send('Runtime.evaluate', { contextId, expression: 'window.__APP_MODE_CONTEXT__?.navigationAdapter?.activeDestination()', returnByValue: true });
+        if (result.type !== 'undefined') return result.value;
+      }
+    };
     await select('New chat', 'blank home');
     const documentToken = await page.evaluate(() => window.syntheticSelectionDocument);
     for (const [pathname, label, scenario] of [

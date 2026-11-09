@@ -753,8 +753,11 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), true, 'Hidden stale Search stays hidden in the title bar');
     await native('Activate');
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), false, 'Hidden stale Search must not advertise trusted capability');
-    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').isVisible(), true);
-    await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').click();
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').count(), 0);
+    assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
+    await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'docked');
+    const nativeSearch = page.locator('#host-navigation-fixture .sidebar-navigation [aria-label="Search"]');
+    await nativeSearch.click();
     await page.getByRole('textbox', { name: 'Native host search' }).waitFor();
     assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.blocked) { off(); resolve(true); } }); })");
@@ -763,7 +766,7 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hasAttribute("data-active")'), true);
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true, 'Repeated Search requests are no-ops, not capability failures');
     assert.equal(await controlsEval('document.querySelector("[data-action=open-search]").hidden'), true, 'Repeated requests do not add a title-bar duplicate');
-    assert.equal(await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').getAttribute('data-app-mode-host-search-original'), null);
+    assert.equal(await nativeSearch.getAttribute('data-app-mode-host-search-original'), null);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !window.__APP_MODE_CONTEXT__.hostNavigation.read().blocked);
     await controlsEval("new Promise(resolve => { const off = window.appModeControls.onState(state => { if (state.navigation.identity && !state.navigation.blocked) { off(); resolve(true); } }); })");
@@ -777,8 +780,9 @@ test('native header host preserves sandbox, custom controls, window actions, nav
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'compact');
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), true);
     await page.waitForFunction(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().state === 'docked');
-    await page.locator('#app-mode-compact-sidebar-actions').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#app-mode-compact-sidebar-actions').getAttribute('inert'), '');
+    await page.locator('#app-mode-compact-sidebar-actions').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#app-mode-compact-sidebar-actions').getAttribute('inert'), null);
+    assert.equal((await page.locator('#app-mode-compact-sidebar-actions').boundingBox()).width, 52);
     assert.equal(await controlsEval("window.appModeControls.action('open-search')"), true);
     assert.equal(await page.getByRole('textbox', { name: 'Native host search' }).evaluate(input => document.activeElement === input), true);
     assert.equal(await controlsEval("window.appModeControls.action('toggle-sidebar')"), false);

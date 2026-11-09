@@ -102,6 +102,22 @@ the test loads only the three original geometry methods from accepted commit
 `8e2f8d1` and must fail the same clipping assertion. Unset the probe before normal
 verification. It never updates baselines or changes production source files.
 
+Transition compositor velocity uses a monotonic rAF clock encoded into each PNG,
+not CDP capture-callback timestamps. Chromium 152.0.7977.169 constructs those
+[timestamps with `base::Time::Now()`](https://raw.githubusercontent.com/chromium/chromium/152.0.7977.169/content/browser/devtools/protocol/page_handler.cc),
+so callback batching can compress their intervals independently of rendered frames.
+The test waits for a captured clock before input, validates every clock and retains
+both time bases alongside rAF geometry. The existing 12px floor, velocity formula,
+clipping, endpoint and intermediate-motion checks remain in force.
+
+Use `npm test -- tests/visual/sidebar-transition.spec.js --grep "native sidebar transition 1024 light zoom 1"`
+for the focused case. `APP_MODE_TRANSITION_CLOCK_PROBE=batch-capture` adds a short
+fixture-main-process stall and must pass; any nonempty clock-probe value retains
+individual compositor PNGs for diagnosis. `APP_MODE_TRANSITION_PROBE=paint-jump`
+shifts painted workspace contents 96px during the transition without changing the
+workspace layout rectangle and must fail the compositor velocity check. Unset both
+variables before normal verification. These probes affect disposable fixtures only.
+
 ## Offline automated checks
 
 Install dependencies with `npm ci` and the fixture browser with `npx playwright install chromium` when needed, or set `APP_MODE_CHROMIUM_EXE` to a local chrome.exe. Preserve the lockfile and browser version during visual comparisons unless updating them is part of the task.

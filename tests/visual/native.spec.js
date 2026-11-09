@@ -46,8 +46,8 @@ for (const [id, width, height, theme] of [
       await expect.poll(() => page.evaluate(() => window.__APP_MODE_CONTEXT__?.installed === true && window.__APP_MODE_CONTEXT__?.hostNavigation?.ready === true)).toBe(true);
       await expect(page.locator('body')).toHaveAttribute('data-app-mode-host-navigation-owned', '');
       await expect(controls.locator('[data-action="toggle-sidebar"]')).toBeVisible();
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', id === 'desktop' ? '0' : '1');
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('visibility', id === 'desktop' ? 'hidden' : 'visible');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', '1');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('visibility', 'visible');
     }
     const owner = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
     if (id === 'fullscreen') {

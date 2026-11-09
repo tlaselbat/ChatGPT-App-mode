@@ -59,7 +59,8 @@ for (const [id, width, height, theme, expanded, kind] of cases) {
       if (kind === 'home') await expect(page.locator('[data-app-mode-home-layout]')).toHaveCount(1);
       if (kind === 'project') await expect(page.locator('[data-section="projects"] a').first()).toBeVisible();
       if (kind === 'search') {
-        await page.locator('#app-mode-compact-sidebar-actions [aria-label="Search"]').click();
+        await page.locator('#app-mode-compact-sidebar').click();
+        await page.locator('.sidebar-navigation [aria-label="Search"]').click();
         await expect(page.locator('#synthetic-search')).toBeVisible();
         await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
         evidence.sidebar = await page.locator('body').getAttribute('data-app-mode-navigation-state');
