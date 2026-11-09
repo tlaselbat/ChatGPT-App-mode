@@ -14,7 +14,8 @@
       // a breakpoint-hidden wrapper or zero-width panel stays unavailable.
       const panel = element.closest('aside.app-shell-left-panel');
       if (panel && panel.getBoundingClientRect().width <= 0) return false;
-      if (element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original')) {
+      if (element.hasAttribute('data-app-mode-sidebar-original') || element.hasAttribute('data-app-mode-host-search-original') ||
+          element.hasAttribute('data-app-mode-rail-original')) {
         // Suppression can collapse several shrink-wrapped ancestors too.
         // Walk to a real box without crossing a native display:none branch.
         for (let source = element.parentElement; source; source = source.parentElement) {
@@ -202,8 +203,25 @@
     }
     if (!target?.isConnected || root !== navigationAdapter.read().root) return false;
     if (temporaryDrawer && label.test('Search')) restoreTemporarySearchDrawer(root, temporaryDrawer);
+    if (persistentRailEnabled && navigationController.rejectedUtilities.has(target)) return false;
+    const source = target.hasAttribute('data-app-mode-rail-original') ?
+      [...document.querySelectorAll('#app-mode-compact-sidebar-actions button')].find(element => label.test(element.getAttribute('aria-label') || '')) : null;
+    if (source) {
+      const box = source.getBoundingClientRect();
+      if (box?.width && !source.closest('[inert]')) {
+        target.style.setProperty('--app-mode-rail-anchor-x', `${box.x}px`);
+        target.style.setProperty('--app-mode-rail-anchor-y', `${box.y}px`);
+        const anchor = target.getBoundingClientRect();
+        target.style.setProperty('--app-mode-rail-anchor-x', `${box.x * 2 - anchor.x}px`);
+        target.style.setProperty('--app-mode-rail-anchor-y', `${box.y * 2 - anchor.y}px`);
+      }
+    }
+    const utility = persistentRailEnabled && /^(Scheduled|Library|Plugins|Explore)$/i.test(accessibleName(target) || target.textContent.trim());
+    const route = location.href;
+    const popups = utility ? new Set([...document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')].filter(element => element.getClientRects().length)) : null;
     const accountSource = document.querySelector('[data-app-mode-rail-account]');
-    if (accountSource && label.test(accountSource.getAttribute('aria-label') || '')) restoreRailAccountFocus(accountSource, root);
+    if (source && target.getAttribute('aria-haspopup') === 'menu') restoreRailAccountFocus(source, root);
+    else if (accountSource && label.test(accountSource.getAttribute('aria-label') || '')) restoreRailAccountFocus(accountSource, root);
     if (target?.getAttribute('aria-haspopup') === 'menu') {
       target.focus();
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
@@ -215,13 +233,22 @@
       if (focused) hostNavigation.rejectedSearch.delete(target);
       return !!focused;
     }
+    if (utility) {
+      const succeeded = await waitForNavigation(() => location.href !== route ||
+        navigationAdapter.activeDestination() === (accessibleName(target) || target.textContent.trim()) ||
+        [...document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')].some(element =>
+          !popups.has(element) && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden'));
+      if (!succeeded) navigationController.rejectedUtilities.add(nativeSidebarControl(label) || target);
+      navigationController.schedule();
+      return !!succeeded;
+    }
     return true;
   }
 
   c.focusSidebarSearch = function focusSidebarSearch() {
     const model = navigationAdapter.read();
     if (model.blocked) return;
-    const target = model.state === 'compact' ? document.querySelector('#app-mode-compact-sidebar-actions [aria-label="Search"]') : nativeSidebarControl(/^Search$/i);
+    const target = model.state === 'compact' && !persistentRailEnabled ? document.querySelector('#app-mode-compact-sidebar-actions [aria-label="Search"]') : nativeSidebarControl(/^Search$/i);
     if (target?.getClientRects().length && getComputedStyle(target).visibility !== 'hidden' && !target.closest('[inert], [aria-hidden="true"]')) target.focus({ preventScroll: true });
   }
 
@@ -440,10 +467,12 @@
       const rail = root?.querySelector('nav[class~="group/sidebar-rail"], nav[data-testid="sidebar-rail"]');
       const reservedPanel = [...(root?.querySelectorAll('aside.app-shell-left-panel') || [])].some(element =>
         !element.closest('[role="dialog"]') && rendered(element));
-      const reservedRail = reservedPanel || (rail && rail.getBoundingClientRect().width > 0 &&
+      const railReserved = !!rail && !rail.closest('aside.app-shell-left-panel') && rail.getBoundingClientRect().width > 0 &&
+        !['absolute', 'fixed'].includes(getComputedStyle(rail).position);
+      const reservedRail = reservedPanel || (persistentRailEnabled ? railReserved : rail && rail.getBoundingClientRect().width > 0 &&
         [...rail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1);
       const blocked = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(element => element !== drawer && rendered(element));
-      return { root, drawer: rendered(drawer) ? drawer : null, docked, rail, reservedRail,
+      return { root, drawer: rendered(drawer) ? drawer : null, docked, rail, reservedRail, railReserved,
         blocked,
         state: rendered(drawer) ? 'drawer' : docked ? 'docked' : 'compact' };
     }
@@ -457,6 +486,7 @@
     queued: false,
     sections: new Map(),
     preferences: null,
+    rejectedUtilities: new WeakSet(),
     flyout: null,
     pendingFlyoutFocus: null,
     geometry: null,
@@ -777,6 +807,9 @@
         for (const attribute of attributes) {
           if (!next.get(element)?.has(attribute)) {
             element.removeAttribute(attribute);
+            if (attribute === 'data-app-mode-rail-original') {
+              element.style.removeProperty('--app-mode-rail-anchor-x'); element.style.removeProperty('--app-mode-rail-anchor-y');
+            }
             if (attribute === 'data-app-mode-sidebar-overlay') element.style.removeProperty('--app-mode-sidebar-scrim-color');
           }
         }
@@ -860,7 +893,7 @@
         ['Plugins', fillIcon('<path fill-rule="evenodd" clip-rule="evenodd" d="M10.522 1.88c5.201 0 7.787 3.839 7.787 7.308 0 1.475-.615 2.977-1.706 3.845a3.22 3.22 0 0 1-2.021.723c-.661 0-1.346-.203-2.03-.617-.673.536-1.486.903-2.358.903-.827 0-1.625-.33-2.282-1.013l-.039-.04-1.266-1.332-.059-.068a.87.87 0 0 1 .084-1.166l.212-.205-.988-1.02a.664.664 0 1 1 .955-.926l.991 1.024 1.793-1.727-.987-1.018a.663.663 0 0 1 .476-1.128c.174 0 .348.068.479.203l.99 1.021c.267-.256.438-.458.83-.458.23 0 .46.09.632.271l1.303 1.37c.636.655.943 1.417.943 2.198 0 .777-.301 1.497-.755 2.117.403.201.763.28 1.076.28.445 0 .847-.158 1.193-.433.715-.57 1.204-1.653 1.204-2.805 0-2.823-2.076-5.976-6.457-5.976-3.66 0-6.822 2.797-7.068 6.316a8 8 0 0 0-.018.533c0 3.7 2.722 6.729 6.771 6.73 1.612 0 3.205-.404 4.31-1.26a.665.665 0 1 1 .815 1.052c-1.414 1.094-3.33 1.537-5.125 1.537-4.831 0-8.102-3.67-8.102-8.062q0-.309.022-.622c.299-4.273 4.094-7.554 8.395-7.554m-2.64 9.186.957 1.008.035.036c.412.426.865.601 1.319.601q.075 0 .151-.006c.525-.044 1.109-.32 1.652-.842.49-.471.935-1.129.935-1.834 0-.424-.162-.857-.57-1.276l-.006-.006-.988-1.036z"/>')],
         ['Explore', fillIcon('<path d="M4.1665 8.50146C4.9939 8.50146 5.66535 9.17215 5.66553 9.99951C5.66553 10.827 4.99401 11.4985 4.1665 11.4985C3.33915 11.4984 2.66846 10.8269 2.66846 9.99951C2.66863 9.17226 3.33926 8.50164 4.1665 8.50146Z"/><path d="M9.99951 8.50146C10.8269 8.50146 11.4984 9.17215 11.4985 9.99951C11.4985 10.827 10.827 11.4985 9.99951 11.4985C9.17227 11.4982 8.50146 10.8268 8.50146 9.99951C8.50164 9.17234 9.17238 8.50177 9.99951 8.50146Z"/><path d="M15.8335 8.50146C16.6607 8.50166 17.3323 9.17228 17.3325 9.99951C17.3325 10.8269 16.6608 11.4983 15.8335 11.4985C15.0061 11.4984 14.3354 10.8269 14.3354 9.99951C14.3356 9.17226 15.0062 8.50164 15.8335 8.50146Z"/>')]
       ];
-      for (const [label, icon] of actions) {
+      for (const [label, icon] of actions.filter(([label]) => !persistentRailEnabled || !['Search', 'New chat'].includes(label))) {
         const action = document.createElement('button'); action.type = 'button';
         action.setAttribute('data-app-mode-sidebar-action', ''); action.setAttribute('aria-label', label); action.title = label;
         action.innerHTML = icon;
@@ -871,13 +904,13 @@
       // sections. Semantically matched native icon geometry.
       const divider = document.createElement('div');
       divider.setAttribute('data-app-mode-rail-divider', ''); divider.setAttribute('aria-hidden', 'true');
-      menu.append(divider);
+      if (!persistentRailEnabled) menu.append(divider);
       const sections = [
         ['Pinned', 'pinned', fillIcon('<path fill-rule="evenodd" clip-rule="evenodd" d="M10.866 2.837c.82-1.222 2.536-1.33 3.554-.336l.003.003 3.054 3.019.002.003c.536.535.7 1.25.626 1.888-.073.63-.384 1.256-.9 1.655l-.01.007-.01.007-3.017 2.156a1 1 0 0 0-.4.615l-.662 3.239-.004.02-.055.186c-.273.82-.885 1.48-1.661 1.747-.858.295-1.817.076-2.57-.733l-2.111-2.077L2.97 17.97a.666.666 0 0 1-.942-.94l3.729-3.73-1.99-1.958c-.737-.716-.987-1.692-.74-2.562.246-.872.97-1.567 2.014-1.771l3.1-.716c.241-.056.454-.2.596-.403zm2.624.615c-.459-.447-1.194-.366-1.524.132l-.004.007-.005.007L9.83 6.652c-.33.474-.826.808-1.39.938l-3.1.716-.027.006c-.584.108-.901.46-1.007.832-.093.332-.033.738.254 1.096l.138.15.004.006 5.047 4.97.013.012.011.013c.428.469.852.51 1.18.397.363-.125.713-.478.855-.99l.657-3.21c.118-.578.45-1.09.93-1.432l3.001-2.144c.193-.15.352-.43.389-.751.036-.313-.05-.596-.243-.792z"/>')],
         ['Projects', 'projects', fillIcon('<path fill-rule="evenodd" clip-rule="evenodd" d="M6.995 2.7c.454 0 .899.135 1.276.387l1.66 1.106c.17.114.37.174.574.174H15.3A2.834 2.834 0 0 1 18.134 7.2v7.134a2.967 2.967 0 0 1-2.967 2.967H4.833a2.967 2.967 0 0 1-2.967-2.967V5.667A2.967 2.967 0 0 1 4.833 2.7zm9.871 7.1H3.134v4.534c0 .939.76 1.7 1.699 1.7h10.334a1.7 1.7 0 0 0 1.7-1.7zM3.134 8.534h13.732V7.2c0-.865-.701-1.566-1.566-1.566h-4.795c-.454 0-.899-.134-1.276-.386l-1.66-1.107a1.03 1.03 0 0 0-.574-.173H4.833a1.7 1.7 0 0 0-1.7 1.699z"/>')],
         ['Recents', 'recents', fillIcon('<path d="M10.833 11.044a.665.665 0 1 1 0 1.33h-3.75a.666.666 0 0 1 0-1.33zM12.916 7.627a.665.665 0 1 1 0 1.33H7.083a.665.665 0 0 1 0-1.33z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M10 2.252c4.473 0 8.165 3.433 8.165 7.748 0 4.314-3.692 7.749-8.165 7.749-1.52 0-2.804-.453-4.06-1.04l-2.204.572a.832.832 0 0 1-1.02-.985l.463-2.09C2.537 12.954 1.835 11.73 1.835 10c0-4.315 3.692-7.748 8.165-7.748m0 1.33C6.189 3.582 3.165 6.49 3.165 10c0 1.414.567 2.35 1.282 3.765.087.171.111.368.07.555l-.327 1.469 1.59-.411.145-.025a.8.8 0 0 1 .287.029l.136.05.459.212c1.062.472 2.06.775 3.193.775 3.811 0 6.835-2.91 6.835-6.42S13.811 3.583 10 3.583"/>')]
       ];
-      for (const [label, key, icon] of sections) {
+      for (const [label, key, icon] of persistentRailEnabled ? [] : sections) {
         const action = document.createElement('button'); action.type = 'button';
         action.setAttribute('data-app-mode-sidebar-action', ''); action.setAttribute('data-app-mode-rail-section', key);
         action.setAttribute('aria-expanded', 'false');
@@ -917,8 +950,10 @@
       own(menu, 'inert');
     }
     // A fading rail must leave keyboard/pointer navigation immediately.
-    if (state !== 'compact') own(menu, 'inert');
+    if (state === 'drawer' || (!persistentRailEnabled && state !== 'compact')) own(menu, 'inert');
+    if (persistentRailEnabled) own(document.body, 'data-app-mode-persistent-rail');
     own(nativeRail, 'data-app-mode-native-sidebar');
+    if (persistentRailEnabled && model.railReserved) own(nativeRail, 'data-app-mode-rail-reservation');
     own(dockedPanel, 'data-app-mode-docked-sidebar');
     own(dockedPanel?.parentElement, 'data-app-mode-docked-sidebar-parent');
     const overlay = navigationAdapter.sidebarOverlay(model.drawer);
@@ -934,10 +969,11 @@
     // Only compact navigation needs the 52px rail reservation. A rendered
     // docked panel or drawer is the expanded navigation surface, so it starts
     // at the page origin and the workspace gets that width back.
-    const navRailReserved = nativeRail && nativeRail.getBoundingClientRect().width > 0 &&
+    const navRailReserved = persistentRailEnabled ? model.railReserved : nativeRail && nativeRail.getBoundingClientRect().width > 0 &&
       [...nativeRail.querySelectorAll('button, a')].filter(element => element.getClientRects().length).length > 1;
     const sectionPopover = navigationController.flyout?.kind === 'native' && !!model.drawer;
-    if ((state === 'compact' || sectionPopover) && !navRailReserved && !model.reservedRail) own(root, 'data-app-mode-compact-sidebar-shell');
+    if ((state === 'compact' || sectionPopover || (persistentRailEnabled && state === 'docked')) &&
+        !navRailReserved && (state === 'docked' || !model.reservedRail)) own(root, 'data-app-mode-compact-sidebar-shell');
     // The rounded Codex workspace is the single rendered content main inside
     // the shell. Ambiguous structure keeps the native, unmarked layout.
     const contentMains = [...root.querySelectorAll('main')].filter(element =>
@@ -987,6 +1023,20 @@
     const label = open ? 'Close sidebar' : 'Open sidebar';
     if (toggle.title !== label) toggle.title = label;
     navigationController.reconcileSections(model.drawer || dockedPanel, own);
+    let fallbackFocus = null;
+    if (persistentRailEnabled) {
+      for (const action of menu.querySelectorAll('[data-app-mode-sidebar-action]')) {
+        const label = action.getAttribute('aria-label');
+        const target = navigationAdapter.find(new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), { interactive: !model.blocked });
+        const account = action.hasAttribute('data-app-mode-rail-account');
+        if (navigationController.rejectedUtilities.has(target) && document.activeElement === action) fallbackFocus = target;
+        if (account && state === 'docked' && target && dockedPanel.contains(target) &&
+            getComputedStyle(target).visibility === 'visible') own(action, 'data-app-mode-rail-unavailable');
+        if (!account && target && dockedPanel?.contains(target) && target.closest('[data-app-mode-nav-primary]') && !target.closest('section') &&
+            !navigationController.rejectedUtilities.has(target)) own(target, 'data-app-mode-rail-original');
+        if (!account && (navigationController.rejectedUtilities.has(target) || (!target && state === 'docked'))) own(action, 'data-app-mode-rail-unavailable');
+      }
+    }
     const flyout = navigationController.flyout;
     if (flyout?.kind === 'native' && flyout.element === model.drawer) {
       own(model.drawer, 'data-app-mode-section-flyout');
@@ -1000,6 +1050,8 @@
     }
     const previous = navigationController.state;
     navigationController.apply(next);
+    if (fallbackFocus?.isConnected && !model.blocked && !fallbackFocus.closest('[inert], [aria-hidden="true"]') &&
+        fallbackFocus.getClientRects().length && getComputedStyle(fallbackFocus).visibility === 'visible') fallbackFocus.focus({ preventScroll: true });
     navigationController.reconcileGeometry(model, contentMains.length === 1 ? contentMains[0] : null);
     navigationController.state = state;
     navigationController.root = root;

@@ -7,6 +7,7 @@
     markerClass: 'faux-chatgpt-app-mode', pinButtonId: 'chatgpt-app-mode-pin-toggle',
     controlUrl: 'http://127.0.0.1:17863/topmost', sessionUrl: 'http://127.0.0.1:17863/session', cleanTitle: 'ChatGPT',
     compactSidebarEnabled: window.__APP_MODE_COMPACT_SIDEBAR__ !== false,
+    persistentRailEnabled: window.__APP_MODE_PERSISTENT_RAIL__ !== false,
     lastReportedUrl: '', lastReportedTitle: '', sessionPending: false, sessionRetryAt: 0, retryDelay: 3000,
     windowHandle: '', windowProcessId: 0, pinPending: false, pinRevision: 0, activityPending: false, activityRetryAt: 0,
     relocatedShare: null, shareMenuTrigger: null, navigationAdapter: null, navigationController: null,

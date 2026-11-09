@@ -156,7 +156,7 @@ const delayed = `<!doctype html><style>body{margin:0;background:#ff00ff!importan
 window.releaseShell=()=>{const main=document.createElement('main');main.innerHTML='<header><button aria-label="Share">Share</button></header><p>Customized fixture</p>';document.querySelector('[data-app-shell-responsive-sidebar]').append(main);};
 </script>`;
 
-test('title-bar sidebar toggle exclusively controls docked and drawer navigation with Search atop the rail', { timeout: 45000 }, async () => {
+test('title-bar sidebar toggle preserves the persistent rail and native panel Search', { timeout: 45000 }, async () => {
   const html = `<!doctype html><style>*{box-sizing:border-box}body{margin:0}#shell{display:flex;height:100vh}main{flex:1;min-width:0}header,.h-toolbar{height:40px}aside{width:260px;flex:none}#browser-sidebar-popover{position:fixed;inset:0 auto 0 0;width:260px;background:Canvas;z-index:80}</style>
     <div id="shell" data-app-shell-responsive-sidebar data-app-shell-sidebar-open="false"><main><header><button id="opener" aria-label="Open sidebar">Sidebar</button></header><p>Native navigation fixture</p></main></div>
     <script>
@@ -177,9 +177,11 @@ test('title-bar sidebar toggle exclusively controls docked and drawer navigation
       await app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setContentSize(width, 800), width);
       await expect(toggle).toBeVisible(); await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
       await expect(controls.locator('[data-action="open-search"]')).toBeHidden();
-      await expect(railSearch).toBeVisible();
-      assert.equal((await railSearch.boundingBox()).y, 2);
-      assert.equal(await page.locator('#app-mode-compact-sidebar-actions button').first().getAttribute('aria-label'), 'Search');
+      await expect(railSearch).toHaveCount(0);
+      const scheduled = page.locator('#app-mode-compact-sidebar-actions [aria-label="Scheduled"]');
+      await expect(scheduled).toBeVisible();
+      assert.equal((await scheduled.boundingBox()).y, 2);
+      assert.equal(await page.locator('#app-mode-compact-sidebar-actions button').first().getAttribute('aria-label'), 'Scheduled');
       const before = await toggle.boundingBox();
       await toggle.click();
       await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', width < 700 ? 'drawer' : 'docked');
@@ -187,22 +189,29 @@ test('title-bar sidebar toggle exclusively controls docked and drawer navigation
       await expect(page.locator('#native-close')).toBeHidden(); await expect(page.locator('#opener')).toBeHidden();
       assert.deepEqual(await toggle.boundingBox(), before);
       await expect(page.locator('main')).toHaveCSS('margin-left', '8px');
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', '0');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', width < 700 ? '0' : '1');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveJSProperty('inert', width < 700);
+      if (width >= 700) assert.equal((await page.locator('aside').boundingBox()).x, 52);
       await controls.screenshot({ path: path.join(scratch, 'titlebar-' + width + '.png') });
       await page.screenshot({ path: path.join(scratch, 'expanded-' + width + '.png') });
       await toggle.focus(); await controls.keyboard.press('Enter');
       await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
-      await expect(railSearch).toBeVisible();
+      await expect(railSearch).toHaveCount(0);
+      await expect(scheduled).toBeVisible();
       await expect(page.locator('main')).toHaveCSS('margin-left', '8px');
       await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', '1');
       await page.screenshot({ path: path.join(scratch, 'compact-' + width + '.png') });
     }
     assert.equal(await page.evaluate(() => window.nativeToggleCalls), 6);
-    await railSearch.click();
+    await toggle.click();
+    const nativeSearch = page.locator('.sidebar-navigation [aria-label="Search"]');
+    await nativeSearch.click();
     await expect(page.getByRole('textbox', { name: 'Search conversations' })).toBeFocused();
     await expect(toggle).toBeDisabled();
     await page.keyboard.press('Escape');
-    await expect(railSearch).toBeVisible(); await expect(toggle).toBeEnabled();
+    await expect(nativeSearch).toBeVisible(); await expect(toggle).toBeEnabled();
+    await toggle.click();
+    await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
     await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
     await expect(controls.locator('.titlebar')).toBeHidden();

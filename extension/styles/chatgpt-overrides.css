@@ -137,6 +137,7 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-header] {
 body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-nav-header] {
   padding-inline-start: var(--app-mode-rail-width);
 }
+body.faux-chatgpt-app-mode[data-app-mode-persistent-rail][data-app-mode-navigation-state="docked"] [data-app-mode-nav-header] { padding-inline-start: 12px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] #app-mode-compact-sidebar { display: none; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] [data-app-mode-host-nav-header] {
@@ -231,7 +232,8 @@ body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions [data-app-mode-rail
 }
 /* A rendered native panel or drawer is the full navigation surface. Keep the
    existing toggle as its header control and hide only the redundant actions. */
-body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions {
+body.faux-chatgpt-app-mode:not([data-app-mode-persistent-rail]):is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions,
+body.faux-chatgpt-app-mode[data-app-mode-persistent-rail][data-app-mode-navigation-state="drawer"] #app-mode-compact-sidebar-actions {
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity 100ms ease, visibility 0s linear 100ms;
 }
@@ -301,12 +303,21 @@ body.faux-chatgpt-app-mode [data-app-mode-workspace] > footer {
   body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions button { transition: none !important; }
   body.faux-chatgpt-app-mode [data-app-mode-workspace] { --app-mode-navigation-offset: 0px !important; }
 }
-body.faux-chatgpt-app-mode [data-app-mode-sidebar-original] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-sidebar-original],
+body.faux-chatgpt-app-mode [data-app-mode-rail-unavailable] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-rail-original] {
+  position: fixed !important; left: var(--app-mode-rail-anchor-x, 8px) !important; top: var(--app-mode-rail-anchor-y, 0px) !important;
+  width: 36px !important; min-width: 36px !important; max-width: 36px !important;
+  height: 36px !important; min-height: 36px !important; max-height: 36px !important; margin: 0 !important; padding: 0 !important;
+  visibility: hidden !important; pointer-events: none !important;
+}
 /* New chat belongs to sidebar navigation; retain the native header node and
    handler while removing its duplicate from the contextual action row. */
 body.faux-chatgpt-app-mode [data-app-mode-header-layout] :is(button, a, [role="button"]):is([aria-label="New chat" i], [data-testid="create-new-chat-button"]) { display: none !important; }
 body.faux-chatgpt-app-mode [data-app-mode-native-sidebar] { visibility: hidden !important; }
-body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-native-sidebar] { display: none !important; }
+body.faux-chatgpt-app-mode [data-app-mode-rail-reservation] { order: -1 !important; }
+body.faux-chatgpt-app-mode:not([data-app-mode-persistent-rail]):is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-native-sidebar],
+body.faux-chatgpt-app-mode[data-app-mode-persistent-rail][data-app-mode-navigation-state="drawer"] [data-app-mode-native-sidebar] { display: none !important; }
 
 /* Keep the modal's full input-blocking surface, but leave the shared header
    visually clear. The adapter captures the native color, including alpha. */

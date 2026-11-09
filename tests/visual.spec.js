@@ -656,7 +656,7 @@ test('conversation-only title ignores the native sidebar-width grid of invisible
   expect(await page.evaluate(()=>window.nativeTitleClicks)).toBe(8);
 });
 
-test('compact rail yields to expanded navigation and opens the native drawer', async ({ page }) => {
+test('persistent rail accompanies docked navigation and yields only to the native drawer', async ({ page }) => {
   await page.setContent(fixture);
   await page.setViewportSize({ width: 390, height: 780 });
   await page.addStyleTag({ content: fs.readFileSync(path.join(extensionPath, 'styles/chatgpt-overrides.css'), 'utf8') });
@@ -715,7 +715,7 @@ test('compact rail yields to expanded navigation and opens the native drawer', a
   await page.locator('nav[class~="group/sidebar-rail"]').evaluate(element => element.remove());
   await page.setViewportSize({ width: 390, height: 780 });
   await expect(page.locator('#app-mode-compact-sidebar')).toBeVisible();
-  for (const label of ['New chat', 'Search', 'Scheduled', 'Library', 'Plugins', 'Explore', 'Pinned', 'Projects', 'Recents']) {
+  for (const label of ['Scheduled', 'Library', 'Plugins', 'Explore']) {
     await expect(page.locator(`#app-mode-compact-sidebar-actions [aria-label="${label}"]`)).toHaveCount(1);
   }
   const rail = page.locator('#app-mode-compact-sidebar');
@@ -750,7 +750,7 @@ test('compact rail yields to expanded navigation and opens the native drawer', a
   await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0);
   await expect(rail).toBeFocused();
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
-  await page.locator('[data-app-mode-sidebar-action][aria-label="Search"]').click();
+  expect(await page.evaluate(() => window.__APP_MODE_CONTEXT__.navigationAdapter.activate(/^Search$/i))).toBe(true);
   await expect.poll(() => page.evaluate(() => window.syntheticSearchCalls || 0)).toBe(2);
   await expect(page.locator('#synthetic-action-search')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -780,13 +780,13 @@ test('compact rail yields to expanded navigation and opens the native drawer', a
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
   // Expanded navigation owns the left edge and reclaims the compact rail's
   // 52px reservation while the existing toggle remains available to close it.
-  await expect(page.locator('#app')).not.toHaveAttribute('data-app-mode-compact-sidebar-shell');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect(page.locator('#app')).toHaveAttribute('data-app-mode-compact-sidebar-shell', '');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   const dockedBox = await page.locator('aside.app-shell-left-panel').boundingBox();
   // Native panel width is preserved (width-based state detection rules out
   // forcing 239px); its position at the application edge is asserted.
   expect(dockedBox.width).toBeGreaterThanOrEqual(200);
-  expect(Math.abs(dockedBox.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(dockedBox.x - 52)).toBeLessThanOrEqual(2);
   await expect(page.locator('aside.app-shell-left-panel')).toHaveCSS('margin-top', '0px');
   // A separate global modal blocks background controls without invalidating
   // the docked navigation layout or its scroll position.
@@ -844,12 +844,20 @@ test('contextual header stays in its workspace while a modal blocks sidebar resi
   }
 });
 
-async function navigationSectionsFixture(page, native = false, open = true, retained = false) {
+async function navigationSectionsFixture(page, native = false, open = true, retained = false, legacy = false) {
   const body = require('./helpers/navigation-fixture.cjs').navigationHtml(native, open, retained);
   await page.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body }));
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"saved":true,"enabled":false}' }));
   await page.setViewportSize({ width: 1280, height: 850 });
   await page.goto('https://chatgpt.com/');
+  if (legacy) {
+    const evaluate = await navigationEvaluator(page);
+    await evaluate(() => {
+      const c = window.__APP_MODE_CONTEXT__;
+      c.navigationController.reset(); c.persistentRailEnabled = false; c.navigationController.schedule();
+    });
+    await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-persistent-rail');
+  }
 }
 
 async function navigationEvaluator(page) {
@@ -899,8 +907,8 @@ test('sidebar retains supported presentation during replacement and ignores stal
   await expect(rail).toHaveCount(0);
 });
 
-test('trusted navigation delegates native actions and retains only one sidebar toggle', async ({ page }) => {
-  await navigationSectionsFixture(page, true);
+test('rollback trusted navigation delegates native actions and retains only one sidebar toggle', async ({ page }) => {
+  await navigationSectionsFixture(page, true, true, false, true);
   await page.evaluate(() => {
     const identity = document.createElement('button'); identity.id = 'native-identity';
     identity.setAttribute('aria-haspopup', 'menu'); identity.setAttribute('aria-label', 'Application menu'); identity.textContent = 'ChatGPT';
@@ -1000,7 +1008,7 @@ test('trusted navigation delegates native actions and retains only one sidebar t
   await expect(page.locator('body')).not.toHaveAttribute('data-app-mode-host-navigation-owned');
 });
 
-test('trusted navigation retains lazy Search access after launch and reload at responsive widths', async ({ page }) => {
+test('rollback trusted navigation retains lazy Search access after launch and reload at responsive widths', async ({ page }) => {
   await navigationSectionsFixture(page, true, false);
   for (const width of [390, 480, 680, 937, 1280]) {
     await page.setViewportSize({ width, height: 850 });
@@ -1008,7 +1016,8 @@ test('trusted navigation retains lazy Search access after launch and reload at r
     await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
     const evaluateNavigation = await navigationEvaluator(page);
     await evaluateNavigation(() => {
-      const c = window.__APP_MODE_CONTEXT__; c.hostNavigation.ready = true; c.hostNavigation.visible = true;
+      const c = window.__APP_MODE_CONTEXT__; c.navigationController.reset(); c.persistentRailEnabled = false;
+      c.hostNavigation.ready = true; c.hostNavigation.visible = true;
       document.addEventListener('click', event => {
         if (event.target.getAttribute('aria-label') !== 'Search' || event.target.closest('#app-mode-compact-sidebar-actions')) return;
         const dialog = document.createElement('div'); dialog.id = 'lazy-native-search'; dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', 'Global search');
@@ -1030,8 +1039,9 @@ test('trusted navigation retains lazy Search access after launch and reload at r
   }
 });
 
-test('trusted navigation discovers fresh compact Search and restores fallback through native replacement', async ({ page }) => {
+test('rollback trusted navigation discovers fresh compact Search and restores fallback through native replacement', async ({ page }) => {
   await page.goto('about:blank');
+  await page.evaluate(() => window.__APP_MODE_PERSISTENT_RAIL__ = false);
   await page.setContent(`<style>body{margin:0}aside{width:260px}header{height:40px}</style>
     <div data-app-shell-responsive-sidebar data-app-shell-sidebar-open="false">
     <header><button aria-label="Open sidebar" id="native-toggle">Sidebar</button></header>
@@ -1112,7 +1122,7 @@ test('trusted navigation discovers fresh compact Search and restores fallback th
   await expect(rail).toBeVisible();
 });
 
-test('responsive navigation ignores retained desktop controls after narrowing and keeps Search usable', async ({ page }) => {
+test('rollback responsive navigation ignores retained desktop controls after narrowing and keeps Search usable', async ({ page }) => {
   const body = `<style>
     body{margin:0}main{flex:1;min-width:0}header{height:40px}button{min-width:36px;min-height:32px}
     #responsive-root{display:flex;height:100vh}aside{width:52px;flex-shrink:0;overflow:hidden}
@@ -1129,6 +1139,9 @@ test('responsive navigation ignores retained desktop controls after narrowing an
   await page.route('http://127.0.0.1:17863/**', route => route.fulfill({ contentType: 'application/json', body: '{"enabled":false}' }));
   await page.goto('https://chatgpt.com/');
   const evaluateNavigation = await navigationEvaluator(page);
+  await evaluateNavigation(() => {
+    const c = window.__APP_MODE_CONTEXT__; c.navigationController.reset(); c.persistentRailEnabled = false; c.navigationController.schedule();
+  });
   await page.evaluate(() => {
     const root = document.querySelector('#responsive-root');
     const search = () => {
@@ -1192,8 +1205,8 @@ test('responsive navigation ignores retained desktop controls after narrowing an
   }
 });
 
-test('compact flyouts delegate mounted native entries and preserve nonmodal keyboard behavior', async ({ page }) => {
-  await navigationSectionsFixture(page, true, false, true);
+test('rollback compact flyouts delegate mounted native entries and preserve nonmodal keyboard behavior', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true, true);
   const trigger = key => page.locator(`[data-app-mode-rail-section="${key}"]`);
   const flyout = page.locator('#app-mode-navigation-flyout');
   for (const key of ['pinned', 'projects', 'recents']) {
@@ -1229,8 +1242,8 @@ test('compact flyouts delegate mounted native entries and preserve nonmodal keyb
   }
 });
 
-test('compact flyouts invalidate native references and recover through section fallback', async ({ page }) => {
-  await navigationSectionsFixture(page, true, false, true);
+test('rollback compact flyouts invalidate native references and recover through section fallback', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true, true);
   const trigger = page.locator('[data-app-mode-rail-section="recents"]');
   const flyout = page.locator('#app-mode-navigation-flyout');
   await trigger.click();
@@ -1275,8 +1288,8 @@ test('compact flyouts invalidate native references and recover through section f
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
 });
 
-test('compact flyouts stay within responsive bounds without moving the workspace', async ({ page }, testInfo) => {
-  await navigationSectionsFixture(page, true, false, true);
+test('rollback compact flyouts stay within responsive bounds without moving the workspace', async ({ page }, testInfo) => {
+  await navigationSectionsFixture(page, true, false, true, true);
   for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme });
     for (const width of [390, 598, 680, 1081, 1280]) {
@@ -1299,10 +1312,10 @@ test('compact flyouts stay within responsive bounds without moving the workspace
   }
 });
 
-test('narrow section flyouts present native entries at every supported width', async ({ page }, testInfo) => {
+test('rollback narrow section flyouts present native entries at every supported width', async ({ page }, testInfo) => {
   test.setTimeout(60000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await navigationSectionsFixture(page, true, false);
+  await navigationSectionsFixture(page, true, false, false, true);
   const drawer = page.locator('#browser-sidebar-popover');
   for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -1330,8 +1343,8 @@ test('narrow section flyouts present native entries at every supported width', a
   }
 });
 
-test('narrow section flyouts activate native destinations and View all restores the complete drawer', async ({ page }) => {
-  await navigationSectionsFixture(page, true, false);
+test('rollback narrow section flyouts activate native destinations and View all restores the complete drawer', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, false, true);
   await page.setViewportSize({ width: 598, height: 700 });
   const drawer = page.locator('#browser-sidebar-popover');
   for (const key of ['pinned', 'projects', 'recents']) {
@@ -1376,8 +1389,8 @@ test('narrow section flyouts activate native destinations and View all restores 
   await expect(page.locator('[data-app-mode-section-flyout-actions]')).toHaveCount(0);
 });
 
-test('rail section shortcuts expand native navigation to the matching section', async ({ page }) => {
-  await navigationSectionsFixture(page, true, false);
+test('rollback rail section shortcuts expand native navigation to the matching section', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, false, true);
   const railButton = label => page.locator(`#app-mode-compact-sidebar-actions [aria-label="${label}"]`);
   for (const label of ['Pinned', 'Projects', 'Recents']) await expect(railButton(label)).toBeVisible();
   const expected = { pinned: 'false', projects: 'false', recents: 'true' };
@@ -1409,7 +1422,7 @@ test('compact rail keeps its account footer reachable at short window heights', 
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'compact');
   const account = page.locator('[data-app-mode-rail-account]');
   await expect(account).toBeVisible();
-  await page.setViewportSize({ width: 680, height: 300 });
+  await page.setViewportSize({ width: 680, height: 180 });
   const menu = page.locator('#app-mode-compact-sidebar-actions');
   await expect(menu).toBeVisible();
   expect(await menu.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
@@ -1424,7 +1437,7 @@ test('compact rail keeps its account footer reachable at short window heights', 
   await menu.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expect(account).toBeVisible();
   await menu.evaluate(el => { el.scrollTop = 0; });
-  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="New chat"]')).toBeVisible();
+  await expect(page.locator('#app-mode-compact-sidebar-actions [aria-label="Scheduled"]')).toBeVisible();
 });
 
 test('reserved native rails keep neutral gutters and scrolled sidebar content below New chat', async ({ page }, testInfo) => {
@@ -1584,7 +1597,7 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
     const state = width < 700 ? 'drawer' : 'docked';
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
     const panel = page.locator(width < 700 ? '#browser-sidebar-popover' : '[data-app-mode-docked-sidebar]');
-    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible({ visible: width >= 700 });
     await expect(width < 700 ? page.locator('[data-app-mode-modal-sidebar-toggle]') : page.locator('#app-mode-compact-sidebar')).toBeVisible();
     const scroll = panel.locator('[data-app-mode-nav-scroll]');
     const last = panel.locator('[data-section="recents"] a').last();
@@ -1601,7 +1614,7 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
         padding: parseFloat(getComputedStyle(scroll).paddingBottom), overflow: document.documentElement.scrollHeight > innerHeight };
     });
     expect(geometry.panel.top).toBe(geometry.workspace.top);
-    expect(geometry.panel.x).toBeLessThanOrEqual(1);
+    expect(geometry.panel.x).toBe(state === 'drawer' ? 0 : 52);
     expect(geometry.collapse.right).toBeLessThanOrEqual(geometry.title.x);
     expect(geometry.panel.bottom).toBe(geometry.workspace.bottom);
     expect(811 - geometry.panel.bottom).toBe(geometry.gap);
@@ -1661,10 +1674,9 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
       // The fixed rail retains its box so opacity can reverse smoothly; it
       // contributes no layout width and is inaccessible while expanded.
       expect(geometry.rail.width).toBe(52);
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveAttribute('inert', '');
-      expect(geometry.sidebar.x).toBeGreaterThanOrEqual(0);
-      expect(geometry.sidebar.x).toBeLessThanOrEqual(1);
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible({ visible: geometry.state === 'docked' });
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveJSProperty('inert', geometry.state === 'drawer');
+      expect(geometry.sidebar.x).toBe(geometry.state === 'drawer' ? 0 : 52);
       expect(geometry.sidebar.right).toBeLessThanOrEqual(cssWidth + 1);
       expect(geometry.workspace.width).toBeGreaterThan(150);
       expect(geometry.header.y).toBe(0);
@@ -1909,7 +1921,7 @@ test('sidebar transitions reflow the workspace continuously and reverse without 
     }
   });
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'docked');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await page.locator('#app-mode-compact-sidebar').focus(); await page.keyboard.press('Enter');
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await expect(page.locator('#app-mode-compact-sidebar')).toBeFocused();
@@ -1941,8 +1953,8 @@ test('sidebar transition presentation cancels on responsive replacement and redu
   }
 });
 
-test('compact selection follows native semantics and conservative SPA routes without stale flyout selection', async ({ page }) => {
-  await navigationSectionsFixture(page, true, false, true);
+test('rollback compact selection follows native semantics and conservative SPA routes without stale flyout selection', async ({ page }) => {
+  await navigationSectionsFixture(page, true, false, true, true);
   const active = page.locator('#app-mode-compact-sidebar-actions [data-app-mode-rail-active]');
   const selected = async label => {
     await expect(active).toHaveCount(label ? 1 : 0);
