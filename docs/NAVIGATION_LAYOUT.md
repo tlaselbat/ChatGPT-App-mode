@@ -18,8 +18,10 @@ aligned to the activated rail button, so native popups do not anchor at the
 page origin; owned anchor properties are removed when suppression is released.
 An activation with no established native destination or popup releases the
 original and returns focus to it when appropriate.
-Unknown controls remain native. Modal drawers retain native utility controls,
-focus trapping and dismissal, and hide/inert the background rail.
+Unknown controls remain native. Modal drawers present the same unified panel:
+they anchor beside the persistent rail at the shared sidebar width, suppress
+rail-duplicate utilities like the docked panel, and keep the rail painted but
+inert beneath the native scrim. Focus trapping, Escape and dismissal stay native.
 
 `window.__APP_MODE_PERSISTENT_RAIL__ = false` before shared-script initialization
 selects the previous compact-only presentation, including section shortcuts.
@@ -66,9 +68,11 @@ state; unrecognized sections leave ordinary expansion as the result. The rail sc
 at short window heights while the account footer stays anchored via `position: sticky`.
 (`#app-mode-compact-sidebar-actions`) only while native navigation is compact.
 When a rendered docked panel or modal drawer supplies expanded navigation, the
-compact rail is hidden and its shell reservation is removed. The expanded
-sidebar therefore begins at the page origin and the workspace reclaims the
-52px width. In Electron, the sole visible sidebar toggle sits at the far left of
+persistent rail stays mounted beside it: interactive beside the docked panel,
+inert beneath the drawer's modal scrim. The expanded surface always begins at
+the rail's right edge — the drawer no longer claims the page origin — so one
+sidebar design spans every supported width. In Electron, the sole visible
+sidebar toggle sits at the far left of
 the trusted title bar and delegates to the native adapter in compact, docked and
 drawer states. Page and drawer toggle nodes remain mounted but suppressed while
 that control is available; hostless/fullscreen or unavailable-host states restore
@@ -81,9 +85,9 @@ The responsive docked width is keyed to the site's own
 releases on native collapse intent so width-based detection can see the panel
 shrink; without that flag, native width remains authoritative. Sizing and
 account behavior are specified in the section refinement below rather than
-in a second fixed-width model. The native modal drawer opens at the page
-origin, retaining its dismissal, scrim, and focus trap; docked navigation
-occupies its own column without a modal scrim.
+in a second fixed-width model. The native modal drawer opens beside the
+persistent rail at the same docked width, retaining its dismissal, scrim, and
+focus trap; docked navigation occupies its own column without a modal scrim.
 
 Rail selection prefers native `aria-current`/`aria-selected` inside recognized
 navigation, then exact same-origin native links and verified primary routes

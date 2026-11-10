@@ -189,7 +189,7 @@ test('title-bar sidebar toggle preserves the persistent rail and native panel Se
       await expect(page.locator('#native-close')).toBeHidden(); await expect(page.locator('#opener')).toBeHidden();
       assert.deepEqual(await toggle.boundingBox(), before);
       await expect(page.locator('main')).toHaveCSS('margin-left', '8px');
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', width < 700 ? '0' : '1');
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', '1');
       await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveJSProperty('inert', width < 700);
       if (width >= 700) assert.equal((await page.locator('aside').boundingBox()).x, 52);
       await controls.screenshot({ path: path.join(scratch, 'titlebar-' + width + '.png') });

@@ -730,10 +730,10 @@ test('persistent rail accompanies docked navigation and yields only to the nativ
   await expect(page.locator('[role="dialog"][aria-modal="true"]')).toBeVisible();
   await page.locator('[role="dialog"][aria-modal="true"]').evaluate(element => { element.id = 'browser-sidebar-popover'; });
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('top', '0px');
-  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('left', '0px');
+  await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('left', '52px');
   await expect(page.locator('#browser-sidebar-popover')).toHaveCSS('height', '772px');
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', 'drawer');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await expect(page.locator('[data-app-mode-modal-sidebar-toggle]')).toHaveCSS('top', '5px');
   // A native popup may temporarily hide its parent drawer from accessibility.
   // Its rendered layout and dismissal control must remain owned and stable.
@@ -977,7 +977,7 @@ test('rollback trusted navigation delegates native actions and retains only one 
   await expect(page.locator('#app-mode-compact-sidebar')).toBeHidden();
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().search)).toBe(false);
   expect(await evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.run('toggle-sidebar'))).toBe(true);
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeHidden();
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
   await expect.poll(() => evaluateNavigation(() => window.__APP_MODE_CONTEXT__.hostNavigation.read().identity)).toBe(false);
   await page.evaluate(() => {
     const unknown = document.createElement('button'); unknown.textContent = 'Native future action';
@@ -1597,7 +1597,7 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
     const state = width < 700 ? 'drawer' : 'docked';
     await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
     const panel = page.locator(width < 700 ? '#browser-sidebar-popover' : '[data-app-mode-docked-sidebar]');
-    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible({ visible: width >= 700 });
+    await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
     await expect(width < 700 ? page.locator('[data-app-mode-modal-sidebar-toggle]') : page.locator('#app-mode-compact-sidebar')).toBeVisible();
     const scroll = panel.locator('[data-app-mode-nav-scroll]');
     const last = panel.locator('[data-section="recents"] a').last();
@@ -1614,7 +1614,7 @@ test('expanded sidebar shares workspace boundaries and keeps the final recent ro
         padding: parseFloat(getComputedStyle(scroll).paddingBottom), overflow: document.documentElement.scrollHeight > innerHeight };
     });
     expect(geometry.panel.top).toBe(geometry.workspace.top);
-    expect(geometry.panel.x).toBe(state === 'drawer' ? 0 : 52);
+    expect(geometry.panel.x).toBe(52);
     expect(geometry.collapse.right).toBeLessThanOrEqual(geometry.title.x);
     expect(geometry.panel.bottom).toBe(geometry.workspace.bottom);
     expect(811 - geometry.panel.bottom).toBe(geometry.gap);
@@ -1672,11 +1672,11 @@ test('sidebar geometry stays usable across themes, effective zoom, and native re
           account: box(panel.querySelector('.section-footer')), overflow: document.documentElement.scrollWidth > innerWidth };
       });
       // The fixed rail retains its box so opacity can reverse smoothly; it
-      // contributes no layout width and is inaccessible while expanded.
+      // contributes no layout width and is inert while the modal is open.
       expect(geometry.rail.width).toBe(52);
-      await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible({ visible: geometry.state === 'docked' });
+      await expect(page.locator('#app-mode-compact-sidebar-actions')).toBeVisible();
       await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveJSProperty('inert', geometry.state === 'drawer');
-      expect(geometry.sidebar.x).toBe(geometry.state === 'drawer' ? 0 : 52);
+      expect(geometry.sidebar.x).toBe(52);
       expect(geometry.sidebar.right).toBeLessThanOrEqual(cssWidth + 1);
       expect(geometry.workspace.width).toBeGreaterThan(150);
       expect(geometry.header.y).toBe(0);
