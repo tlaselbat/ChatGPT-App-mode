@@ -102,9 +102,9 @@ for (const width of [390, 680, 1024, 1280]) test(`persistent rail preserves nati
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
   const panel = page.locator(state === 'drawer' ? '#browser-sidebar-popover' : 'aside');
   await expect(rail).toHaveJSProperty('inert', state === 'drawer');
-  await expect(rail).toHaveCSS('visibility', state === 'drawer' ? 'hidden' : 'visible');
+  await expect(rail).toHaveCSS('visibility', 'visible');
   const panelBox = await panel.boundingBox();
-  expect(panelBox.x).toBe(state === 'drawer' ? 0 : 52);
+  expect(panelBox.x).toBe(52);
   if (state === 'docked') {
     await expect(rail).toHaveCSS('opacity', '1');
     expect((await page.locator('main').boundingBox()).x - panelBox.x - panelBox.width).toBeCloseTo(8, 0);
@@ -131,7 +131,10 @@ for (const width of [390, 680, 1024, 1280]) test(`persistent rail preserves nati
       await page.getByRole('button', { name: 'Close utility' }).click();
     }
   } else {
-    for (const label of labels) await expect(panel.getByRole(label === 'Scheduled' || label === 'Library' ? 'link' : 'button', { name: label, exact: true })).toBeVisible();
+    // The drawer presents the same unified surface: rail utilities are
+    // suppressed inside the modal the same way they are in the docked panel.
+    await expect(panel.locator('[data-app-mode-rail-original]')).toHaveCount(4);
+    for (const label of labels) await expect(panel.locator('[data-app-mode-rail-original]').filter({ hasText: new RegExp(`^${label}$`) })).toBeHidden();
   }
   await panel.getByRole('link', { name: 'New chat', exact: true }).click();
   await expect(rail.locator('[data-app-mode-rail-active]')).toHaveCount(0);

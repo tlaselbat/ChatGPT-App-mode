@@ -137,7 +137,7 @@ body.faux-chatgpt-app-mode [data-app-mode-nav-header] {
 body.faux-chatgpt-app-mode:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-nav-header] {
   padding-inline-start: var(--app-mode-rail-width);
 }
-body.faux-chatgpt-app-mode[data-app-mode-persistent-rail][data-app-mode-navigation-state="docked"] [data-app-mode-nav-header] { padding-inline-start: 12px; }
+body.faux-chatgpt-app-mode[data-app-mode-persistent-rail]:is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) [data-app-mode-nav-header] { padding-inline-start: 12px; }
 body.faux-chatgpt-app-mode [data-app-mode-nav-header] :is(strong, [class~="text-heading-sm"]) { font-size: 14px; font-weight: 600; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] #app-mode-compact-sidebar { display: none; }
 body.faux-chatgpt-app-mode[data-app-mode-host-navigation-owned] [data-app-mode-host-nav-header] {
@@ -230,10 +230,12 @@ body.faux-chatgpt-app-mode #app-mode-compact-sidebar-actions [data-app-mode-rail
   flex: 0 0 auto; width: 24px; height: 1px; margin-block: 3px;
   background: var(--app-mode-control-border);
 }
-/* A rendered native panel or drawer is the full navigation surface. Keep the
-   existing toggle as its header control and hide only the redundant actions. */
-body.faux-chatgpt-app-mode:not([data-app-mode-persistent-rail]):is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions,
-body.faux-chatgpt-app-mode[data-app-mode-persistent-rail][data-app-mode-navigation-state="drawer"] #app-mode-compact-sidebar-actions {
+/* A rendered native panel is the full navigation surface. Keep the existing
+   toggle as its header control and hide only the redundant actions. The
+   persistent rail remains painted below the modal scrim in drawer state so
+   navigation reads as one design; the dialog's trap and input barrier keep it
+   inert until the surface closes. */
+body.faux-chatgpt-app-mode:not([data-app-mode-persistent-rail]):is([data-app-mode-navigation-state="docked"], [data-app-mode-navigation-state="drawer"]) #app-mode-compact-sidebar-actions {
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity 100ms ease, visibility 0s linear 100ms;
 }
@@ -477,6 +479,14 @@ body.faux-chatgpt-app-mode:has(#app-mode-compact-sidebar) #browser-sidebar-popov
   bottom: var(--app-mode-gap) !important;
   height: auto !important;
   max-height: calc(100dvh - var(--app-mode-gap)) !important;
+}
+/* The persistent rail unifies narrow navigation with the docked panel: same
+   sidebar width, anchored beside the visible rail column instead of claiming
+   the page origin. The modal scrim, trap and native close behavior remain. */
+body.faux-chatgpt-app-mode[data-app-mode-persistent-rail]:has(#app-mode-compact-sidebar) #browser-sidebar-popover[role="dialog"] {
+  left: var(--app-mode-rail-width) !important; right: auto !important;
+  width: min(var(--app-mode-sidebar-width), calc(100vw - var(--app-mode-rail-width))) !important;
+  min-width: 0 !important; max-width: calc(100vw - var(--app-mode-rail-width)) !important;
 }
 
 body.faux-chatgpt-app-mode [data-app-mode-share-menu-item] {

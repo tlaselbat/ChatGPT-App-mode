@@ -28,8 +28,8 @@ async function geometry(page, app) {
 async function settle(page, state) {
   await expect(page.locator('body')).toHaveAttribute('data-app-mode-navigation-state', state);
   await expect.poll(() => page.evaluate(() => !!window.__APP_MODE_CONTEXT__.navigationController.geometryAnimation)).toBe(false);
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', state === 'drawer' ? '0' : '1');
-  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('visibility', state === 'drawer' ? 'hidden' : 'visible');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('opacity', '1');
+  await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveCSS('visibility', 'visible');
   await expect(page.locator('#app-mode-compact-sidebar-actions')).toHaveJSProperty('inert', state === 'drawer');
 }
 
@@ -64,9 +64,7 @@ async function finishFrames(page, info, name, nativeTween = false) {
     expect(frame.overflow).toBeLessThanOrEqual(0);
     expect(frame.right).toBeCloseTo(frames[0].right, 0);
     expect(frame.railInert).toBe(frame.state === 'drawer');
-    if (desktop) expect(frame.railOpacity).toBe(1);
-    expect(frame.railOpacity).toBeGreaterThanOrEqual(0);
-    expect(frame.railOpacity).toBeLessThanOrEqual(1);
+    expect(frame.railOpacity).toBe(1);
   }
   // Reduced motion deliberately permits an immediate layout change.
   if (name === 'reduced-motion') return frames;

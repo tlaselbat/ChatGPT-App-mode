@@ -1025,16 +1025,19 @@
     navigationController.reconcileSections(model.drawer || dockedPanel, own);
     let fallbackFocus = null;
     if (persistentRailEnabled) {
+      // Either expanded surface presents the same unified navigation: rail
+      // utilities are suppressed inside the panel or modal drawer alike.
+      const expandedPanel = dockedPanel || model.drawer;
       for (const action of menu.querySelectorAll('[data-app-mode-sidebar-action]')) {
         const label = action.getAttribute('aria-label');
         const target = navigationAdapter.find(new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), { interactive: !model.blocked });
         const account = action.hasAttribute('data-app-mode-rail-account');
         if (navigationController.rejectedUtilities.has(target) && document.activeElement === action) fallbackFocus = target;
-        if (account && state === 'docked' && target && dockedPanel.contains(target) &&
+        if (account && expandedPanel && target && expandedPanel.contains(target) &&
             getComputedStyle(target).visibility === 'visible') own(action, 'data-app-mode-rail-unavailable');
-        if (!account && target && dockedPanel?.contains(target) && target.closest('[data-app-mode-nav-primary]') && !target.closest('section') &&
+        if (!account && target && expandedPanel?.contains(target) && target.closest('[data-app-mode-nav-primary]') && !target.closest('section') &&
             !navigationController.rejectedUtilities.has(target)) own(target, 'data-app-mode-rail-original');
-        if (!account && (navigationController.rejectedUtilities.has(target) || (!target && state === 'docked'))) own(action, 'data-app-mode-rail-unavailable');
+        if (!account && (navigationController.rejectedUtilities.has(target) || (!target && expandedPanel))) own(action, 'data-app-mode-rail-unavailable');
       }
     }
     const flyout = navigationController.flyout;
